@@ -1,0 +1,7 @@
+opencv_python
+polars == 0.16.18
+requests
+tqdm
+pyarrow
+gradio == 3.29.0
+beautifulsoup4
