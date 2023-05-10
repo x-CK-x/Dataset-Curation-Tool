@@ -438,19 +438,22 @@ def download_zack3d_model():
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)
-    repo_name = "Z3D-E621-Convnext.zip"
+    repo_name = "Z3D-E621-Convnext"
     if not is_windows():
         # finally unzip the file
         command_str = "unzip "
-        command_str = f"{command_str}{repo_name}"
-        verbose_print(f"unzipping zip of model:\t{repo_name}")
+        new_path = os.getcwd().split('/')
+        del new_path[-1]
+        new_path = '/'.join(new_path)
+        command_str = f"{command_str}{url.split('/')[-1]} -d {new_path}"
+        verbose_print(f"unzipping zip of model:\t{new_path}")
         for line in execute(command_str.split(" ")):
             verbose_print(line)
     else:
         # finally unzip the file
         command_str = "wzunzip -d "
-        command_str = f"{command_str}{repo_name} {os.getcwd()}"
-        verbose_print(f"unzipping zip of model:\t{repo_name}")
+        command_str = f"{command_str}{url.split('/')[-1]} {os.getcwd()}"
+        verbose_print(f"unzipping zip of model:\t{url.split('/')[-1]}")
         for line in execute(command_str.split(" ")):
             verbose_print(line)
     verbose_print("Done")
