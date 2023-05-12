@@ -1916,7 +1916,10 @@ def auto_config_apply(images_full_change_dict_textbox, progress=gr.Progress()):
 def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group):
     if repo_download_releases_only:
         for asset_url in release_assets_checkbox_group:
-            command_str = "wget -q --show-progress "
+            command_str = f"wget "
+            progress_flag = "-q --show-progress "
+            if not help.is_windows():
+                command_str = f"{command_str}{progress_flag}"
             command_str = f"{command_str}{asset_url}"
             help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
             for line in help.execute(command_str.split(" ")):
@@ -1956,7 +1959,10 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 for line in help.execute(command_str.split(" ")):
                     help.verbose_print(line)
                 # also install the latest pre-trained model
-                command_str = "wget -q --show-progress "
+                command_str = f"wget "
+                progress_flag = "-q --show-progress "
+                if not help.is_windows():
+                    command_str = f"{command_str}{progress_flag}"
                 url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
                 command_str = f"{command_str}{url_path}"
                 help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
@@ -2060,7 +2066,10 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
     for model_name in model_download_checkbox_group:
         if "/" in model_name:
             model_name = model_name.split("/")[-1]
-        command_str = "wget -q --show-progress "
+        command_str = f"wget "
+        progress_flag = "-q --show-progress "
+        if not help.is_windows():
+            command_str = f"{command_str}{progress_flag}"
         # get full url path
         url_path = help.full_model_download_link(model_download_types, model_name)
         command_str = f"{command_str}{url_path}"

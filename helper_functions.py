@@ -394,7 +394,10 @@ def extract_time_and_href_github(api_url):
 
 def download_negative_tags_file():
     url = "https://raw.githubusercontent.com/pikaflufftuft/pikaft-e621-posts-downloader/main/remove_tags.txt"
-    command_str = "wget -q --show-progress "
+    command_str = f"wget "
+    progress_flag = "-q --show-progress "
+    if not is_windows():
+        command_str = f"{command_str}{progress_flag}"
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
@@ -410,7 +413,10 @@ def get_today_datetime():
 def download_all_e6_tags_csv():
     repo_name = f"{'tags-'}{get_today_datetime()}{'.csv.gz'}"
     url = f"{'https://e621.net/db_export/'}{repo_name}"
-    command_str = "wget -q --show-progress "
+    command_str = f"wget "
+    progress_flag = "-q --show-progress "
+    if not is_windows():
+        command_str = f"{command_str}{progress_flag}"
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
@@ -433,7 +439,10 @@ def download_all_e6_tags_csv():
 
 def download_zack3d_model():
     url = "https://pixeldrain.com/api/file/iNMyyi2w"
-    command_str = "wget -q --show-progress "
+    command_str = f"wget "
+    progress_flag = "-q --show-progress "
+    if not is_windows():
+        command_str = f"{command_str}{progress_flag}"
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
