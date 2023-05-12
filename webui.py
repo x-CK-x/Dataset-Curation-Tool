@@ -1920,6 +1920,9 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
             progress_flag = "-q --show-progress "
             if not help.is_windows():
                 command_str = f"{command_str}{progress_flag}"
+            else:
+                progress_flag = f"-P {os.getcwd()} "
+                command_str = f"{command_str}{progress_flag}"
             command_str = f"{command_str}{asset_url}"
             help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
             for line in help.execute(command_str.split(" ")):
@@ -1962,6 +1965,9 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 command_str = f"wget "
                 progress_flag = "-q --show-progress "
                 if not help.is_windows():
+                    command_str = f"{command_str}{progress_flag}"
+                else:
+                    progress_flag = f"-P {os.getcwd()} "
                     command_str = f"{command_str}{progress_flag}"
                 url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
                 command_str = f"{command_str}{url_path}"
@@ -2069,6 +2075,9 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
         command_str = f"wget "
         progress_flag = "-q --show-progress "
         if not help.is_windows():
+            command_str = f"{command_str}{progress_flag}"
+        else:
+            progress_flag = f"-P {os.getcwd()} "
             command_str = f"{command_str}{progress_flag}"
         # get full url path
         url_path = help.full_model_download_link(model_download_types, model_name)

@@ -398,6 +398,9 @@ def download_negative_tags_file():
     progress_flag = "-q --show-progress "
     if not is_windows():
         command_str = f"{command_str}{progress_flag}"
+    else:
+        progress_flag = f"-P {os.getcwd()} "
+        command_str = f"{command_str}{progress_flag}"
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
@@ -416,6 +419,9 @@ def download_all_e6_tags_csv():
     command_str = f"wget "
     progress_flag = "-q --show-progress "
     if not is_windows():
+        command_str = f"{command_str}{progress_flag}"
+    else:
+        progress_flag = f"-P {os.getcwd()} "
         command_str = f"{command_str}{progress_flag}"
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
@@ -442,6 +448,9 @@ def download_zack3d_model():
     command_str = f"wget "
     progress_flag = "-q --show-progress "
     if not is_windows():
+        command_str = f"{command_str}{progress_flag}"
+    else:
+        progress_flag = f"-P {os.getcwd()} "
         command_str = f"{command_str}{progress_flag}"
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
