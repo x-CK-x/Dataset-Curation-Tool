@@ -63,8 +63,6 @@ sudo apt-get install unzip
 
 For Windows, install the aria2 build https://github.com/aria2/aria2/releases/   Add aria2 in your environment variable paths.
 
-For Windows, install the wget https://gnuwin32.sourceforge.net/packages/wget.htm   Add wget in your environment variable paths.
-
 For Windows, install the wzunzip https://www.winzip.com/en/product/command-line/#overview   Add wzunzip in your environment variable paths.
 
 ## How to use
