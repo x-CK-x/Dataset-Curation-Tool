@@ -399,8 +399,7 @@ def download_negative_tags_file():
     if not is_windows():
         command_str = f"{command_str}{progress_flag}"
     else:
-        progress_flag = f"-P {os.getcwd()} "
-        command_str = f"{command_str}{progress_flag}"
+        command_str = f"aria2c "
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     verbose_print(f"command_str:\t{command_str}")
@@ -422,8 +421,7 @@ def download_all_e6_tags_csv():
     if not is_windows():
         command_str = f"{command_str}{progress_flag}"
     else:
-        progress_flag = f"-P {os.getcwd()} "
-        command_str = f"{command_str}{progress_flag}"
+        command_str = f"aria2c "
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     verbose_print(f"command_str:\t{command_str}")
@@ -452,8 +450,7 @@ def download_zack3d_model():
     if not is_windows():
         command_str = f"{command_str}{progress_flag}"
     else:
-        progress_flag = f"-P {os.getcwd()} "
-        command_str = f"{command_str}{progress_flag}"
+        command_str = f"aria2c "
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     verbose_print(f"command_str:\t{command_str}")
