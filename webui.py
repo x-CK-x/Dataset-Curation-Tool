@@ -1925,6 +1925,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 command_str = f"{command_str}{progress_flag}"
             command_str = f"{command_str}{asset_url}"
             help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
+            verbose_print(f"command_str:\t{command_str}")
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
             asset_url = (asset_url.split('/'))[-1]
@@ -1972,6 +1973,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
                 command_str = f"{command_str}{url_path}"
                 help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
+                verbose_print(f"command_str:\t{command_str}")
                 for line in help.execute(command_str.split(" ")):
                     help.verbose_print(line)
                 if not help.is_windows():
@@ -2083,6 +2085,7 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
         url_path = help.full_model_download_link(model_download_types, model_name)
         command_str = f"{command_str}{url_path}"
         help.verbose_print(f"DOWNLOADING:\t{model_name}")
+        verbose_print(f"command_str:\t{command_str}")
         for line in help.execute(command_str.split(" ")):
             help.verbose_print(line)
         help.verbose_print(f"Done")
