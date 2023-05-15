@@ -589,7 +589,7 @@ def check_requirements():
 def unzip_file(file_path, new_name=""):
     temp = '\\' if is_windows() else '/'
     name = file_path.split(temp)[-1]
-    ext = name = name.split('.')[-1]
+    ext = name.split('.')[-1]
     name = name.split('.')[0]
 
     if len(new_name) == 0:
