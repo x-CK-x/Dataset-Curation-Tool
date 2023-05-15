@@ -5,3 +5,5 @@ tqdm
 pyarrow
 gradio == 3.29.0
 beautifulsoup4
+Pillow
+pandas
