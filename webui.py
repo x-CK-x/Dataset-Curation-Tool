@@ -6,12 +6,17 @@ import copy
 import sys
 
 import batch_downloader
+import autotag
 import helper_functions as help
 
 import argparse
 import datetime
 import pandas as pd
 from tqdm import tqdm
+import numpy as np
+
+from PIL import Image
+from matplotlib import cm
 
 '''
 ##################################################################################################################################
@@ -21,7 +26,7 @@ from tqdm import tqdm
 
 # set local path
 cwd = os.getcwd()
-catgories_map = {0: 'general', 1: 'artist', 2: 'rating', 3: 'copyright', 4: 'character', 5: 'species', 6: 'invalid',
+categories_map = {0: 'general', 1: 'artist', 2: 'rating', 3: 'copyright', 4: 'character', 5: 'species', 6: 'invalid',
                       7: 'meta', 8: 'lore'}
 
 # options
@@ -117,6 +122,18 @@ image_creation_times = {}
 
 global all_tags_ever_dict
 all_tags_ever_dict = {}
+
+global autotagmodel
+autotagmodel = None
+
+global auto_tag_models
+auto_tag_models = []
+
+global all_predicted_confidences
+global all_predicted_tags
+all_predicted_confidences = {}
+all_predicted_tags = []
+
 '''
 ##################################################################################################################################
 #################################################     COMPONENT/S FUNCTION/S     #################################################
@@ -664,17 +681,17 @@ def reload_selected_image_dict(ext, img_name):
         temp_tag_dict = {}
         temp_list = [[],[],[],[],[],[]]
         for tag in img_tag_list:
-            if catgories_map[all_tags_ever_dict[tag]] == 'artist':
+            if categories_map[all_tags_ever_dict[tag]] == 'artist':
                 temp_list[0].append(tag)
-            if catgories_map[all_tags_ever_dict[tag]] == 'character':
+            if categories_map[all_tags_ever_dict[tag]] == 'character':
                 temp_list[1].append(tag)
-            if catgories_map[all_tags_ever_dict[tag]] == 'species':
+            if categories_map[all_tags_ever_dict[tag]] == 'species':
                 temp_list[2].append(tag)
-            if catgories_map[all_tags_ever_dict[tag]] == 'general':
+            if categories_map[all_tags_ever_dict[tag]] == 'general':
                 temp_list[3].append(tag)
-            if catgories_map[all_tags_ever_dict[tag]] == 'meta':
+            if categories_map[all_tags_ever_dict[tag]] == 'meta':
                 temp_list[4].append(tag)
-            if catgories_map[all_tags_ever_dict[tag]] == 'rating':
+            if categories_map[all_tags_ever_dict[tag]] == 'rating':
                 temp_list[5].append(tag)
         temp_tag_dict["artist"] = temp_list[0]
         temp_tag_dict["character"] = temp_list[1]
@@ -944,7 +961,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
             for tag in tag_list:
                 if not tag in all_images_dict["searched"][selected_image_dict["type"]][img_id]:
                     # get last tag in category
-                    last_tag = get_insert_last_tags_name(catgories_map[all_tags_ever_dict[tag]], selected_image_dict["type"], img_id, tag) # i.e. the tag before the new one
+                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], selected_image_dict["type"], img_id, tag) # i.e. the tag before the new one
                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                     # get its index on the global list
@@ -962,12 +979,12 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                     auto_complete_config[selected_image_dict["type"]][img_id].append(['+', tag, (glob_index)])
 
                     # create or increment category table AND frequency table for (all) tags
-                    add_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag) # add
+                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
         elif img_id in list(all_images_dict[selected_image_dict["type"]].keys()): # find image in ( TYPE ) : id
             for tag in tag_list:
                 if not tag in all_images_dict[selected_image_dict["type"]][img_id]:
                     # get last tag in category
-                    last_tag = get_insert_last_tags_name(catgories_map[all_tags_ever_dict[tag]], selected_image_dict["type"], img_id, tag) # i.e. the tag before the new one
+                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], selected_image_dict["type"], img_id, tag) # i.e. the tag before the new one
                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                     # get its index on the global list
@@ -982,7 +999,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                     auto_complete_config[selected_image_dict["type"]][img_id].append(['+', tag, (glob_index)])
 
                     # create or increment category table AND frequency table for (all) tags
-                    add_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag) # add
+                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
     if len(apply_to_all_type_select_checkboxgroup) > 0:
         if "searched" in apply_to_all_type_select_checkboxgroup: # edit searched and then all the instances of the respective types
             if multi_select_ckbx_state:
@@ -994,7 +1011,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                             for tag in tag_list:
                                 if not tag in all_images_dict["searched"][ext][img_id]:  # add tag
                                     # get last tag in category
-                                    last_tag = get_insert_last_tags_name(catgories_map[all_tags_ever_dict[tag]], ext, img_id,
+                                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], ext, img_id,
                                                                          tag)  # i.e. the tag before the new one
                                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
@@ -1015,14 +1032,14 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                     auto_complete_config[ext][img_id].append(['+', tag, (glob_index)])
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    add_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag)  # add
+                                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag)  # add
             else:
                 for key_type in list(all_images_dict["searched"].keys()):
                     for img_id in list(all_images_dict["searched"][key_type].keys()):
                         for tag in tag_list:
                             if not tag in all_images_dict["searched"][key_type][img_id]: # add tag
                                 # get last tag in category
-                                last_tag = get_insert_last_tags_name(catgories_map[all_tags_ever_dict[tag]], key_type, img_id, tag)  # i.e. the tag before the new one
+                                last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], key_type, img_id, tag)  # i.e. the tag before the new one
                                 help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                                 # get its index on the global list
@@ -1042,7 +1059,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                 auto_complete_config[key_type][img_id].append(['+', tag, (glob_index)])
 
                                 # create or increment category table AND frequency table for (all) tags
-                                add_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag) # add
+                                add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
         else:
             if multi_select_ckbx_state:
                 ##### returns index -> [ext, img_id]
@@ -1053,7 +1070,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                             for tag in tag_list:
                                 if not tag in all_images_dict[ext][img_id]:
                                     # get last tag in category
-                                    last_tag = get_insert_last_tags_name(catgories_map[all_tags_ever_dict[tag]], ext, img_id,
+                                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], ext, img_id,
                                                                          tag)  # i.e. the tag before the new one
                                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
@@ -1074,14 +1091,14 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                         all_images_dict["searched"][ext][img_id].insert(glob_index, tag)
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    add_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag)  # add
+                                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag)  # add
             else:
                 for key_type in apply_to_all_type_select_checkboxgroup:
                     for img_id in list(all_images_dict[key_type].keys()):
                         for tag in tag_list:
                             if not tag in all_images_dict[key_type][img_id]:
                                 # get last tag in category
-                                last_tag = get_insert_last_tags_name(catgories_map[all_tags_ever_dict[tag]], key_type, img_id, tag)  # i.e. the tag before the new one
+                                last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], key_type, img_id, tag)  # i.e. the tag before the new one
                                 help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                                 # get its index on the global list
@@ -1100,7 +1117,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                     all_images_dict["searched"][key_type][img_id].insert(glob_index, tag)
 
                                 # create or increment category table AND frequency table for (all) tags
-                                add_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag) # add
+                                add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
 
     # find type of selected image
     temp_ext = None
@@ -1158,9 +1175,9 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
     if img_id and len(img_id) > 0 and selected_image_dict and selected_image_dict["type"] in apply_to_all_type_select_checkboxgroup:
         # update info for selected image
         for tag in tag_list:
-            if tag in selected_image_dict[img_id][catgories_map[all_tags_ever_dict[tag]]]:
-                while tag in selected_image_dict[img_id][catgories_map[all_tags_ever_dict[tag]]]:
-                    selected_image_dict[img_id][catgories_map[all_tags_ever_dict[tag]]].remove(tag)
+            if tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]]:
+                while tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]]:
+                    selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]].remove(tag)
         # update info for category components
         img_artist_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['artist'], value=[])
         img_character_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['character'], value=[])
@@ -1173,9 +1190,9 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
     elif img_id and len(img_id) > 0 and selected_image_dict and (not apply_to_all_type_select_checkboxgroup or len(apply_to_all_type_select_checkboxgroup) == 0):
         # update info for selected image
         for tag in tag_list:
-            if tag in selected_image_dict[img_id][catgories_map[all_tags_ever_dict[tag]]]:
-                while tag in selected_image_dict[img_id][catgories_map[all_tags_ever_dict[tag]]]:
-                    selected_image_dict[img_id][catgories_map[all_tags_ever_dict[tag]]].remove(tag)
+            if tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]]:
+                while tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]]:
+                    selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]].remove(tag)
         # update info for category components
         img_artist_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['artist'], value=[])
         img_character_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['character'], value=[])
@@ -1201,7 +1218,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                         auto_complete_config[selected_image_dict["type"]][img_id].append(['-', tag])
 
                     # create or increment category table AND frequency table for (all) tags
-                    remove_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag) # remove
+                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
         elif img_id in list(all_images_dict[selected_image_dict["type"]].keys()):  # find image in ( TYPE ) : id
             for tag in tag_list:
                 if tag in all_images_dict[selected_image_dict["type"]][img_id]:
@@ -1213,7 +1230,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                         auto_complete_config[selected_image_dict["type"]][img_id].append(['-', tag])
 
                     # create or increment category table AND frequency table for (all) tags
-                    remove_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag) # remove
+                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
 
     if len(apply_to_all_type_select_checkboxgroup) > 0:
         if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
@@ -1236,7 +1253,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                         auto_complete_config[ext][img_id].append(['-', tag])
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    remove_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag)  # remove
+                                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag)  # remove
             else:
                 for key_type in list(all_images_dict["searched"].keys()):
                     for img_id in list(all_images_dict["searched"][key_type].keys()):
@@ -1253,7 +1270,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                     auto_complete_config[key_type][img_id].append(['-', tag])
 
                                 # create or increment category table AND frequency table for (all) tags
-                                remove_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag) # remove
+                                remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
         else:
             if multi_select_ckbx_state:
                 ##### returns index -> [ext, img_id]
@@ -1276,7 +1293,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                             all_images_dict["searched"][ext][img_id].remove(tag)
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    remove_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag)  # remove
+                                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag)  # remove
             else:
                 for key_type in apply_to_all_type_select_checkboxgroup:
                     for img_id in list(all_images_dict[key_type].keys()):
@@ -1294,7 +1311,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                         all_images_dict["searched"][key_type][img_id].remove(tag)
 
                                 # create or increment category table AND frequency table for (all) tags
-                                remove_to_csv_dictionaries(catgories_map[all_tags_ever_dict[tag]], tag) # remove
+                                remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
 
     return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
            img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
@@ -1302,7 +1319,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
 def get_category_name(tag):
     global all_tags_ever_dict
     if tag in all_tags_ever_dict:
-        return catgories_map[all_tags_ever_dict[tag]]
+        return categories_map[all_tags_ever_dict[tag]]
     else:
         return None
 
@@ -1484,6 +1501,37 @@ def save_image_changes():
     help.verbose_print(f"jpg_cnt:\t{jpg_cnt}")
     help.verbose_print(f"gif_cnt:\t{gif_cnt}")
     help.verbose_print(f"SAVE COMPLETE")
+
+def force_reload_images_and_csvs():
+    global all_images_dict
+    # clear searched dict
+    if "searched" in all_images_dict:
+        del all_images_dict["searched"]
+        all_images_dict["searched"] = {}
+
+    full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                       settings_json["downloaded_posts_folder"])
+    if not all_images_dict or len(all_images_dict.keys()) == 0:
+        all_images_dict = help.merge_dict(os.path.join(full_path_downloads, settings_json[f"png_folder"]),
+                                          os.path.join(full_path_downloads, settings_json[f"jpg_folder"]),
+                                          os.path.join(full_path_downloads, settings_json[f"gif_folder"]))
+
+    # populate the timekeeping dictionary
+    initialize_posts_timekeeper()
+
+    tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                 settings_json["tag_count_list_folder"])
+    global is_csv_loaded
+    is_csv_loaded = True
+    global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
+    artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
+    character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
+    species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
+    general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
+    meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
+    rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
+    tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
+
 
 def load_images_and_csvs():
     global is_csv_loaded, all_images_dict
@@ -1924,7 +1972,6 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 command_str = f"aria2c "
             command_str = f"{command_str}{asset_url}"
             help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
-            help.verbose_print(f"command_str:\t{command_str}")
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
             asset_url = (asset_url.split('/'))[-1]
@@ -1971,7 +2018,6 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
                 command_str = f"{command_str}{url_path}"
                 help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
-                help.verbose_print(f"command_str:\t{command_str}")
                 for line in help.execute(command_str.split(" ")):
                     help.verbose_print(line)
                 if not help.is_windows():
@@ -2082,13 +2128,16 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
         url_path = help.full_model_download_link(model_download_types, model_name)
         command_str = f"{command_str}{url_path}"
         help.verbose_print(f"DOWNLOADING:\t{model_name}")
-        help.verbose_print(f"command_str:\t{command_str}")
         for line in help.execute(command_str.split(" ")):
             help.verbose_print(line)
         help.verbose_print(f"Done")
     if len(tagging_model_download_types) > 0:
         # download zack3d's model
         help.download_zack3d_model()
+        # add to new tagging feature
+        global auto_tag_models
+        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
+            auto_tag_models.append('Z3D-E621-Convnext.onnx')
 
 def show_model_downloads_options(model_download_types, event_data: gr.SelectData):
     model_download_checkbox_group = gr.update(choices=help.get_model_names(event_data.value), visible=True)
@@ -2105,6 +2154,316 @@ def set_ckbx_state(select_multiple_images_checkbox, multi_select_ckbx_state):
 def make_visible():
     return gr.update(visible=True)
 
+def load_model(model_name, use_cpu, event_data: gr.SelectData):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+
+    autotagmodel.load_model(model_name=event_data.value, use_cpu=use_cpu)
+    help.verbose_print(f"model loaded using cpu={use_cpu}")
+
+# def re_load_model(model_name, use_cpu):
+#     global autotagmodel
+#     if autotagmodel is None:
+#         folder_path = os.path.join(cwd, settings_json["batch_folder"])
+#         folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+#         folder_path = os.path.join(folder_path, settings_json["png_folder"])
+#         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+#                                              settings_json["tag_count_list_folder"])
+#         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+#         autotagmodel.check_requirements()
+#
+#     autotagmodel.load_model(model_name=model_name, use_cpu=use_cpu)
+#     help.verbose_print(f"model reloaded using cpu={use_cpu}")
+
+def set_threshold(threshold):
+    global autotagmodel, all_predicted_confidences, all_predicted_tags
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+
+    temp_confids = None
+    temp_tags = None
+    if len(all_predicted_tags) > 0:
+        temp_confids = copy.deepcopy(all_predicted_confidences)
+        temp_tags = copy.deepcopy(all_predicted_tags)
+        keys = list(temp_confids.keys())
+        for key in keys:
+            if temp_confids[key] <= (float(threshold) / 100.0):
+                del temp_confids[key]
+                temp_tags.remove(key)
+
+    autotagmodel.set_threshold(thresh=threshold)
+    help.verbose_print(f"new threshold set:\t{(float(threshold) / 100.0)}")
+    return gr.update(value=temp_confids), gr.update(choices=temp_tags)
+
+def load_images(images_path, image_mode_choice_state):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    image_mode_choice_state = ""
+    if images_path:
+        help.verbose_print(f"images_path:\t{images_path}")
+
+        if isinstance(images_path, list) and len(images_path) > 1:
+            names = []
+            for path in images_path:
+                help.verbose_print(f"path:\t{path}")
+                help.verbose_print(f"path.name:\t{path.name}")
+                names.append(path.name)
+            autotagmodel.set_data(train_data_dir=names, single_image=False)
+            image_mode_choice_state = 'Batch'
+        else:
+            if isinstance(images_path, list):
+                images_path = images_path[0]
+            help.verbose_print(f"images_path:\t{images_path}")
+            help.verbose_print(f"images_path.name:\t{images_path.name}")
+            ######## DO I ADD TO LIST FIRST OR NO!?!?!?!
+            autotagmodel.set_data(train_data_dir=images_path.name, single_image=True)
+            image_mode_choice_state = 'Single'
+    help.verbose_print(f"images loaded")
+    return image_mode_choice_state
+
+def update_image_mode(image_mode_choice_dropdown, event_data: gr.SelectData):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    image_modes = ['Single', 'Batch']
+    print(f"image_mode_choice_dropdown:\t{image_mode_choice_dropdown}")
+    print(f"event_data:\t{event_data}")
+    print(f"event_data.name:\t{event_data.name}")
+    print(f"event_data.value:\t{event_data.value}")
+    if (event_data.value).lower() == 'single':
+        return gr.update(label=f"{image_modes[0]} Image Mode", file_count="single", interactive=True)
+    elif (event_data.value).lower() == 'batch':
+        return gr.update(label=f"{image_modes[0]} Image Mode", file_count="directory", interactive=True)
+
+def make_menus_visible(crop_or_resize_radio):
+    if crop_or_resize_radio.lower() == 'crop':
+        return gr.update(visible=True), gr.update(visible=True)
+    else:
+        return gr.update(visible=False, value=None), gr.update(visible=False, value=None)
+def set_square_size(square_image_edit_slider):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    autotagmodel.set_image_size(crop_size=square_image_edit_slider)
+    help.verbose_print(f"new crop/resize dim/s set")
+def set_crop_or_resize(crop_or_resize_radio):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    help.verbose_print(f"set crop or resize")
+    if autotagmodel:
+        autotagmodel.set_crop_or_resize(crop_or_resize_radio)
+def set_landscape_square_crop(landscape_crop_dropdown, event_data: gr.SelectData):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    help.verbose_print(f"set landscape crop")
+    if autotagmodel:
+        autotagmodel.set_landscape_square_crop(event_data.value)
+def set_portrait_square_crop(portrait_crop_dropdown, event_data: gr.SelectData):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    help.verbose_print(f"set portrait crop")
+    if autotagmodel:
+        autotagmodel.set_portrait_square_crop(event_data.value)
+def set_write_tag_opts(event_data: gr.SelectData):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    autotagmodel.set_write_tag_opts(event_data.value)
+    help.verbose_print(f"set write opts:\t{event_data.value}")
+def set_use_tag_opts_radio(event_data: gr.SelectData):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    autotagmodel.set_use_tag_opts(event_data.value)
+    help.verbose_print(f"set use opts:\t{event_data.value}")
+def set_image_with_tag_path_textbox(image_with_tag_path_textbox):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    help.verbose_print(f"setting path to data origin")
+    autotagmodel.set_image_with_tag_path_textbox(image_with_tag_path_textbox)
+def set_copy_mode_ckbx(copy_mode_ckbx):
+    global autotagmodel
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    autotagmodel.set_copy_mode_ckbx(copy_mode_ckbx)
+    help.verbose_print(f"set copy")
+
+def interrogate_images(image_mode_choice_state, confidence_threshold_slider):
+    global all_tags_ever_dict
+    global autotagmodel, all_predicted_confidences, all_predicted_tags
+    if autotagmodel is None:
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                             settings_json["tag_count_list_folder"])
+        autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
+        autotagmodel.check_requirements()
+    image_confidence_values = None
+    image_generated_tags = None
+    image_preview_pil = None
+    help.verbose_print(f"image_mode_choice_state:\t{image_mode_choice_state}")
+
+    if 'single' == image_mode_choice_state.lower():
+        autotagmodel.interrogate(single_image=True, all_tags_ever_dict=all_tags_ever_dict)
+        image_confidence_values, image_generated_tags, image_preview_pil = autotagmodel.get_predictions(True)
+    else:
+        autotagmodel.interrogate(single_image=False, all_tags_ever_dict=all_tags_ever_dict)
+        _, _, _ = autotagmodel.get_predictions(False)
+
+    if image_confidence_values is None and image_generated_tags is None and image_preview_pil is None:
+        return gr.update(value={}), gr.update(choices=[]), gr.update(value=None)
+
+    all_predicted_confidences = image_confidence_values
+    all_predicted_tags = image_generated_tags
+
+    temp_confids = copy.deepcopy(all_predicted_confidences)
+    temp_tags = copy.deepcopy(all_predicted_tags)
+    help.verbose_print(f"getting results")
+    help.verbose_print(f"Removing NON-E6 tags")
+
+    keys = list(temp_confids.keys())
+    for key in keys:
+        if not key in all_tags_ever_dict or image_confidence_values[key] <= (float(confidence_threshold_slider)/100.0):
+            del temp_confids[key]
+            temp_tags.remove(key)
+
+    if image_preview_pil is not None:
+        print("UPDATING IMAGE PREVIEW")
+        image_preview_pil = np.array(image_preview_pil)#[0]
+        image_preview_pil = image_preview_pil[:, :, ::-1] # BGR -> RGB
+        image_preview_pil = Image.fromarray(np.uint8(image_preview_pil))#*255#cm.gist_earth()
+        image_preview_pil = gr.update(value=image_preview_pil)
+    else:
+        image_preview_pil = gr.update()
+
+    # force reload csvs and global image dictionaries
+    force_reload_images_and_csvs()
+
+    return gr.update(value=temp_confids), gr.update(choices=temp_tags), image_preview_pil
+
+# also creates an empty tag file for the image file if there isn't one already
+def save_custom_images(image_mode_choice_state, image_with_tag_path_textbox):
+    global autotagmodel, all_predicted_confidences, all_predicted_tags
+    all_paths = autotagmodel.get_dataset().get_image_paths()
+    help.verbose_print(f"all image paths to save:\t{all_paths}")
+    help.verbose_print(f"image_with_tag_path_textbox:\t{image_with_tag_path_textbox}")
+    images_path = all_paths
+    if (image_with_tag_path_textbox is None or not len(image_with_tag_path_textbox) > 0 or (images_path is None or not len(images_path) > 0)):
+        raise ValueError("Cannot complete Operation without completing fields: (write tag options / use tag options / path to files / images_path)")
+
+    if copy_mode_ckbx: # caches images for gallery tab & persists to disk where the others are located
+        temp = '\\' if help.is_windows() else '/'
+        folder_path = os.path.join(cwd, settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, settings_json["png_folder"])
+        if image_mode_choice_state.lower() == 'single':
+            images_path = images_path[0]
+            name = (images_path).split(temp)[-1]
+            help.copy_over_imgs(os.path.join(image_with_tag_path_textbox, name), os.path.join(folder_path, name), 'single')
+        else:
+            help.copy_over_imgs(image_with_tag_path_textbox, folder_path, 'batch')
+    image_confidence_values = {}
+    image_generated_tags = []
+    image_preview_pil = None
+    return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), gr.update(value=image_preview_pil)
+
+def save_custom_tags(image_mode_choice_state, image_with_tag_path_textbox, any_selected_tags):
+    global autotagmodel, all_predicted_tags
+    all_paths = autotagmodel.get_dataset().get_image_paths()
+    images_path = all_paths
+    if (image_with_tag_path_textbox is None or not len(image_with_tag_path_textbox) > 0 or (
+            images_path is None or not len(images_path) > 0)):
+        raise ValueError("Cannot complete Operation without completing fields: (write tag options / use tag options / path to files / images_path)")
+
+    if image_mode_choice_state.lower() == 'single':
+        autotagmodel.save_tags(single_image=True, any_selected_tags=any_selected_tags, all_tags_ever_dict=all_tags_ever_dict)
+    elif image_mode_choice_state.lower() == 'batch':
+        autotagmodel.save_tags(single_image=False, any_selected_tags=any_selected_tags, all_tags_ever_dict=all_tags_ever_dict)
+
+    image_confidence_values = {}
+    image_generated_tags = []
+    image_preview_pil = None
+    return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), gr.update(value=image_preview_pil)
+
 # check to update the tags csv
 help.check_to_update_csv()
 # load the everything tags csv
@@ -2118,6 +2477,10 @@ for index, row in tqdm(data.iterrows(), desc='Loading all E6 tags CSV', total=le
     all_tags_ever_dict[tag_name] = category_index
 # remove the dataframe
 del data
+
+
+def unload_component():
+    return gr.update(value=None)
 
 '''
 ##################################################################################################################################
@@ -2175,7 +2538,6 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
             quick_json_select = gr.Dropdown(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), label='JSON Select',
                                       value=config_name)
             load_json_file_button = gr.Button(value="Load from JSON", variant='secondary')
-
     with gr.Tab("Stats Config"):
         with gr.Row():
             config_save_var1 = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -2200,7 +2562,6 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
             top_n = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Top N', value=settings_json["top_n"], info='ONLY the top N images will be downloaded')
         with gr.Row():
             min_short_side = gr.Slider(minimum=1, maximum=100000, step=1, label='Resize Param: Min Short Side', value=settings_json["min_short_side"], info='ANY image\'s length or width that falls below this number will be resized')
-
     with gr.Tab("Checkbox Config"):
         with gr.Row():
             config_save_var2 = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -2223,7 +2584,6 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
                 ###  Data Resize Options
                 """)
                 resize_checkbox_group_var = gr.CheckboxGroup(choices=resize_checkboxes, label='Resize Checkboxes', value=help.grab_pre_selected(settings_json, resize_checkboxes))
-
     with gr.Tab("Required Tags Config"):
         with gr.Row():
             config_save_var3 = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -2236,7 +2596,6 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
                 parse_button_required = gr.Button(value="Parse/Add Tags", variant='secondary')
         with gr.Row():
             required_tags_group_var = gr.CheckboxGroup(choices=required_tags_list, label='ALL Required Tags', value=[])
-
     with gr.Tab("Blacklist Tags Config"):
         with gr.Row():
             config_save_var4 = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -2249,7 +2608,6 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
                 parse_button_blacklist = gr.Button(value="Parse/Add Tags", variant='secondary')
         with gr.Row():
             blacklist_group_var = gr.CheckboxGroup(choices=blacklist_tags, label='ALL Blacklisted Tags', value=[])
-
     with gr.Tab("Additional Components Config"):
         gr.Markdown(
         """
@@ -2404,7 +2762,6 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
             stats_selected_data = gr.Dataframe(interactive=False, label="Dataframe Table", visible=False,
                                                headers=["Tag Category", "Count"], datatype=["str", "number"], max_cols=2,
                                                type="array")
-
     with gr.Tab("Download Extra/s: Model/s & Code Repos"):
         gr.Markdown(
         """
@@ -2432,15 +2789,72 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
             tagging_model_download_types = gr.Dropdown(choices=tagging_model_download_options, label='AutoTagging Model Selection')
             model_download_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Code Repositories to Download', value=[], visible=False)
             model_download_button = gr.Button(value="Download Model/s", variant='primary', visible=False)
+    with gr.Tab("Add Custom Dataset"):
+        gr.Markdown(
+            """
+            ### This tab populates with the auto-tagging option ONLY after downloading one of those models from the previous tab.
+            ### The (above) line \'assumes\' the user has the (image and tag) file pairs named the same thing.
+            ### To Run the model: (1) Select your model (2) Set your Threshold (3) Select your Image/s (4) Interrogate with the model.
+            ### ( NOTE ) Using Batch mode, will disable the single image predictions on the right side. (batch mode is also defined as using a folder with MORE than ONE image in it)
+            ### To transfer Tag/s AND/OR Image/s, simply check the \'copy\' checkbox and click the save option preferred. Tag files will be create for images without them (if transferred).
+            ### ( NOTE ) When running Batch mode, the (copy checkbox) and (Use & Write Tag Options) are automatically applied and image/s and tag/s are automatically saved.
+            """)
+        image_modes = ['Single', 'Batch']
+        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
+            auto_tag_models.append('Z3D-E621-Convnext.onnx')
+        write_tag_opts = ['Overwrite', 'Merge', 'Pre-pend', 'Append']
+        use_tag_opts = ['Use All', 'Use All above Threshold', 'Manually Select']
+        with gr.Row():
+            with gr.Column():
+                with gr.Row():
+                    with gr.Tab("Single"):
+                        file_upload_button_single = gr.File(label=f"{image_modes[0]} Image Mode", file_count="single",
+                                                            interactive=True, file_types=["image"], visible=True, type="file")
+                    with gr.Tab("Batch"):
+                        file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
+                                                           interactive=True, file_types=["image"], visible=True, type="file")
+
+                with gr.Row():
+                    cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only")
+                    model_choice_dropdown = gr.Dropdown(choices=auto_tag_models, label="Model Selection")
+                    crop_or_resize_radio = gr.Radio(label="Preprocess Options", choices=['Crop','Resize'], value='Resize')
+                with gr.Row():
+                    landscape_crop_dropdown = gr.Dropdown(choices=['left', 'mid', 'right'], label="Landscape Crop", info="Mandatory", visible=False)
+                    portrait_crop_dropdown = gr.Dropdown(choices=['top', 'mid', 'bottom'], label="Portrait Crop", info="Mandatory", visible=False)
+                # with gr.Row():
+                #     square_image_edit_slider = gr.Slider(minimum=0, maximum=3000, step=1, label='Crop/Resize Square Image Size', info='Length or Width', value=448, visible=True, interactive=True)
+                with gr.Row():
+                    confidence_threshold_slider = gr.Slider(minimum=0, maximum=100, step=1, label='Confidence Threshold', value=75, visible=True, interactive=True)
+
+                with gr.Row():
+                    interrogate_button = gr.Button(value="Interrogate", variant='primary')
+                with gr.Row():
+                    image_with_tag_path_textbox = gr.Textbox(label="Path to Image Folder", info="Folder should contain both tag & image files", interactive=True)
+                with gr.Row():
+                    copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
+                    save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
+                    save_custom_tags_button = gr.Button(value="Save/Add Tags", variant='primary')
+                with gr.Row():
+                    write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
+                    use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
+            with gr.Tab("Tag/s Preview"):
+                with gr.Column():
+                    image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
+                    image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True, interactive=True)
+            with gr.Tab("Image Preview"):
+                with gr.Column():
+                    image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil")
+
     '''
     ##################################################################################################################################
     ####################################################     EVENT HANDLER/S     #####################################################
     ##################################################################################################################################
     '''
+
+    image_mode_choice_state = gr.State("")
     images_selected_state = gr.JSON([], visible=False)
     multi_select_ckbx_state = gr.JSON([1], visible=False)
     only_selected_state_object = gr.State(dict())
-
     js_do_everything = """
     async (images_selected_state, multi_select_ckbx_state) => {
       const gallery = document.querySelector("#gallery_id")
@@ -2475,6 +2889,35 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
       return images_selected_state
     }
     """
+
+    save_custom_tags_button.click(fn=save_custom_tags,
+                                  inputs=[image_mode_choice_state, image_with_tag_path_textbox, image_generated_tags],
+                                  outputs=[image_confidence_values, image_generated_tags, image_preview_pil])
+
+    save_custom_images_button.click(fn=save_custom_images,
+                                    inputs=[image_mode_choice_state, image_with_tag_path_textbox],
+                                    outputs=[image_confidence_values, image_generated_tags, image_preview_pil])
+    interrogate_button.click(unload_component, None, image_preview_pil).then(fn=interrogate_images,
+                                                                             inputs=[image_mode_choice_state,
+                                                                                     confidence_threshold_slider],
+                                                                             outputs=[image_confidence_values,
+                                                                                      image_generated_tags,
+                                                                                      image_preview_pil],
+                                                                             show_progress=True)
+    crop_or_resize_radio.change(fn=make_menus_visible, inputs=[crop_or_resize_radio], outputs=[landscape_crop_dropdown, portrait_crop_dropdown])
+    model_choice_dropdown.select(fn=load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
+    # cpu_only_ckbx.change(fn=re_load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
+    confidence_threshold_slider.change(fn=set_threshold, inputs=[confidence_threshold_slider], outputs=[image_confidence_values, image_generated_tags])
+    file_upload_button_single.upload(fn=load_images, inputs=[file_upload_button_single, image_mode_choice_state], outputs=[image_mode_choice_state])
+    file_upload_button_batch.upload(fn=load_images, inputs=[file_upload_button_batch, image_mode_choice_state], outputs=[image_mode_choice_state])
+    crop_or_resize_radio.change(fn=set_crop_or_resize, inputs=[crop_or_resize_radio], outputs=[])
+    landscape_crop_dropdown.select(fn=set_landscape_square_crop, inputs=[landscape_crop_dropdown], outputs=[])
+    portrait_crop_dropdown.select(fn=set_portrait_square_crop, inputs=[portrait_crop_dropdown], outputs=[])
+    # square_image_edit_slider.change(fn=set_square_size, inputs=[square_image_edit_slider], outputs=[])
+    write_tag_opts_dropdown.select(fn=set_write_tag_opts, inputs=[], outputs=[])
+    use_tag_opts_radio.select(fn=set_use_tag_opts_radio, inputs=[], outputs=[])
+    image_with_tag_path_textbox.change(fn=set_image_with_tag_path_textbox, inputs=[image_with_tag_path_textbox], outputs=[])
+    copy_mode_ckbx.change(fn=set_copy_mode_ckbx, inputs=[copy_mode_ckbx], outputs=[])
 
     download_remove_tag_file_button.click(help.download_negative_tags_file, None, None)
     tagging_model_download_types.select(fn=make_visible, inputs=[], outputs=[model_download_button])

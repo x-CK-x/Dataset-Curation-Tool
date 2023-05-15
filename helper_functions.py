@@ -10,6 +10,8 @@ from bs4 import BeautifulSoup
 from dateutil.parser import parse
 import re
 from datetime import datetime
+import importlib.util
+import shutil
 
 ops = {'+': operator.add, '-': operator.sub}
 
@@ -99,33 +101,38 @@ def to_padded(num):
 def is_windows():
     return os.name == 'nt'
 
+def parse_single_all_tags(file_path):
+    all_tags = []
+    # verbose_print(f"file_path:\t\t{file_path}")
+    if not os.path.exists(file_path):
+        return all_tags.copy()
+    with open(file_path, 'r', encoding='utf-8') as read_file:
+        while True:
+            line = read_file.readline()
+            if not line:
+                break
+
+            line = line.replace(" ", "")
+            length = len(line.split(","))
+
+            if length > 3:  # assume everything on one line
+                tags = line.split(",")
+                for tag in tags:
+                    all_tags.append(tag)
+            else:  # assume cascaded tags
+                tag = line.split(",")[0]
+                all_tags.append(tag)
+        read_file.close()
+    return all_tags.copy()
+
 def parse_files_all_tags(file_list):
     all_tags_all_files = {}
     temp = '\\' if is_windows() else '/'
     for single_file in file_list:
-        all_tags = []
         img_id = single_file.split(temp)[-1].split(".")[0]
-        # verbose_print(f"single_file:\t\t{single_file}")
-        with open(single_file, 'r', encoding='utf-8') as read_file:
-            while True:
-                line = read_file.readline()
-                if not line:
-                    break
-
-                line = line.replace(" ", "")
-                length = len(line.split(","))
-
-                if length > 3:  # assume everything on one line
-                    tags = line.split(",")
-                    for tag in tags:
-                        all_tags.append(tag)
-                else:  # assume cascaded tags
-                    tag = line.split(",")[0]
-                    all_tags.append(tag)
-            read_file.close()
-            all_tags_all_files[img_id] = all_tags
+        all_tags = parse_single_all_tags(single_file)
+        all_tags_all_files[img_id] = all_tags
     return all_tags_all_files.copy()
-
 
 def parse_csv_all_tags(csv_file_path):
     # verbose_print(f"single_file:\t\t{csv_file_path}")
@@ -163,8 +170,11 @@ def merge_dict(path1, path2, path3):
     return temp.copy()
 
 def write_tags_to_text_file(input_string, file_path):
+    print(f"input_string:\t{input_string}")
+    print(f"file_path:\t{file_path}")
     with open(file_path, 'w') as file:
         file.write(input_string)
+    file.close()
 
 def dict_to_sorted_list(d):
     return sorted([[k, v] for k, v in d.items()], key=lambda x: x[1], reverse=True)
@@ -402,7 +412,6 @@ def download_negative_tags_file():
         command_str = f"aria2c "
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
-    verbose_print(f"command_str:\t{command_str}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)
     verbose_print("Done")
@@ -424,7 +433,6 @@ def download_all_e6_tags_csv():
         command_str = f"aria2c "
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
-    verbose_print(f"command_str:\t{command_str}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)
     if not is_windows():
@@ -453,7 +461,6 @@ def download_zack3d_model():
         command_str = f"aria2c "
     command_str = f"{command_str}{url}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
-    verbose_print(f"command_str:\t{command_str}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)
     repo_name = "Z3D-E621-Convnext"
@@ -509,3 +516,67 @@ def check_to_update_csv():
     else:
         download_all_e6_tags_csv()
         verbose_print(f"ALL TAGS CSV HAS BEEN UPDATED. PLEASE REMOVE OLDER VERSION/S")
+
+def is_installed(package):
+    try:
+        spec = importlib.util.find_spec(package)
+    except ModuleNotFoundError:
+        return False
+    return spec is not None
+
+def copy_over_imgs(src, dst, image_mode_choice_state):
+    temp = '\\' if is_windows() else '/'
+    if image_mode_choice_state.lower() == 'single':
+        if '.png' in src or '.jpg' in src:
+            shutil.copy(src, dst)
+
+            file_name_src = list(src)
+            del file_name_src[-3:]
+            file_name_src = ''.join(file_name_src)
+            file_name_src += 'txt'
+            path_src = os.path.join(src, file_name_src)
+
+            file_name_dst = list(src)
+            del file_name_dst[-3:]
+            file_name_dst = ''.join(file_name_dst)
+            file_name_dst += 'txt'
+            path_dst = os.path.join(src, file_name_dst)
+
+            if not os.path.exists(path_src):
+                # create a new file & assumes NO tags
+                f = open(path_dst, 'w')
+                f.close()
+    else:
+        # Fetching the list of all the files
+        files = os.listdir(src)
+        # Fetching all the files to directory
+        for file_name in files:
+            if '.png' in file_name or '.jpg' in file_name:
+                shutil.copy(os.path.join(src, file_name), os.path.join(dst, file_name))
+
+                file_name = list(file_name)
+                del file_name[-3:]
+                file_name = ''.join(file_name)
+                file_name += 'txt'
+                path = os.path.join(src, file_name)
+                if os.path.exists(path):
+                    shutil.copy(path, os.path.join(dst, file_name))
+                else:
+                    # create a new file & assumes NO tags
+                    f = open(os.path.join(dst, file_name), 'w')
+                    f.close()
+    print("Images are copied successfully")
+
+def copy_over_tags(src, dst, image_mode_choice_state):
+    temp = '\\' if is_windows() else '/'
+    if image_mode_choice_state.lower() == 'single':
+        if '.txt' in src:
+            shutil.copy(src, dst)
+    else:
+        # Fetching the list of all the files
+        files = os.listdir(src)
+        # Fetching all the files to directory
+        for file_name in files:
+            if '.txt' in file_name:
+                shutil.copy(os.path.join(src, file_name), os.path.join(dst, file_name))
+    print("Files are copied successfully")
