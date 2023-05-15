@@ -16,6 +16,23 @@ A tool for downloading from public image boards (which allow scraping) / preview
 - Tag statistics tab
 - Download relevant repos & pre-trained model/s tab
 
+#### Features ADDED (05-15-2023)
+
+Users can now:
+- utilize a captioning model for images
+- single & batch modes available
+- overwrite, merge, append, pre-pend options available
+- use all tag/s, use tag/s above threshold, use only selected tag/s options
+- crop & resize options
+- crop w/ nine-grid cell configurations
+- threshold slider
+- image preview
+- tag confidence chart
+- checkboxes for all generated tags for user selection
+- options to save images and/or tags only
+- optimized (CPU) runtime
+- copy option for moving files to the "primary" dataset directory
+
 #### (05-09-2023)
 
 - sort gallery by newest-to-oldest & oldest-to-newest
