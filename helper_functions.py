@@ -12,6 +12,8 @@ import re
 from datetime import datetime
 import importlib.util
 import shutil
+from zipfile import ZipFile
+import gzip
 
 ops = {'+': operator.add, '-': operator.sub}
 
@@ -444,14 +446,11 @@ def download_all_e6_tags_csv():
             verbose_print(line)
     else:
         # finally unzip the file
-        command_str = "wzunzip -d "
-        command_str = f"{command_str}{repo_name} {os.getcwd()}"
-        verbose_print(f"unzipping zip of model:\t{repo_name}")
-        for line in execute(command_str.split(" ")):
-            verbose_print(line)
+        unzip_file(repo_name)
     verbose_print("Done")
 
 def download_zack3d_model():
+    temp = '\\' if is_windows() else '/'
     url = "https://pixeldrain.com/api/file/iNMyyi2w"
     command_str = f"wget "
     progress_flag = "-q --show-progress "
@@ -464,23 +463,19 @@ def download_zack3d_model():
     for line in execute(command_str.split(" ")):
         verbose_print(line)
     repo_name = "Z3D-E621-Convnext"
+
+    new_path = os.getcwd()
+
     if not is_windows():
         # finally unzip the file
         command_str = "unzip "
-        new_path = os.getcwd().split('/')
-        del new_path[-1]
-        new_path = '/'.join(new_path)
-        command_str = f"{command_str}{url.split('/')[-1]} -d {new_path}"
+        command_str = f"{command_str}{url.split(temp)[-1]} -d {new_path}"
         verbose_print(f"unzipping zip of model:\t{new_path}")
         for line in execute(command_str.split(" ")):
             verbose_print(line)
     else:
         # finally unzip the file
-        command_str = "wzunzip -d "
-        command_str = f"{command_str}{url.split('/')[-1]} {os.getcwd()}"
-        verbose_print(f"unzipping zip of model:\t{url.split('/')[-1]}")
-        for line in execute(command_str.split(" ")):
-            verbose_print(line)
+        unzip_file(url.split(temp)[-1])
     verbose_print("Done")
 
 def days_since(date_str: str) -> int:
@@ -590,3 +585,25 @@ def check_requirements():
             for line in execute(command_str.split(" ")):
                 verbose_print(line)
     print('done')
+
+def unzip_file(file_path, new_name=""):
+    temp = '\\' if is_windows() else '/'
+    name = file_path.split(temp)[-1]
+    ext = name = name.split('.')[-1]
+    name = name.split('.')[0]
+
+    if len(new_name) == 0:
+        if '.csv' in file_path:
+            new_name = f"{name}.csv"
+        else:
+            new_name = name
+
+    if 'gz' in ext:
+        with gzip.open(file_path, 'rb') as f_in:
+            with open(new_name, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        verbose_print(f"gz file:\t{file_path} & {new_name}")
+    else: # if 'zip' or no extension
+        with ZipFile(file_path, 'r') as zObject:
+            zObject.extractall(path=os.getcwd())
+        verbose_print(f"zip file of some kind:\t{file_path}")

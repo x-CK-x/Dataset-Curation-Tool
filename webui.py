@@ -1959,6 +1959,7 @@ def auto_config_apply(images_full_change_dict_textbox, progress=gr.Progress()):
         raise ValueError('no path name specified | no config created | config empty')
 
 def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group):
+    temp = '\\' if help.is_windows() else '/'
     if repo_download_releases_only:
         for asset_url in release_assets_checkbox_group:
             command_str = f"wget "
@@ -1971,9 +1972,12 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
             help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
-            asset_url = (asset_url.split('/'))[-1]
+
+            asset_url = (asset_url.split(temp))[-1]
+
             if not ".zip" in asset_url:
                 asset_url = f"{asset_url}.zip"
+
             if not help.is_windows():
                 # finally unzip the file
                 command_str = "unzip "
@@ -1983,11 +1987,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                     help.verbose_print(line)
             else:
                 # finally unzip the file
-                command_str = "wzunzip -d "
-                command_str = f"{command_str}{asset_url} {os.getcwd()}"
-                help.verbose_print(f"unzipping zip of model:\t{asset_url}")
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
+                help.unzip_file(asset_url)
     else:
         for repo_name in repo_download_checkbox_group:
             command_str = "git clone --progress "
@@ -2017,21 +2017,19 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
                 for line in help.execute(command_str.split(" ")):
                     help.verbose_print(line)
+
+                url_path = (url_path.split(temp))[-1]
+
                 if not help.is_windows():
                     # finally unzip the file
                     command_str = "unzip "
-                    url_path = (url_path.split('/'))[-1]
                     command_str = f"{command_str}{url_path}"
                     help.verbose_print(f"unzipping zip of model:\t{repo_name}")
                     for line in help.execute(command_str.split(" ")):
                         help.verbose_print(line)
                 else:
                     # finally unzip the file
-                    command_str = "wzunzip -d "
-                    command_str = f"{command_str}{url_path} {os.getcwd()}"
-                    help.verbose_print(f"unzipping zip of model:\t{url_path}")
-                    for line in help.execute(command_str.split(" ")):
-                        help.verbose_print(line)
+                    help.unzip_file(url_path)
             elif "webui" in repo_name.lower():
                 # get full url path
                 url_path = "https://github.com/AUTOMATIC1111/stable-diffusion-webui.git"
