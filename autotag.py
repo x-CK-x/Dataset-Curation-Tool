@@ -39,16 +39,6 @@ class AutoTag:
         self.dest_folder = dest_folder
         self.tag_folder = tag_folder
 
-    def check_requirements(self):
-        requirements_list = ['torch', 'onnxruntime', 'onnxruntime-gpu', 'protobuf==3.20']
-        for requirement in requirements_list:
-            if not help.is_installed(requirement):
-                command_str = "pip install "
-                command_str = f"{command_str}{requirement}"
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
-        print('done')
-
     def load_model(self, model_dir=os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), model_name="Z3D-E621-Convnext.onnx", use_cpu=False):
         self.model_name = model_name
         self.model_dir = model_dir

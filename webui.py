@@ -3,7 +3,6 @@ import os
 import multiprocessing as mp
 import glob
 import copy
-import sys
 
 import batch_downloader
 import autotag
@@ -14,9 +13,7 @@ import datetime
 import pandas as pd
 from tqdm import tqdm
 import numpy as np
-
 from PIL import Image
-from matplotlib import cm
 
 '''
 ##################################################################################################################################
@@ -2163,7 +2160,7 @@ def load_model(model_name, use_cpu, event_data: gr.SelectData):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
 
     autotagmodel.load_model(model_name=event_data.value, use_cpu=use_cpu)
     help.verbose_print(f"model loaded using cpu={use_cpu}")
@@ -2177,7 +2174,7 @@ def load_model(model_name, use_cpu, event_data: gr.SelectData):
 #         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
 #                                              settings_json["tag_count_list_folder"])
 #         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-#         autotagmodel.check_requirements()
+#         help.check_requirements()
 #
 #     autotagmodel.load_model(model_name=model_name, use_cpu=use_cpu)
 #     help.verbose_print(f"model reloaded using cpu={use_cpu}")
@@ -2191,7 +2188,7 @@ def set_threshold(threshold):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
 
     temp_confids = None
     temp_tags = None
@@ -2217,7 +2214,7 @@ def load_images(images_path, image_mode_choice_state):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     image_mode_choice_state = ""
     if images_path:
         help.verbose_print(f"images_path:\t{images_path}")
@@ -2250,7 +2247,7 @@ def update_image_mode(image_mode_choice_dropdown, event_data: gr.SelectData):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     image_modes = ['Single', 'Batch']
     print(f"image_mode_choice_dropdown:\t{image_mode_choice_dropdown}")
     print(f"event_data:\t{event_data}")
@@ -2275,7 +2272,7 @@ def set_square_size(square_image_edit_slider):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     autotagmodel.set_image_size(crop_size=square_image_edit_slider)
     help.verbose_print(f"new crop/resize dim/s set")
 def set_crop_or_resize(crop_or_resize_radio):
@@ -2287,7 +2284,7 @@ def set_crop_or_resize(crop_or_resize_radio):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     help.verbose_print(f"set crop or resize")
     if autotagmodel:
         autotagmodel.set_crop_or_resize(crop_or_resize_radio)
@@ -2300,7 +2297,7 @@ def set_landscape_square_crop(landscape_crop_dropdown, event_data: gr.SelectData
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     help.verbose_print(f"set landscape crop")
     if autotagmodel:
         autotagmodel.set_landscape_square_crop(event_data.value)
@@ -2313,7 +2310,7 @@ def set_portrait_square_crop(portrait_crop_dropdown, event_data: gr.SelectData):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     help.verbose_print(f"set portrait crop")
     if autotagmodel:
         autotagmodel.set_portrait_square_crop(event_data.value)
@@ -2326,7 +2323,7 @@ def set_write_tag_opts(event_data: gr.SelectData):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     autotagmodel.set_write_tag_opts(event_data.value)
     help.verbose_print(f"set write opts:\t{event_data.value}")
 def set_use_tag_opts_radio(event_data: gr.SelectData):
@@ -2338,7 +2335,7 @@ def set_use_tag_opts_radio(event_data: gr.SelectData):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     autotagmodel.set_use_tag_opts(event_data.value)
     help.verbose_print(f"set use opts:\t{event_data.value}")
 def set_image_with_tag_path_textbox(image_with_tag_path_textbox):
@@ -2350,7 +2347,7 @@ def set_image_with_tag_path_textbox(image_with_tag_path_textbox):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     help.verbose_print(f"setting path to data origin")
     autotagmodel.set_image_with_tag_path_textbox(image_with_tag_path_textbox)
 def set_copy_mode_ckbx(copy_mode_ckbx):
@@ -2362,7 +2359,7 @@ def set_copy_mode_ckbx(copy_mode_ckbx):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     autotagmodel.set_copy_mode_ckbx(copy_mode_ckbx)
     help.verbose_print(f"set copy")
 
@@ -2376,7 +2373,7 @@ def interrogate_images(image_mode_choice_state, confidence_threshold_slider):
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                              settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
-        autotagmodel.check_requirements()
+        help.check_requirements()
     image_confidence_values = None
     image_generated_tags = None
     image_preview_pil = None
