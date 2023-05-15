@@ -16,7 +16,7 @@ A tool for downloading from public image boards (which allow scraping) / preview
 - Tag statistics tab
 - Download relevant repos & pre-trained model/s tab
 
-#### Features ADDED (05-15-2023)
+#### (05-15-2023)
 
 Users can now:
 - utilize a captioning model for images
