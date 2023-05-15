@@ -66,7 +66,7 @@ cd Dataset-Curation-Tool
 pip install -r requirements.txt
 ```
 
-#### aria2, wget, & (windows) wzunzip
+#### aria2
 This downloader uses aria2 for fast downloading.
 ```
 sudo apt-get install aria2
@@ -79,8 +79,6 @@ sudo apt-get install unzip
 ```
 
 For Windows, install the aria2 build https://github.com/aria2/aria2/releases/   Add aria2 in your environment variable paths.
-
-For Windows, install the wzunzip https://www.winzip.com/en/product/command-line/#overview   Add wzunzip in your environment variable paths.
 
 ## How to use
 
