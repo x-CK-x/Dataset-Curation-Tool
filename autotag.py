@@ -202,14 +202,25 @@ class AutoTag:
                     # copy image over
                     shutil.copy(temp_src_image_path, temp_dst_image_path)
 
-                # load csv dictionaries
-                artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "artist.csv"))
-                character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "character.csv"))
-                species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "species.csv"))
-                general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "general.csv"))
-                meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "meta.csv"))
-                rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "rating.csv"))
-                tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "tags.csv"))
+                artist_csv_dict = {}
+                character_csv_dict = {}
+                species_csv_dict = {}
+                general_csv_dict = {}
+                meta_csv_dict = {}
+                rating_csv_dict = {}
+                tags_csv_dict = {}
+
+                # check if csv dictionaries EXIST yet (i.e. from having downloaded images & tags)
+                if os.path.exists(os.path.join(self.tag_folder, "tags.csv")):
+                    # load csv dictionaries
+                    artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "artist.csv"))
+                    character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "character.csv"))
+                    species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "species.csv"))
+                    general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "general.csv"))
+                    meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "meta.csv"))
+                    rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "rating.csv"))
+                    tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "tags.csv"))
+
                 # update existing csvs
                 for tag in merged_list:
                     artist_csv_dict, character_csv_dict, species_csv_dict, \
@@ -403,14 +414,25 @@ class AutoTag:
             if self.copy_mode_ckbx: # copy to dataset directory
                 help.write_tags_to_text_file(tag_string, temp_dst_tags_path)
 
-            # load csv dictionaries
-            artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "artist.csv"))
-            character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "character.csv"))
-            species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "species.csv"))
-            general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "general.csv"))
-            meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "meta.csv"))
-            rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "rating.csv"))
-            tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "tags.csv"))
+            artist_csv_dict = {}
+            character_csv_dict = {}
+            species_csv_dict = {}
+            general_csv_dict = {}
+            meta_csv_dict = {}
+            rating_csv_dict = {}
+            tags_csv_dict = {}
+
+            # check if csv dictionaries EXIST yet (i.e. from having downloaded images & tags)
+            if os.path.exists(os.path.join(self.tag_folder, "tags.csv")):
+                # load csv dictionaries
+                artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "artist.csv"))
+                character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "character.csv"))
+                species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "species.csv"))
+                general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "general.csv"))
+                meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "meta.csv"))
+                rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "rating.csv"))
+                tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(self.tag_folder, "tags.csv"))
+
             # update existing csvs
             for tag in merged_list:
                 artist_csv_dict, character_csv_dict, species_csv_dict, \
