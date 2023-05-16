@@ -2556,7 +2556,7 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
         with gr.Row():
             top_n = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Top N', value=settings_json["top_n"], info='ONLY the top N images will be downloaded')
         with gr.Row():
-            min_short_side = gr.Slider(minimum=1, maximum=100000, step=1, label='Resize Param: Min Short Side', value=settings_json["min_short_side"], info='ANY image\'s length or width that falls below this number will be resized')
+            min_short_side = gr.Slider(minimum=1, maximum=100000, step=1, label='Resize Param: Min Short Side', value=settings_json["min_short_side"], info='ANY image\'s length or width that falls (ABOVE) this number will be resized')
     with gr.Tab("Checkbox Config"):
         with gr.Row():
             config_save_var2 = gr.Button(value="Apply & Save Settings", variant='primary')
