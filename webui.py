@@ -2726,7 +2726,7 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
                     download_folder_type = gr.Radio(choices=file_extn_list, label='Select Filename Type')# webm, swf not yet supported
                     img_id_textbox = gr.Textbox(label="Image ID", interactive=False, lines=1, value="")
                 with gr.Row():
-                    tag_search_textbox = gr.Textbox(label="Search e621 tags the same way as the site prepend the minus symbol to make the tag negative E.G. anthro -fox", lines=1, value="")
+                    tag_search_textbox = gr.Textbox(label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)", lines=1, value="")
                 with gr.Row():
                     apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
                     select_multiple_images_checkbox = gr.Checkbox(label="Multi-Image Select (click)", value=False)
