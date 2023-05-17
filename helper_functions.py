@@ -607,3 +607,7 @@ def unzip_file(file_path, new_name=""):
         with ZipFile(file_path, 'r') as zObject:
             zObject.extractall(path=os.getcwd())
         verbose_print(f"zip file of some kind:\t{file_path}")
+
+def make_all_dirs(list_of_paths):
+    for path in list_of_paths:
+        create_dirs(path)

@@ -136,6 +136,21 @@ all_predicted_tags = []
 #################################################     COMPONENT/S FUNCTION/S     #################################################
 ##################################################################################################################################
 '''
+def generate_all_dirs():
+    global settings_json
+    temp_path_list_dirs = []
+    batch_dir_path = os.path.join(os.getcwd(), settings_json["batch_folder"])
+    temp_path_list_dirs.append(batch_dir_path)
+    downloaded_posts_dir_path = os.path.join(batch_dir_path, settings_json["downloaded_posts_folder"])
+    temp_path_list_dirs.append(downloaded_posts_dir_path)
+    temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, settings_json["png_folder"]))
+    temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, settings_json["jpg_folder"]))
+    temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, settings_json["webm_folder"]))
+    temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, settings_json["gif_folder"]))
+    temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, settings_json["swf_folder"]))
+    temp_path_list_dirs.append(os.path.join(batch_dir_path, settings_json["tag_count_list_folder"]))
+    help.make_all_dirs(temp_path_list_dirs)
+
 def add_current_images():
     global auto_complete_config, all_images_dict
     temp = list(all_images_dict.keys())
@@ -2230,7 +2245,7 @@ def load_images(images_path, image_mode_choice_state):
                 images_path = images_path[0]
             help.verbose_print(f"images_path:\t{images_path}")
             help.verbose_print(f"images_path.name:\t{images_path.name}")
-            ######## DO I ADD TO LIST FIRST OR NO!?!?!?!
+
             autotagmodel.set_data(train_data_dir=images_path.name, single_image=True)
             image_mode_choice_state = 'Single'
     help.verbose_print(f"images loaded")
@@ -2364,6 +2379,8 @@ def set_copy_mode_ckbx(copy_mode_ckbx):
 def interrogate_images(image_mode_choice_state, confidence_threshold_slider):
     global all_tags_ever_dict
     global autotagmodel, all_predicted_confidences, all_predicted_tags
+    generate_all_dirs()
+
     if autotagmodel is None:
         folder_path = os.path.join(cwd, settings_json["batch_folder"])
         folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
@@ -2418,6 +2435,8 @@ def interrogate_images(image_mode_choice_state, confidence_threshold_slider):
 # also creates an empty tag file for the image file if there isn't one already
 def save_custom_images(image_mode_choice_state, image_with_tag_path_textbox):
     global autotagmodel, all_predicted_confidences, all_predicted_tags
+    generate_all_dirs()
+
     all_paths = autotagmodel.get_dataset().get_image_paths()
     help.verbose_print(f"all image paths to save:\t{all_paths}")
     help.verbose_print(f"image_with_tag_path_textbox:\t{image_with_tag_path_textbox}")
@@ -2443,6 +2462,8 @@ def save_custom_images(image_mode_choice_state, image_with_tag_path_textbox):
 
 def save_custom_tags(image_mode_choice_state, image_with_tag_path_textbox, any_selected_tags):
     global autotagmodel, all_predicted_tags
+    generate_all_dirs()
+
     all_paths = autotagmodel.get_dataset().get_image_paths()
     images_path = all_paths
     if (image_with_tag_path_textbox is None or not len(image_with_tag_path_textbox) > 0 or (
