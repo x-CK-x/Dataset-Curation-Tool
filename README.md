@@ -42,6 +42,12 @@ For Windows, install the aria2 build https://github.com/aria2/aria2/releases/
 
 Add aria2 in your environment variable paths.
 
+Here's two way's to add to PATH on your Windows machine:
+
+https://www.java.com/en/download/help/path.html
+
+https://docs.oracle.com/en/database/oracle/machine-learning/oml4r/1.5.1/oread/creating-and-modifying-environment-variables-on-windows.html#GUID-DD6F9982-60D5-48F6-8270-A27EC53807D0
+
 ## How to use
 
 #### Run the Web-User Interface
@@ -52,70 +58,6 @@ python webui.py --server_port 7860 --inbrowser --share --username NAME --passwor
 ```
 
 ## Additional Information
-
-##### General Config Tab
-
-- set the path to the batch directory (stores downloaded data) ; creates new directory if it doesn't yet exist
-- set the path to the resized images directory (stores resized data) ; creates new directory if it doesn't yet exist
-- set tag seperator/delimeter
-- set tag order
-- set any tags to prepend succeeding the download step
-- set any tags to append succeeding the download step
-- set the target image extension
-- set tag handler for resized images
-- set path to json file if not already specified
-- (optional) create new config option whenever clicking "Apply & Save"
-- (optional) set json file from dropdown menu
-- (optional) load json config from file
-
-##### Stats Config Tab
-
-- set all stats requirements of images on the image-board website
-
-##### Checkbox Config Tab
-
-- configure settings for data collection, downloading, & resizing
-
-##### Required Tags Config Tab
-
-- manually provide or specify a file with the tags to include
-- (to remove tags) check tags and press remove ; all non-removed tags will be included in data collection
-
-##### Blacklist Tags Config Tab
-
-- manually provide or specify a file with the tags to exclude
-- (to remove tags) check tags and press remove ; all non-removed tags will be included in data collection
-
-##### Additional Components Config Tab
-
-- set paths for the different types of downloaded data
-- (optional) set path to file with image IDs to include and/or exclude
-- set path to save all searched images IDs to
-- (optional) set path to file with all negative tags
-
-##### Run Tab
-
-- set cpu usage
-- (optional) set to complete all phases of the download per batch
-- (optional) keep db data
-- (optional) cache posts file if multiple batches
-- (optional) path to posts/tags files
-- (optional if using linux) path to aria2c program
-- run button
-- a dropdown menu to set multiple configs to run as a batch
-
-##### Image Preview Tab
-
-- set file type to view
-- search downloaded gallery with multiple file type options (positive & negative tags ONLY)
-- easily add tags into respective categories for single images, as well as images of any type (including images that have been searched)
-
-##### Data Stats Tab
-
-- set the method type to run & meta tag category
-
-#### File and Folder Paths
-Whether it's a file or a folder path, you can specify either a relative path or an absolute path. Each parameter that is a relative path uses the specified parent folder in each batch accordingly.
 
 ##### Default folder directory tree
 ```
