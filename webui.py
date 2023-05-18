@@ -176,7 +176,6 @@ def reset_selected_img(img_id_textbox):
     img_general_tag_checkbox_group = gr.update(choices=[])
     img_meta_tag_checkbox_group = gr.update(choices=[])
     img_rating_tag_checkbox_group = gr.update(choices=[])
-
     return img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
 
 def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,
@@ -497,6 +496,75 @@ def show_gallery(folder_type_select, sort_images, sort_option):
             images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
 
     global is_csv_loaded
+    if not is_csv_loaded:
+        full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                           settings_json["downloaded_posts_folder"])
+
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["tag_count_list_folder"])
+        # load ALL tags into relative categorical dictionaries
+        is_csv_loaded = True
+        global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
+        artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
+        character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
+        species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
+        general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
+        meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
+        rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
+        tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
+
+        if not all_images_dict or len(all_images_dict.keys()) == 0:
+            all_images_dict = help.merge_dict(os.path.join(full_path_downloads, settings_json[f"png_folder"]),
+                                         os.path.join(full_path_downloads, settings_json[f"jpg_folder"]),
+                                         os.path.join(full_path_downloads, settings_json[f"gif_folder"]))
+
+        # populate the timekeeping dictionary
+        initialize_posts_timekeeper()
+
+        # verbose_print(f"all_images_dict:\t\t{all_images_dict}")
+        # help.verbose_print(f"list(all_images_dict[ext]):\t\t{list(all_images_dict[folder_type_select])}")
+
+    if sort_images and len(sort_option) > 0 and len(list(image_creation_times.keys())) > 0:
+        # parse to img_id -> to get the year
+        if sort_option == "new-to-old":
+            images = sorted(images, key=lambda x: image_creation_times.get(((x.split(temp)[-1]).split(".")[0]), float('-inf')),
+                            reverse=True)
+        elif sort_option == "old-to-new":
+            images = sorted(images, key=lambda x: image_creation_times.get(((x.split(temp)[-1]).split(".")[0]), float('-inf')))
+
+    # help.verbose_print(f"images:\t{images}")
+    return gr.update(value=images, visible=True)
+
+######
+# all_images_dict ->
+### image_type -> {img_id, tags}
+### searched -> {img_id, tags}
+######
+def force_reload_show_gallery(folder_type_select, sort_images, sort_option):
+    help.verbose_print(f"folder_type_select:\t{folder_type_select}")
+
+    global all_images_dict, image_creation_times
+    temp = '\\' if help.is_windows() else '/'
+    # clear searched dict
+    if "searched" in all_images_dict:
+        del all_images_dict["searched"]
+        all_images_dict["searched"] = {}
+
+    folder_path = os.path.join(cwd, settings_json["batch_folder"])
+    folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+    folder_path = os.path.join(folder_path, settings_json[f"{folder_type_select}_folder"])
+
+    # type select
+    images = []
+    if not all_images_dict or len(all_images_dict.keys()) == 0:
+        images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
+        # loading images
+        add_current_images()
+    else:
+        for name in list(all_images_dict[folder_type_select].keys()):
+            images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
+
+    global is_csv_loaded
+    is_csv_loaded = False
     if not is_csv_loaded:
         full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                            settings_json["downloaded_posts_folder"])
@@ -2548,7 +2616,36 @@ preview_hide_rule = """
 }
 """
 
-with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_button_css} {red_button_css}") as demo:
+refresh_aspect_btn_rule = """
+#refresh_aspect_btn {
+  margin: 0.6em 0em 0.55em 1.25em;
+  max-width: 2.5em;
+  min-width: 2.5em !important;
+  height: 2.4em;
+}
+"""
+
+#
+#  min-width: 10em !important;
+#  margin: 15em 0em 15em 0;
+#  height: 8em;
+trim_row_length = """
+#trim_row_length {
+  max-width: 0em;
+  min-width: 6.5em !important;
+}
+"""
+
+trim_markdown_length = """
+#trim_markdown_length {
+  margin: 0.6em 0em 0.55em 0;
+  max-width: 7.5em;
+  min-width: 2.5em !important;
+  height: 2.4em;
+}
+"""
+
+with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_length} {trim_markdown_length} {thumbnail_colored_border_css} {green_button_css} {red_button_css}") as demo:
     with gr.Tab("General Config"):
         with gr.Row():
             config_save_var0 = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -2770,6 +2867,10 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
         with gr.Row():
             with gr.Column():
                 with gr.Row():
+                    with gr.Column(elem_id="trim_row_length"):
+                        gr.Markdown("""Reload Gallery""", elem_id="trim_markdown_length")
+                        refresh_symbol = '\U0001f504'  # 🔄
+                        refresh_aspect_btn = gr.Button(value=refresh_symbol, variant="variant", elem_id="refresh_aspect_btn")
                     download_folder_type = gr.Radio(choices=file_extn_list, label='Select Filename Type')# webm, swf not yet supported
                     img_id_textbox = gr.Textbox(label="Image ID", interactive=False, lines=1, value="")
                 with gr.Row():
@@ -2931,6 +3032,10 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
       return images_selected_state
     }
     """
+
+    refresh_aspect_btn.click(fn=force_reload_show_gallery,
+                             inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
+                             outputs=[gallery_comp])
 
     image_generated_tags.change(fn=prompt_string_builder,
                                 inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
