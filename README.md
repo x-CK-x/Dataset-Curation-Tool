@@ -53,17 +53,6 @@ https://docs.oracle.com/en/database/oracle/machine-learning/oml4r/1.5.1/oread/cr
 
 ## How to use
 
-#### Troubleshooting
-```
-Exception: [AbstractCommand.cc:313] errorCode=1 Network problem has occurred. cause:A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
-```
-
-try applying the following:
-
-```
---disable-ipv6 to the end of the command to download the file and/or use the url to download it directly
-```
-
 #### Run the Web-User Interface
 ```
 python webui.py
