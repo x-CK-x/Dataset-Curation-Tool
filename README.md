@@ -8,56 +8,6 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ![https://github.com/x-CK-x/Dataset-Curation-Tool/wiki](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki)
 
-## Base Features
-
-- User friendly UI
-- Easy to load, edit, & create new json configs
-- Advanced configuration tabs
-- Easy to run directly from the UI
-- Easy to run multiple configs in batch runs
-- Gallery preview w/ search capability
-- Easy to use Tag Editor
-- Tag statistics tab
-- Download relevant repos & pre-trained model/s tab
-
-#### (05-15-2023)
-
-Users can now:
-- utilize a captioning model for images
-- single & batch modes available
-- overwrite, merge, append, pre-pend options available
-- use all tag/s, use tag/s above threshold, use only selected tag/s options
-- crop & resize options
-- crop w/ nine-grid cell configurations
-- threshold slider
-- image preview
-- tag confidence chart
-- checkboxes for all generated tags for user selection
-- options to save images and/or tags only
-- optimized (CPU) runtime
-- copy option for moving files to the "primary" dataset directory
-
-#### (05-09-2023)
-
-- sort gallery by newest-to-oldest & oldest-to-newest
-- new multi-image select feature
-- user no longer needs to enter tags into a specific category (it's done automatically)
-- download & extract auto-tagging model
-
-#### (04-26-2023)
-
-- Download relevant repos & pre-trained model/s tab
-
-#### (04-23-2023)
-
-- Progress Bars for auto-config apply button for post-processing all images
-- A feature that tracks changes for images that are downloaded and saves them to a file; additionally tracking tag/s added removed to images as well as the images themselves being removed. The file generated can be used to instantly filter images & tags to match those exact changes later on. (runs automatically after the backend script finishes running)
-- A button, search bar, and selection box for appending and/or prepending text/tags based on a searched tag
-- A button for replacing text/tags automatically with provided text files
-- A button for removing images individually and/or batched
-- A button to apply the persist the changes to Disk
---- additional notes have been added to the headers of some of the Tabs as well
-
 ## Requirements
 python 3.8+
 
@@ -72,17 +22,21 @@ pip install -r requirements.txt
 
 #### aria2
 This downloader uses aria2 for fast downloading.
+(Linux)
 ```
 sudo apt-get install aria2
 sudo apt-get install wget
 ```
 #### other system installs
+(Linux)
 - unzip for the (optionally) downloaded zip files
 ```
 sudo apt-get install unzip
 ```
 
-For Windows, install the aria2 build https://github.com/aria2/aria2/releases/   Add aria2 in your environment variable paths.
+(Windows)
+For Windows, install the aria2 build https://github.com/aria2/aria2/releases/
+Add aria2 in your environment variable paths.
 
 ## How to use
 
