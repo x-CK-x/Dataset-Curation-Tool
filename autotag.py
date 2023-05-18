@@ -10,7 +10,6 @@ import shutil
 
 import torch
 import onnxruntime as ort
-import tensorflow as tf
 
 import helper_functions as help
 import image_data_loader
