@@ -2480,6 +2480,32 @@ def save_custom_tags(image_mode_choice_state, image_with_tag_path_textbox, any_s
     image_preview_pil = None
     return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), gr.update(value=image_preview_pil)
 
+def prompt_string_builder(use_tag_opts_radio, any_selected_tags, threshold):
+    global all_predicted_tags, all_predicted_confidences
+    use_tag_opts = ['Use All', 'Use All above Threshold', 'Manually Select']
+
+    image_generated_tags_prompt_builder_textbox = gr.update(value="")
+    if (all_predicted_tags is not None and all_predicted_confidences is not None) and \
+            (len(all_predicted_tags) > 0 and len(all_predicted_confidences) > 0):
+        if use_tag_opts_radio is not None and len(use_tag_opts_radio) > 0:
+            if use_tag_opts_radio in use_tag_opts[1]:
+                temp_confids = None
+                temp_tags = None
+                if len(all_predicted_tags) > 0:
+                    temp_confids = copy.deepcopy(all_predicted_confidences)
+                    temp_tags = copy.deepcopy(all_predicted_tags)
+                    keys = list(temp_confids.keys())
+                    for key in keys:
+                        if temp_confids[key] <= (float(threshold) / 100.0):
+                            del temp_confids[key]
+                            temp_tags.remove(key)
+                image_generated_tags_prompt_builder_textbox.update(value=", ".join(temp_tags))
+            elif use_tag_opts_radio in use_tag_opts[0]:
+                image_generated_tags_prompt_builder_textbox.update(value=", ".join(copy.deepcopy(all_predicted_tags)))
+            elif use_tag_opts_radio in use_tag_opts[2]:
+                image_generated_tags_prompt_builder_textbox.update(value=", ".join(any_selected_tags))
+    return image_generated_tags_prompt_builder_textbox
+
 # check to update the tags csv
 help.check_to_update_csv()
 # load the everything tags csv
@@ -2841,7 +2867,6 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
                 #     square_image_edit_slider = gr.Slider(minimum=0, maximum=3000, step=1, label='Crop/Resize Square Image Size', info='Length or Width', value=448, visible=True, interactive=True)
                 with gr.Row():
                     confidence_threshold_slider = gr.Slider(minimum=0, maximum=100, step=1, label='Confidence Threshold', value=75, visible=True, interactive=True)
-
                 with gr.Row():
                     interrogate_button = gr.Button(value="Interrogate", variant='primary')
                 with gr.Row():
@@ -2857,6 +2882,7 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
                 with gr.Column():
                     image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
                     image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True, interactive=True)
+                    image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="", visible=True, interactive=False)
             with gr.Tab("Image Preview"):
                 with gr.Column():
                     image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil")
@@ -2906,6 +2932,10 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
     }
     """
 
+    image_generated_tags.change(fn=prompt_string_builder,
+                                inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
+                                outputs=[image_generated_tags_prompt_builder_textbox])
+
     save_custom_tags_button.click(fn=save_custom_tags,
                                   inputs=[image_mode_choice_state, image_with_tag_path_textbox, image_generated_tags],
                                   outputs=[image_confidence_values, image_generated_tags, image_preview_pil])
@@ -2919,11 +2949,17 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
                                                                              outputs=[image_confidence_values,
                                                                                       image_generated_tags,
                                                                                       image_preview_pil],
-                                                                             show_progress=True)
+                                                                             show_progress=True).then(fn=prompt_string_builder,
+                                                                              inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
+                                                                              outputs=[image_generated_tags_prompt_builder_textbox])
     crop_or_resize_radio.change(fn=make_menus_visible, inputs=[crop_or_resize_radio], outputs=[landscape_crop_dropdown, portrait_crop_dropdown])
     model_choice_dropdown.select(fn=load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
     # cpu_only_ckbx.change(fn=re_load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
-    confidence_threshold_slider.change(fn=set_threshold, inputs=[confidence_threshold_slider], outputs=[image_confidence_values, image_generated_tags])
+    confidence_threshold_slider.change(fn=set_threshold,
+                                       inputs=[confidence_threshold_slider],
+                                       outputs=[image_confidence_values, image_generated_tags]).then(fn=prompt_string_builder,
+                                                                             inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
+                                                                             outputs=[image_generated_tags_prompt_builder_textbox])
     file_upload_button_single.upload(fn=load_images, inputs=[file_upload_button_single, image_mode_choice_state], outputs=[image_mode_choice_state])
     file_upload_button_batch.upload(fn=load_images, inputs=[file_upload_button_batch, image_mode_choice_state], outputs=[image_mode_choice_state])
     crop_or_resize_radio.change(fn=set_crop_or_resize, inputs=[crop_or_resize_radio], outputs=[])
@@ -2931,7 +2967,9 @@ with gr.Blocks(css=f"{preview_hide_rule} {thumbnail_colored_border_css} {green_b
     portrait_crop_dropdown.select(fn=set_portrait_square_crop, inputs=[portrait_crop_dropdown], outputs=[])
     # square_image_edit_slider.change(fn=set_square_size, inputs=[square_image_edit_slider], outputs=[])
     write_tag_opts_dropdown.select(fn=set_write_tag_opts, inputs=[], outputs=[])
-    use_tag_opts_radio.select(fn=set_use_tag_opts_radio, inputs=[], outputs=[])
+    use_tag_opts_radio.select(fn=set_use_tag_opts_radio, inputs=[], outputs=[]).then(fn=prompt_string_builder,
+                                                                              inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
+                                                                              outputs=[image_generated_tags_prompt_builder_textbox])
     image_with_tag_path_textbox.change(fn=set_image_with_tag_path_textbox, inputs=[image_with_tag_path_textbox], outputs=[])
     copy_mode_ckbx.change(fn=set_copy_mode_ckbx, inputs=[copy_mode_ckbx], outputs=[])
 
