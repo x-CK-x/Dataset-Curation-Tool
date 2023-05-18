@@ -22,19 +22,22 @@ pip install -r requirements.txt
 
 #### aria2
 This downloader uses aria2 for fast downloading.
+
 (Linux)
 ```
 sudo apt-get install aria2
 sudo apt-get install wget
 ```
 #### other system installs
-(Linux)
 - unzip for the (optionally) downloaded zip files
+
+(Linux)
 ```
 sudo apt-get install unzip
 ```
 
 (Windows)
+
 For Windows, install the aria2 build https://github.com/aria2/aria2/releases/
 Add aria2 in your environment variable paths.
 
