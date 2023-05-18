@@ -39,6 +39,7 @@ sudo apt-get install unzip
 (Windows)
 
 For Windows, install the aria2 build https://github.com/aria2/aria2/releases/
+
 Add aria2 in your environment variable paths.
 
 ## How to use
