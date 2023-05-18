@@ -4,6 +4,10 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ![visitor badge](https://visitor-badge.glitch.me/badge?page_id=x-CK-x.Dataset-Curation-Tool)
 
+## WIKI-Page / Tutorial for this Repository HERE:
+
+![https://github.com/x-CK-x/Dataset-Curation-Tool/wiki](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki)
+
 ## Base Features
 
 - User friendly UI
