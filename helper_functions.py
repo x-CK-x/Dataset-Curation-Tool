@@ -405,6 +405,7 @@ def extract_time_and_href_github(api_url):
     return copy.deepcopy(release_list)
 
 def download_negative_tags_file():
+    disable_flag = "--disable-ipv6"
     url = "https://raw.githubusercontent.com/pikaflufftuft/pikaft-e621-posts-downloader/main/remove_tags.txt"
     command_str = f"wget "
     progress_flag = "-q --show-progress "
@@ -412,7 +413,7 @@ def download_negative_tags_file():
         command_str = f"{command_str}{progress_flag}"
     else:
         command_str = f"aria2c "
-    command_str = f"{command_str}{url}"
+    command_str = f"{command_str}{url} {disable_flag}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)
@@ -425,6 +426,7 @@ def get_today_datetime():
     return formatted_date
 
 def download_all_e6_tags_csv():
+    disable_flag = "--disable-ipv6"
     repo_name = f"{'tags-'}{get_today_datetime()}{'.csv.gz'}"
     url = f"{'https://e621.net/db_export/'}{repo_name}"
     command_str = f"wget "
@@ -433,7 +435,7 @@ def download_all_e6_tags_csv():
         command_str = f"{command_str}{progress_flag}"
     else:
         command_str = f"aria2c "
-    command_str = f"{command_str}{url}"
+    command_str = f"{command_str}{url} {disable_flag}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)
@@ -450,6 +452,7 @@ def download_all_e6_tags_csv():
     verbose_print("Done")
 
 def download_zack3d_model():
+    disable_flag = "--disable-ipv6"
     temp = '\\' if is_windows() else '/'
     url = "https://pixeldrain.com/api/file/iNMyyi2w"
     command_str = f"wget "
@@ -458,7 +461,7 @@ def download_zack3d_model():
         command_str = f"{command_str}{progress_flag}"
     else:
         command_str = f"aria2c "
-    command_str = f"{command_str}{url}"
+    command_str = f"{command_str}{url} {disable_flag}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)

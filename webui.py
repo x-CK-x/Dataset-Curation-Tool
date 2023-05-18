@@ -2042,6 +2042,7 @@ def auto_config_apply(images_full_change_dict_textbox, progress=gr.Progress()):
         raise ValueError('no path name specified | no config created | config empty')
 
 def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group):
+    disable_flag = "--disable-ipv6"
     temp = '\\' if help.is_windows() else '/'
     if repo_download_releases_only:
         for asset_url in release_assets_checkbox_group:
@@ -2051,7 +2052,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 command_str = f"{command_str}{progress_flag}"
             else:
                 command_str = f"aria2c "
-            command_str = f"{command_str}{asset_url}"
+            command_str = f"{command_str}{asset_url} {disable_flag}"
             help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
@@ -2096,7 +2097,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 else:
                     command_str = f"aria2c "
                 url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
-                command_str = f"{command_str}{url_path}"
+                command_str = f"{command_str}{url_path} {disable_flag}"
                 help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
                 for line in help.execute(command_str.split(" ")):
                     help.verbose_print(line)
@@ -2193,6 +2194,7 @@ def get_repo_assets(release_options_radio, event_data: gr.SelectData):
     return repo_download_button, release_assets_checkbox_group
 
 def download_models(model_download_types, model_download_checkbox_group, tagging_model_download_types):
+    disable_flag = "--disable-ipv6"
     for model_name in model_download_checkbox_group:
         if "/" in model_name:
             model_name = model_name.split("/")[-1]
@@ -2204,7 +2206,7 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
             command_str = f"aria2c "
         # get full url path
         url_path = help.full_model_download_link(model_download_types, model_name)
-        command_str = f"{command_str}{url_path}"
+        command_str = f"{command_str}{url_path} {disable_flag}"
         help.verbose_print(f"DOWNLOADING:\t{model_name}")
         for line in help.execute(command_str.split(" ")):
             help.verbose_print(line)
@@ -2243,7 +2245,16 @@ def load_model(model_name, use_cpu, event_data: gr.SelectData):
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
         help.check_requirements()
 
-    autotagmodel.load_model(model_name=event_data.value, use_cpu=use_cpu)
+    model_path = ""
+    model_name = ""
+    if "Z3D" in event_data.value:
+        model_path = os.path.join(os.getcwd(), 'Z3D-E621-Convnext')
+        model_name = "Z3D-E621-Convnext.onnx"
+    elif "fluff" in (event_data.value).lower():
+        model_path = os.path.join(os.getcwd(), 'Fluffusion-AutoTag')
+        model_name = "Fluffusion-AutoTag.pb"
+
+    autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
     help.verbose_print(f"model loaded using cpu={use_cpu}")
 
 # def re_load_model(model_name, use_cpu):
@@ -2645,7 +2656,20 @@ trim_markdown_length = """
 }
 """
 
-with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_length} {trim_markdown_length} {thumbnail_colored_border_css} {green_button_css} {red_button_css}") as demo:
+cpu_checkbox_length = """
+#cpu_checkbox_length {
+  max-width: 0em;
+  min-width: 6.5em !important;
+}
+"""
+
+cpu_checkbox_length_class = """
+.cpu_checkbox_length {
+  max-width: 0em;
+  min-width: 6.5em !important;
+}
+"""
+with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_length} {trim_markdown_length} {cpu_checkbox_length} {cpu_checkbox_length_class} {thumbnail_colored_border_css} {green_button_css} {red_button_css}") as demo:
     with gr.Tab("General Config"):
         with gr.Row():
             config_save_var0 = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -2943,8 +2967,13 @@ with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_len
             ### ( NOTE ) When running Batch mode, the (copy checkbox) and (Use & Write Tag Options) are automatically applied and image/s and tag/s are automatically saved.
             """)
         image_modes = ['Single', 'Batch']
-        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
-            auto_tag_models.append('Z3D-E621-Convnext.onnx')
+        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
+                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
+            auto_tag_models.append('Z3D-E621-Convnext')
+        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
+                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
+            auto_tag_models.append('Fluffusion-AutoTag')
+
         write_tag_opts = ['Overwrite', 'Merge', 'Pre-pend', 'Append']
         use_tag_opts = ['Use All', 'Use All above Threshold', 'Manually Select']
         with gr.Row():
@@ -2956,9 +2985,8 @@ with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_len
                     with gr.Tab("Batch"):
                         file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
                                                            interactive=True, file_types=["image"], visible=True, type="file")
-
                 with gr.Row():
-                    cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only")
+                    cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True).style(full_width=False)
                     model_choice_dropdown = gr.Dropdown(choices=auto_tag_models, label="Model Selection")
                     crop_or_resize_radio = gr.Radio(label="Preprocess Options", choices=['Crop','Resize'], value='Resize')
                 with gr.Row():

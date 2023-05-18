@@ -2,13 +2,15 @@ import copy
 import os
 from tqdm import tqdm
 import numpy as np
-import torch
-import onnxruntime as ort
 import math
 import multiprocessing as mp
 import pandas as pd
 import heapq
 import shutil
+
+import torch
+import onnxruntime as ort
+import tensorflow as tf
 
 import helper_functions as help
 import image_data_loader
@@ -38,16 +40,22 @@ class AutoTag:
         self.model_dir = None
         self.dest_folder = dest_folder
         self.tag_folder = tag_folder
+        self.crop_image_size = 448
 
-    def load_model(self, model_dir=os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), model_name="Z3D-E621-Convnext.onnx", use_cpu=False):
+    def set_crop_image_size(self, crop_image_size):
+        if '.onnx' in self.model_name:
+            self.crop_image_size = 448
+        else:
+            self.crop_image_size = crop_image_size
+        return self.crop_image_size
+
+    def load_model(self, model_dir="", model_name="", use_cpu=True):
         self.model_name = model_name
         self.model_dir = model_dir
         self.use_cpu = use_cpu
-        # providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        # if not torch.cuda.is_available() or self.use_cpu:
-        #     providers.pop(0)
-        # providers.pop(0) # cpu faster atm
-        providers = ['CPUExecutionProvider']
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        if self.use_cpu:
+            del providers[0]
         self.ort_sess = ort.InferenceSession(os.path.join(self.model_dir, self.model_name), providers=providers)
 
     def get_dataset(self):
@@ -246,7 +254,6 @@ class AutoTag:
             del self.combined_tags
 
     def interrogate(self, single_image, all_tags_ever_dict):
-        self.crop_image_size = 448
         data = None
 
         if self.global_image_predictions_predictions is not None:
