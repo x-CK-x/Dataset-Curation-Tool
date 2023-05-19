@@ -2057,7 +2057,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
 
-            asset_url = (asset_url.split(temp))[-1]
+            asset_url = (asset_url.split('/'))[-1]
 
             if not ".zip" in asset_url:
                 asset_url = f"{asset_url}.zip"
@@ -2102,7 +2102,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 for line in help.execute(command_str.split(" ")):
                     help.verbose_print(line)
 
-                url_path = (url_path.split(temp))[-1]
+                url_path = (url_path.split('/'))[-1]
 
                 if not help.is_windows():
                     # finally unzip the file

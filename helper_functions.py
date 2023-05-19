@@ -472,13 +472,13 @@ def download_zack3d_model():
     if not is_windows():
         # finally unzip the file
         command_str = "unzip "
-        command_str = f"{command_str}{url.split(temp)[-1]} -d {new_path}"
+        command_str = f"{command_str}{repo_name}.zip -d {new_path}"
         verbose_print(f"unzipping zip of model:\t{new_path}")
         for line in execute(command_str.split(" ")):
             verbose_print(line)
     else:
         # finally unzip the file
-        unzip_file(url.split(temp)[-1])
+        unzip_file(f"{repo_name}.zip")
     verbose_print("Done")
 
 def days_since(date_str: str) -> int:
