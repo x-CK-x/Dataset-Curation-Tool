@@ -56,8 +56,8 @@ https://docs.oracle.com/en/database/oracle/machine-learning/oml4r/1.5.1/oread/cr
 #### Run the Web-User Interface
 ```
 python webui.py
-python webui.py --server_port 7860 --inbrowser --share
-python webui.py --server_port 7860 --inbrowser --share --username NAME --password PASS
+python webui.py --server_port 7860 --share
+python webui.py --server_port 7860 --share --username NAME --password PASS
 ```
 
 ## Additional Information
