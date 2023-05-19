@@ -3309,8 +3309,6 @@ def UI(**kwargs):
         )
     if kwargs.get('server_port', 0) > 0:
         launch_kwargs['server_port'] = kwargs.get('server_port', 0)
-    if kwargs.get('inbrowser', False):
-        launch_kwargs['inbrowser'] = kwargs.get('inbrowser', False)
     if kwargs.get('share', True):
         launch_kwargs['share'] = True
 
@@ -3335,9 +3333,6 @@ if __name__ == "__main__":
         help='Port to run the server listener on',
     )
     parser.add_argument(
-        '--inbrowser', action='store_true', help='Open in browser'
-    )
-    parser.add_argument(
         '--share',
         action='store_true',
         help='Share live gradio link',
@@ -3348,7 +3343,6 @@ if __name__ == "__main__":
     UI(
         username=args.username,
         password=args.password,
-        inbrowser=args.inbrowser,
         server_port=args.server_port,
         share=args.share,
     )
