@@ -2052,7 +2052,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 command_str = f"{command_str}{progress_flag}"
             else:
                 command_str = f"aria2c "
-            command_str = f"{command_str}{asset_url} {disable_flag}"
+                command_str = f"{command_str}{asset_url} {disable_flag}"
             help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
@@ -2092,12 +2092,14 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 # also install the latest pre-trained model
                 command_str = f"wget "
                 progress_flag = "-q --show-progress "
+                
+                url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
                 if not help.is_windows():
                     command_str = f"{command_str}{progress_flag}"
+                    command_str = f"{command_str}{url_path}"
                 else:
                     command_str = f"aria2c "
-                url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
-                command_str = f"{command_str}{url_path} {disable_flag}"
+                    command_str = f"{command_str}{url_path} {disable_flag}"
                 help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
                 for line in help.execute(command_str.split(" ")):
                     help.verbose_print(line)
@@ -2200,13 +2202,15 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
             model_name = model_name.split("/")[-1]
         command_str = f"wget "
         progress_flag = "-q --show-progress "
-        if not help.is_windows():
-            command_str = f"{command_str}{progress_flag}"
-        else:
-            command_str = f"aria2c "
+        
         # get full url path
         url_path = help.full_model_download_link(model_download_types, model_name)
-        command_str = f"{command_str}{url_path} {disable_flag}"
+        if not help.is_windows():
+            command_str = f"{command_str}{progress_flag}"
+            command_str = f"{command_str}{url_path}"
+        else:
+            command_str = f"aria2c "
+            command_str = f"{command_str}{url_path} {disable_flag}"
         help.verbose_print(f"DOWNLOADING:\t{model_name}")
         for line in help.execute(command_str.split(" ")):
             help.verbose_print(line)
