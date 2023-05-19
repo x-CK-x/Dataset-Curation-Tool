@@ -2049,7 +2049,7 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
             command_str = f"wget "
             progress_flag = "-q --show-progress "
             if not help.is_windows():
-                command_str = f"{command_str}{progress_flag}"
+                command_str = f"{command_str}{progress_flag}{asset_url}"
             else:
                 command_str = f"aria2c "
                 command_str = f"{command_str}{asset_url} {disable_flag}"
