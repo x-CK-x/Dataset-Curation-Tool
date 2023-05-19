@@ -410,7 +410,7 @@ def download_negative_tags_file():
     command_str = f"wget "
     progress_flag = "-q --show-progress "
     if not is_windows():
-        command_str = f"{command_str}{progress_flag}"
+        command_str = f"{command_str}{progress_flag}{url}"
     else:
         command_str = f"aria2c "
         command_str = f"{command_str}{url} {disable_flag}"
@@ -432,7 +432,7 @@ def download_all_e6_tags_csv():
     command_str = f"wget "
     progress_flag = "-q --show-progress "
     if not is_windows():
-        command_str = f"{command_str}{progress_flag}"
+        command_str = f"{command_str}{progress_flag}{url}"
     else:
         command_str = f"aria2c "
         command_str = f"{command_str}{url} {disable_flag}"
@@ -458,7 +458,7 @@ def download_zack3d_model():
     command_str = f"wget "
     progress_flag = "-q --show-progress "
     if not is_windows():
-        command_str = f"{command_str}{progress_flag}"
+        command_str = f"{command_str}{progress_flag}{url}"
     else:
         command_str = f"aria2c "
         command_str = f"{command_str}{url} {disable_flag}"
