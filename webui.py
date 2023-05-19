@@ -2990,7 +2990,7 @@ with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_len
                         file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
                                                            interactive=True, file_types=["image"], visible=True, type="file")
                 with gr.Row():
-                    cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True).style(full_width=False)
+                    cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True)
                     model_choice_dropdown = gr.Dropdown(choices=auto_tag_models, label="Model Selection")
                     crop_or_resize_radio = gr.Radio(label="Preprocess Options", choices=['Crop','Resize'], value='Resize')
                 with gr.Row():
