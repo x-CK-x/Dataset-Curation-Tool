@@ -255,12 +255,12 @@ def run_script(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperbatch=F
     global frontend_conn, backend_conn
     frontend_conn, backend_conn = mp.Pipe()
     global e6_downloader
-    e6_downloader = mp.Process(target=batch_downloader.E6_Downloader, args=(basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn),)
+    e6_downloader = mp.Process(target=batch_downloader.E6_Downloader, args=(basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, backend_conn),)
     e6_downloader.start()
 
 def run_script_batch(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath='',run_button_batch=None,images_full_change_dict_textbox=None,progress=gr.Progress()):
     global settings_json
-    help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
+    help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb}")
 
     progress(0, desc="Starting...")
     for setting in progress.tqdm(run_button_batch, desc="Tracking Total Progress"):
@@ -3160,4 +3160,3 @@ if __name__ == "__main__":
         server_port=args.server_port,
         share=args.share,
     )
-
