@@ -774,7 +774,10 @@ class E6_Downloader:
         return failed_md5
 
 
-    def download_posts(self, prms, batch_nums, posts_save_paths, tag_to_cat, base_folder='', batch_mode=False):
+    def download_posts(self, 
+                       prms, batch_nums, posts_save_paths, tag_to_cat, base_folder='', batch_mode=False, 
+                       proxy_url: str | None = None,
+                       ):
         _img_lists_df = pl.DataFrame()
         __df = pl.DataFrame()
         _md5_source = pl.DataFrame()
@@ -867,7 +870,7 @@ class E6_Downloader:
             failed_set = self.run_download(to_download,
                                       prms["batch_folder"][batch_num] + f'/download_log_{batch_num}.txt',
                                       prms["batch_folder"][batch_num] + f'/download_error_log_{batch_num}.txt',
-                                      )
+                                      proxy_url=proxy_url)
             if failed_set:
                 print('## Some posts were downloaded unsuccessfully.')
                 failed_md5.update(failed_set)
@@ -878,7 +881,7 @@ class E6_Downloader:
             print('## Downloading posts')
             failed_set = self.run_download(to_download, base_folder + '/download_log.txt',
                                       base_folder + '/download_error_log.txt',
-                                      )
+                                      proxy_url=proxy_url)
             if failed_set:
                 print('## Some posts were downloaded unsuccessfully.')
                 failed_md5.update(failed_set)
@@ -893,7 +896,7 @@ class E6_Downloader:
             ]
             failed_set_part_2 = self.run_download(to_redownload, base_folder + '/redownload_log.txt',
                                              base_folder + '/redownload_error_log.txt',
-                                             )
+                                             proxy_url=proxy_url)
             failed_md5 = failed_md5 & failed_set_part_2
 
         validate_redownload = set()
@@ -915,12 +918,12 @@ class E6_Downloader:
                                                      prms["batch_folder"][batch_num] + f'/redownload_log_b_{batch_num}.txt',
                                                      prms["batch_folder"][
                                                          batch_num] + f'/redownload_error_log_b_{batch_num}.txt',
-                                                     )
+                                                     proxy_url=proxy_url)
                 else:
                     failed_set_part_3 = self.run_download(to_download,
                                                      base_folder + '/redownload_log_b.txt',
                                                      base_folder + '/redownload_error_log_b.txt',
-                                                     )
+                                                     proxy_url=proxy_url)
                 failed_md5 = (failed_md5 - found_md5) | failed_set_part_3
             else:
                 print('## Found 0 direct file links for redownloading.')
@@ -1303,6 +1306,7 @@ class E6_Downloader:
 
         with open(self.settings, 'r') as json_file:
             prms = json.load(json_file)
+            proxy_url = prms.pop("proxy_url", None)
 
         if self.postscsv != '':
             if not self.postscsv.endswith('.csv'):
@@ -1338,7 +1342,7 @@ class E6_Downloader:
 
         print('## Checking required files')
         e621_posts_list_filename, tag_to_cat, e621_tags_set = self.get_db(base_folder, self.postscsv, self.tagscsv,
-                                                                     self.postsparquet, self.tagsparquet, self.keepdb)
+                                                                     self.postsparquet, self.tagsparquet, self.keepdb, proxy_url)
 
         self.cached_e621_posts = None
         if self.cachepostsdb:
@@ -1362,7 +1366,7 @@ class E6_Downloader:
                 posts_save_path = self.collect_posts(prms, batch_num, e621_posts_list_filename)
                 if posts_save_path is not None:
                     start_time = time.time()
-                    image_list_df = self.download_posts(prms, [batch_num], [posts_save_path], tag_to_cat, base_folder)
+                    image_list_df = self.download_posts(prms, [batch_num], [posts_save_path], tag_to_cat, base_folder, proxy_url=proxy_url)
                     elapsed = time.time() - start_time
                     print(
                         f'## Batch {batch_num} download elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
@@ -1383,7 +1387,7 @@ class E6_Downloader:
             if posts_save_paths:
                 start_time = time.time()
                 image_list_df = self.download_posts(prms, list(range(batch_count)), posts_save_paths, tag_to_cat, base_folder,
-                                               batch_mode=True)
+                                               batch_mode=True, proxy_url=proxy_url)
                 elapsed = time.time() - start_time
                 print(
                     f'## Batch download elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
