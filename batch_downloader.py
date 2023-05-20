@@ -491,30 +491,28 @@ class E6_Downloader:
 
 
     def get_db(self, base_folder, posts_csv='', tags_csv='', e621_posts_list_filename='', e621_tags_list_filename='',
-               keep_db=False):
+               keep_db=False, proxy_url: str | None = None):
+        proxies = {'http': proxy_url, 'https': proxy_url} if proxy_url else None
         if all((posts_csv == '', e621_posts_list_filename == '')) or all((tags_csv == '', e621_tags_list_filename == '')):
-            db_export_file_path = os.path.join(base_folder, 'db_export.html')
-            subprocess.check_output(
-                f'"{self.aria2c_path}" -d "{base_folder}" -o db_export.html --allow-overwrite=true --auto-file-renaming=false https://e621.net/db_export/',
-                shell=True)
-            with open(db_export_file_path) as f:
-                contents = f.read()
+            with requests.get('https://e621.net/db_export/', proxies=proxies) as response:
+                response.raise_for_status()
+                contents = response.text
 
-                pattern = r"posts\S*?\.gz"
-                matches = []
-                for line in contents.split("\n"):
-                    match = re.search(pattern, line)
-                    if match:
-                        matches.append(match.group())
-                posts_filename = matches[-1]
+            pattern = r"posts\S*?\.gz"
+            matches = []
+            for line in contents.split("\n"):
+                match = re.search(pattern, line)
+                if match:
+                    matches.append(match.group())
+            posts_filename = matches[-1]
 
-                pattern = r"tags\S*?\.gz"
-                matches = []
-                for line in contents.split("\n"):
-                    match = re.search(pattern, line)
-                    if match:
-                        matches.append(match.group())
-                tags_filename = matches[-1]
+            pattern = r"tags\S*?\.gz"
+            matches = []
+            for line in contents.split("\n"):
+                match = re.search(pattern, line)
+                if match:
+                    matches.append(match.group())
+            tags_filename = matches[-1]
 
         if posts_csv != '' and e621_posts_list_filename == '':
             e621_posts_list_filename = os.path.join(base_folder,f'{posts_csv[:-4]}.parquet')
@@ -529,7 +527,7 @@ class E6_Downloader:
                 posts_file_path = os.path.join(base_folder, posts_filename)
                 print(posts_file_path)
                 if not os.path.isfile(posts_file_path):
-                    with requests.get(posts_link, stream=True) as r:
+                    with requests.get(posts_link, stream=True, proxies=proxies) as r:
                         total_length = int(r.headers.get("Content-Length"))
 
                         with tqdm.wrapattr(r.raw, "read", total=total_length, desc="") as raw:
@@ -564,7 +562,7 @@ class E6_Downloader:
                 tags_file_path = os.path.join(base_folder, tags_filename)
                 print(tags_file_path)
                 if not os.path.isfile(tags_file_path):
-                    with requests.get(tags_link, stream=True) as r:
+                    with requests.get(tags_link, stream=True, proxies=proxies) as r:
                         total_length = int(r.headers.get("Content-Length"))
 
                         with tqdm.wrapattr(r.raw, "read", total=total_length, desc="") as raw:
@@ -765,42 +763,14 @@ class E6_Downloader:
                         f.write('\n'.join([str(s) for s in l]))
 
 
-    def run_download(self, file, length, dwn_log_path, err_log_path):
-        failed_md5 = set()
-        cmd = [self.aria2c_path, '-c', '-x', '16', '-k', '1M', '-j', str(multiprocessing.cpu_count()), '-i', file]
-        popen = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-        out_log = ''
-        ctr = 0
-        DL = ''
-        padding = len(str(length))
-        start_time = time.time()
-        for line in popen.stdout:
-            out = line.decode()
-            out_log += out
-            if 'Download complete' in out:
-                ctr += 1
-            if '[DL:' in out:
-                DL = out.split('[DL:')[1].split(']')[0]
-            if 'Download aborted. URI=https://static1.e621.net/data/' in out:
-                ctr += 1
-                failed_md5.add(
-                    out.split('Download aborted. URI=https://static1.e621.net/data/')[1].split('.')[0].split('/')[2])
-            elapsed = time.time() - start_time
-            print(
-                f'\r## Downloading: {ctr: >{padding}}/{length} | {f"{elapsed // 60:02.0f}:{elapsed % 60:02.0f}": >6}, {DL: >7}/s',
-                end='')
-        print('')
-        popen.stdout.close()
-        return_code = popen.wait()
-
-        if return_code:
-            with open(err_log_path, 'w', encoding="utf-8") as f:
-                f.write(out_log)
-        else:
-            with open(dwn_log_path, 'w', encoding="utf-8") as f:
-                f.write(out_log)
-
-        os.remove(file)
+    def run_download(self,
+                     to_download: Sequence[DownloadTask[str]],
+                     dwn_log_path, err_log_path,
+                     proxy_url: str | None = None,
+                     ) -> set[str]:
+        downloader = FilesDownloader(proxy_url=proxy_url, logs_paths=(dwn_log_path, err_log_path))
+        finished = downloader.download_all(to_download)
+        failed_md5 = {result.task.meta for result in finished if not result.ok}
         return failed_md5
 
 
@@ -845,12 +815,9 @@ class E6_Downloader:
             df = df.join(pl.DataFrame({'directory': ext_directory.values(), 'key': ext_directory.keys()}),
                          left_on='file_ext', right_on='key', how='left')
 
-            df = df.with_columns((pl.repeat(' dir=', n=length, eager=True) + df['directory']).alias("cmd_directory"))
-
             df = df.with_columns(df[prms["save_filename_type"][batch_num]].cast(str))
             df = df.with_columns((df[prms["save_filename_type"][batch_num]]).alias("filename_no_ext"))
             df = df.with_columns((df[prms["save_filename_type"][batch_num]] + dot + df['file_ext']).alias("filename"))
-            df = df.with_columns((pl.repeat(' out=', n=length, eager=True) + df['filename']).alias("cmd_filename"))
             df = df.with_columns(
                 (df[prms["save_filename_type"][batch_num]] + pl.repeat('.txt', n=length, eager=True)).alias(
                     "tagfilebasename"))
@@ -877,42 +844,56 @@ class E6_Downloader:
                     df.select(['id', 'md5', 'source', 'directory', 'filename_no_ext', 'filename']))
 
             if not prms["skip_post_download"][batch_num] and not batch_mode:
-                df.select(['download_links','cmd_directory','cmd_filename']).write_csv(prms["batch_folder"][batch_num] + '/__.txt', separator='\n', has_header=False)
+                posts_info = df.select(['download_links','directory','filename', 'md5']).to_dicts()
+                to_download = [
+                    DownloadTask(post['download_links'], Path(post['directory']) / post['filename'], post['md5'])
+                    for post in posts_info
+                ]
 
             elif not prms["skip_post_download"][batch_num]:
-                __df = __df.vstack(df.select(['download_links', 'cmd_directory', 'cmd_filename']))
+                __df = __df.vstack(df.select(['download_links', 'directory', 'filename']))
+                __df = __df.unique(subset=['directory', 'filename'])
+                posts_info = __df.select(['download_links','directory','filename', 'md5']).to_dicts()
+                to_download = [
+                    DownloadTask(post['download_links'], Path(post['directory']) / post['filename'], post['md5'])
+                    for post in posts_info
+                ]
 
             df_list_for_tag_files.append(
-                df.drop(['download_links', 'directory', 'cmd_directory', 'file_ext', 'filename', 'cmd_filename']))
+                df.drop(['download_links', 'directory', 'file_ext', 'filename']))
 
         if not batch_mode:
             print('## Downloading posts')
-            failed_set = self.run_download(prms["batch_folder"][batch_num] + '/__.txt', length,
+            failed_set = self.run_download(to_download,
                                       prms["batch_folder"][batch_num] + f'/download_log_{batch_num}.txt',
-                                      prms["batch_folder"][batch_num] + f'/download_error_log_{batch_num}.txt')
+                                      prms["batch_folder"][batch_num] + f'/download_error_log_{batch_num}.txt',
+                                      )
             if failed_set:
                 print('## Some posts were downloaded unsuccessfully.')
                 failed_md5.update(failed_set)
 
         elif __df.shape[0] > 0:
-            __df = __df.unique(subset=['cmd_directory', 'cmd_filename'])
-            length = __df.shape[0]
-            __df.write_csv(base_folder + '/__.txt', separator='\n', has_header=False)
+            length = len(to_download)
             print(f"##\n## Found {length} unique posts to save\n##")
             print('## Downloading posts')
-            failed_set = self.run_download(base_folder + '/__.txt', length, base_folder + '/download_log.txt',
-                                      base_folder + '/download_error_log.txt')
+            failed_set = self.run_download(to_download, base_folder + '/download_log.txt',
+                                      base_folder + '/download_error_log.txt',
+                                      )
             if failed_set:
                 print('## Some posts were downloaded unsuccessfully.')
                 failed_md5.update(failed_set)
 
         if failed_md5:
             print(f'## Retrying download for {len(failed_md5)} failed post downloads')
-            _file = base_folder + '/___.txt'
-            df.filter(pl.col('md5').str.contains('|'.join(failed_md5))).select(
-                ['download_links', 'cmd_directory', 'cmd_filename']).write_csv(_file, separator='\n', has_header=False)
-            failed_set_part_2 = self.run_download(_file, len(failed_md5), base_folder + '/redownload_log.txt',
-                                             base_folder + '/redownload_error_log.txt')
+            redownload_posts = df.filter(pl.col('md5').str.contains('|'.join(failed_md5))).select(
+                ['download_links', 'directory', 'filename', 'md5']).to_dicts()
+            to_redownload = [
+                DownloadTask(post['download_links'], Path(post['directory']) / post['filename'], post['md5'])
+                for post in redownload_posts
+            ]
+            failed_set_part_2 = self.run_download(to_redownload, base_folder + '/redownload_log.txt',
+                                             base_folder + '/redownload_error_log.txt',
+                                             )
             failed_md5 = failed_md5 & failed_set_part_2
 
         validate_redownload = set()
@@ -923,56 +904,23 @@ class E6_Downloader:
 
         if failed_md5:
             print(f'## Attempting to redownload {len(failed_md5)} unavailable posts using alternative source(s)')
-            md5_and_source = _md5_source.filter(pl.col('md5').str.contains('|'.join(failed_md5)))
-            num_redownload = 0
-            __file = ''
-            for source, directory, filename_from_type, filename, md5 in zip(md5_and_source["source"].to_list(),
-                                                                            md5_and_source["directory"].to_list(),
-                                                                            md5_and_source["filename_no_ext"].to_list(),
-                                                                            md5_and_source["filename"].to_list(),
-                                                                            md5_and_source["md5"].to_list()):
-                links = source.split('\n')
-                ext_links = {'.png': [], '.jpg': [], '.gif': [], '.webm': [], '.swf': []}
-                found_one = False
-                for link in links:
-                    for ext in ext_links.keys():
-                        if ext in link:
-                            found_one = True
-                            ext_links[ext].append(link)
-                if not found_one:
-                    remove_from_img_list.append((directory, filename))
-                    tagfiles_no_post.add(filename_from_type + '.txt')
-                else:
-                    num_redownload += 1
-                    _fline = ''
-                    for ext, links in ext_links.items():
-                        if links:
-                            if _fline == '':
-                                _fline = '\t'.join(links) + f'\n  dir={directory}' + f'\n  out={filename_from_type}{ext}'
-                            else:
-                                _fline += '\n' + '\t'.join(
-                                    links) + f'\n  dir={directory}' + f'\n  out={filename_from_type}{ext}'
-
-                            validate_redownload.add((directory, filename_from_type, ext))
-                            found_md5.add(md5)
-                    if __file == '':
-                        __file = _fline
-                    else:
-                        __file += '\n' + _fline
+            assert to_download
+            to_download = [task for task in to_download if task.meta in failed_md5]
+            num_redownload = len(to_download)
 
             if num_redownload > 0:
                 print(f'## Found {num_redownload} direct file links for redownloading.')
-                with open(base_folder + '/____.txt', 'w', encoding="utf-8") as f:
-                    f.write(__file)
                 if not batch_mode:
-                    failed_set_part_3 = self.run_download(base_folder + '/____.txt', num_redownload,
+                    failed_set_part_3 = self.run_download(to_download,
                                                      prms["batch_folder"][batch_num] + f'/redownload_log_b_{batch_num}.txt',
                                                      prms["batch_folder"][
-                                                         batch_num] + f'/redownload_error_log_b_{batch_num}.txt')
+                                                         batch_num] + f'/redownload_error_log_b_{batch_num}.txt',
+                                                     )
                 else:
-                    failed_set_part_3 = self.run_download(base_folder + '/____.txt', num_redownload,
+                    failed_set_part_3 = self.run_download(to_download,
                                                      base_folder + '/redownload_log_b.txt',
-                                                     base_folder + '/redownload_error_log_b.txt')
+                                                     base_folder + '/redownload_error_log_b.txt',
+                                                     )
                 failed_md5 = (failed_md5 - found_md5) | failed_set_part_3
             else:
                 print('## Found 0 direct file links for redownloading.')
@@ -1023,10 +971,11 @@ class E6_Downloader:
 
             _failed_df = df.filter(pl.col('md5').str.contains('|'.join(failed_md5))).select(['id', 'md5', 'source'])
 
-            with open(ids_no_post_folder + 'failed_download_posts_alt_source_list.txt', 'w', encoding="utf-8") as f:
-                for _id, md5, source in zip(_failed_df["id"].to_list(), _failed_df["md5"].to_list(),
-                                            _failed_df["source"].to_list()):
-                    f.write(f'id:{_id}\nmd5:{md5}\nsource:[ {source} ]\n')
+            if tagfiles_no_post:
+                with open(ids_no_post_folder + 'failed_download_posts_alt_source_list.txt', 'w', encoding="utf-8") as f:
+                    for _id, md5, source in zip(_failed_df["id"].to_list(), _failed_df["md5"].to_list(),
+                                                _failed_df["source"].to_list()):
+                        f.write(f'id:{_id}\nmd5:{md5}\nsource:[ {source} ]\n')
 
         # send total to progressbar
         if self.backend_conn:
@@ -1319,7 +1268,7 @@ class E6_Downloader:
         if self.backend_conn:
             self.backend_conn.close()
 
-    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn):
+    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, backend_conn):
         self.basefolder = basefolder
         self.settings = settings
         self.numcpu = numcpu
@@ -1329,7 +1278,6 @@ class E6_Downloader:
         self.postsparquet = postsparquet
         self.tagsparquet = tagsparquet
         self.keepdb = keepdb
-        self.aria2cpath = aria2cpath
         self.cachepostsdb = cachepostsdb
 
         print("============================")
@@ -1345,7 +1293,6 @@ class E6_Downloader:
         self.counter = None
         self.counter_lock = None
         self.processed_tag_files = None
-        self.aria2c_path = None
         self.cached_e621_posts = None
 
         base_folder = os.path.dirname(os.path.abspath(__file__))
@@ -1356,16 +1303,6 @@ class E6_Downloader:
 
         with open(self.settings, 'r') as json_file:
             prms = json.load(json_file)
-
-        if self.aria2cpath != '':
-            if not os.path.isfile(self.aria2cpath):
-                raise RuntimeError(
-                    f'aria2c was not found at {self.aria2cpath}. Install https://github.com/aria2/aria2/releases/')
-            self.aria2c_path = self.aria2cpath
-        else:
-            if shutil.which('aria2c') is None:
-                raise RuntimeError('aria2c is not installed. Install https://github.com/aria2/aria2/releases/')
-            self.aria2c_path = "aria2c"
 
         if self.postscsv != '':
             if not self.postscsv.endswith('.csv'):
