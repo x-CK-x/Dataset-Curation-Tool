@@ -1,5 +1,7 @@
+import asyncio
 import gzip
 import json
+import logging
 import multiprocessing
 import os
 import re
@@ -7,13 +9,159 @@ import shutil
 import subprocess
 import time
 from ctypes import c_int
+from dataclasses import dataclass
 from datetime import datetime
-from itertools import repeat
+from itertools import pairwise, repeat
+from logging import FileHandler, Logger
+from pathlib import Path
+from typing import Generic, Sequence, TypeVar
 
+import aiofiles
 import cv2
 import polars as pl
 import requests
+from aiohttp import ClientSession
+from aiohttp_socks import ProxyConnector
 from tqdm.auto import tqdm
+
+
+_Meta = TypeVar("_Meta")
+
+
+@dataclass
+class DownloadTask(Generic[_Meta]):
+    url: str
+    target_file: Path
+    meta: _Meta
+
+
+@dataclass
+class FinishedDownload(Generic[_Meta]):
+    task: DownloadTask[_Meta]
+    exc: Exception | None
+
+    @property
+    def ok(self) -> bool:
+        if self.exc:
+            return False
+        return True
+
+
+class FilesDownloader:
+
+    def __init__(self,
+                 *,
+                 workers_count: int = 16,
+                 chunk_size: int = 1024**2,
+                 proxy_url: str | None = None,
+                 logs_paths: tuple[str | Path, str | Path] | None = None,
+                 log_level: int | str | None = None,
+                 ) -> None:
+        self._workers_count = workers_count
+        self._chunk_size = chunk_size
+        self._proxy_url = proxy_url
+        self._log = Logger("downloader", level=log_level or 0)
+        self._err_log = Logger("Download", level=logging.WARNING)
+        log_path, err_log_path = None, None
+        if logs_paths:
+            log_path, err_log_path = map(Path, logs_paths)
+            log_handler = FileHandler(log_path, mode="w", encoding="utf-8")
+            err_handler = FileHandler(log_path, mode="w", encoding="utf-8")
+            self._log.addHandler(log_handler)
+            self._err_log.addHandler(err_handler)
+        self.log_path, self.err_log_path = log_path, err_log_path
+
+    def download_all(self, infos: Sequence[DownloadTask[_Meta]]) -> list[FinishedDownload[_Meta]]:
+        self._log.info("Start downloading")
+        try:
+            results = asyncio.run(self._process(infos))
+        except Exception as exc:
+            self._err_log.exception("Error during downloading files. ", exc_info=exc)
+            raise exc
+        return results
+
+    async def _process(self, tasks: Sequence[DownloadTask[_Meta]]) -> list[FinishedDownload[_Meta]]:
+        queue: asyncio.Queue[tuple[ClientSession, DownloadTask[_Meta]]] = asyncio.Queue()
+        connector = ProxyConnector.from_url(self._proxy_url) if self._proxy_url else None
+        workers_count = min(len(tasks), self._workers_count)
+        async with ClientSession(connector=connector) as client:
+            for download_info in tasks:
+                queue.put_nowait((client, download_info))
+            with tqdm(total=queue.qsize()) as total_progress:
+                events: list[asyncio.Event | None] = [asyncio.Event() for _ in range(workers_count-1)]
+                events = [None, *events, None]
+                event_pairs = list(pairwise(events))
+                self._log.info("Start %s workers", workers_count)
+                workers = [
+                    self._wrapped_worker(queue, total_progress, n, events)
+                    for n, events in enumerate(event_pairs, start=1)
+                ]
+                finished, _ = await asyncio.wait(workers)
+        total_results: list[FinishedDownload[_Meta]] = []
+        for task in finished:
+            results = task.result()
+            total_results.extend(results)
+        return total_results
+
+    async def _wrapped_worker(self,
+                              queue: asyncio.Queue[tuple[ClientSession, DownloadTask[_Meta]]],
+                              total_progress: tqdm | None = None,
+                              worker_position: int = 0,
+                              syncronisation_events: tuple[asyncio.Event | None, asyncio.Event | None] = (None, None),
+                              ) -> list[FinishedDownload[_Meta]]:
+        self._log.info("Start worker #%s", worker_position)
+        self_event, next_event = syncronisation_events
+        if self_event:
+            await self_event.wait()
+            self_event.clear()
+        with tqdm(desc=f"Worker {worker_position:02}", unit="B", unit_scale=True, position=worker_position) as progress:
+            if next_event:
+                next_event.set()
+            self._log.info("Worker %s ready, start downloading files", worker_position)
+            results = await self._worker(queue, progress, total_progress)
+            self._log.info("Worker %s done", worker_position)
+            if self_event:
+                await self_event.wait()
+            if next_event:
+                next_event.set()
+        return results
+
+    async def _worker(self,
+                      queue: asyncio.Queue[tuple[ClientSession, DownloadTask[_Meta]]],
+                      progress: tqdm,
+                      total_progress: tqdm
+                      ) -> list[FinishedDownload[_Meta]]:
+        results: list[FinishedDownload[_Meta]] = []
+        while not queue.empty():
+            client, task = await queue.get()
+            exception = None
+            self._log.info("Downloading '%s' to '%s'", task.url, task.target_file)
+            try:
+                await self._download(client, task, progress)
+            except Exception as exc:
+                exception = exc
+                self._log.exception(
+                    "Error occurs while downloading '%s' to '%s'",
+                    task.url, task.target_file,
+                    exc_info=exc
+                )
+            self._log.info("Successfully downloaded '%s' to '%s'", task.url, task.target_file)
+            results.append(FinishedDownload(task, exception))
+            if total_progress:
+                total_progress.update(1)
+        return results
+
+    async def _download(self, client: ClientSession, task: DownloadTask, progress: tqdm) -> int:
+        async with client.get(task.url) as response:
+            response.raise_for_status()
+            content_length = response.content_length or 0
+            progress.reset(content_length)
+            async with aiofiles.open(task.target_file, "wb") as file:
+                async for data in response.content.iter_any():
+                    content_length += len(data)
+                    await file.write(data)
+                    progress.update(len(data))
+        return content_length
 
 
 class E6_Downloader:
