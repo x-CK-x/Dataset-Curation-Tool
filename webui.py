@@ -2042,95 +2042,7 @@ def auto_config_apply(images_full_change_dict_textbox, progress=gr.Progress()):
         raise ValueError('no path name specified | no config created | config empty')
 
 def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group):
-    disable_flag = "--disable-ipv6"
-    temp = '\\' if help.is_windows() else '/'
-    if repo_download_releases_only:
-        for asset_url in release_assets_checkbox_group:
-            command_str = f"wget "
-            progress_flag = "-q --show-progress "
-            if not help.is_windows():
-                command_str = f"{command_str}{progress_flag}{asset_url}"
-            else:
-                command_str = f"aria2c "
-                command_str = f"{command_str}{asset_url} {disable_flag}"
-            help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
-            for line in help.execute(command_str.split(" ")):
-                help.verbose_print(line)
-
-            asset_url = (asset_url.split('/'))[-1]
-
-            if not ".zip" in asset_url:
-                asset_url = f"{asset_url}.zip"
-
-            if not help.is_windows():
-                # finally unzip the file
-                command_str = "unzip "
-                command_str = f"{command_str}{asset_url}"
-                help.verbose_print(f"unzipping zipping asset:\t{asset_url}")
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
-            else:
-                # finally unzip the file
-                help.unzip_file(asset_url)
-    else:
-        for repo_name in repo_download_checkbox_group:
-            command_str = "git clone --progress "
-            if "kohya" in repo_name.lower():
-                # get full url path
-                url_path = "https://github.com/bmaltais/kohya_ss.git"
-                command_str = f"{command_str}{url_path}"
-                help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
-            elif "tag" in repo_name.lower():
-                # get full url path
-                url_path = "https://github.com/KichangKim/DeepDanbooru.git"
-                command_str = f"{command_str}{url_path}"
-                help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
-                # also install the latest pre-trained model
-                command_str = f"wget "
-                progress_flag = "-q --show-progress "
-                
-                url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
-                if not help.is_windows():
-                    command_str = f"{command_str}{progress_flag}"
-                    command_str = f"{command_str}{url_path}"
-                else:
-                    command_str = f"aria2c "
-                    command_str = f"{command_str}{url_path} {disable_flag}"
-                help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
-
-                url_path = (url_path.split('/'))[-1]
-
-                if not help.is_windows():
-                    # finally unzip the file
-                    command_str = "unzip "
-                    command_str = f"{command_str}{url_path}"
-                    help.verbose_print(f"unzipping zip of model:\t{repo_name}")
-                    for line in help.execute(command_str.split(" ")):
-                        help.verbose_print(line)
-                else:
-                    # finally unzip the file
-                    help.unzip_file(url_path)
-            elif "webui" in repo_name.lower():
-                # get full url path
-                url_path = "https://github.com/AUTOMATIC1111/stable-diffusion-webui.git"
-                command_str = f"{command_str}{url_path}"
-                help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
-            elif "invoke" in repo_name.lower():
-                # get full url path
-                url_path = "https://github.com/invoke-ai/InvokeAI.git"
-                command_str = f"{command_str}{url_path}"
-                help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
-            help.verbose_print(f"Done")
+    help.download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group)
 
 def reload_release_options(repo_download_releases_only):
     if repo_download_releases_only:
@@ -2153,32 +2065,7 @@ def reload_release_options(repo_download_releases_only):
 def get_repo_releases(repo_download_radio, event_data: gr.SelectData):
     global repo_release_urls
     repo_release_urls = {}
-    # populate the release options list & make button visible
-    repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI"]
-    url = None
-    release_options_radio_list = []
-
-    if event_data.value == repo_download_options_no_auto1111[0]:
-        owner = 'bmaltais'
-        repo = 'kohya_ss'
-        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
-    elif event_data.value == repo_download_options_no_auto1111[1]:
-        owner = 'KichangKim'
-        repo = 'DeepDanbooru'
-        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
-    elif event_data.value == repo_download_options_no_auto1111[2]:
-        owner = 'invoke-ai'
-        repo = 'InvokeAI'
-        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
-
-    all_releases = help.extract_time_and_href_github(url) # list of lists containing [release name, list of downloads]
-    help.verbose_print(f"all_releases:\t{all_releases}")
-
-    for release in all_releases:
-        header_text, urls = release
-        release_options_radio_list.append(f"{header_text}")
-        repo_release_urls[header_text] = urls
-
+    release_options_radio_list, repo_release_urls = help.get_repo_releases(event_data)
     release_options_radio = gr.update(choices=release_options_radio_list, visible=True, value=[])
     return release_options_radio
 
@@ -2195,38 +2082,25 @@ def get_repo_assets(release_options_radio, event_data: gr.SelectData):
     release_assets_checkbox_group = gr.update(choices=all_assets, visible=True)
     return repo_download_button, release_assets_checkbox_group
 
-def download_models(model_download_types, model_download_checkbox_group, tagging_model_download_types):
-    disable_flag = "--disable-ipv6"
-    for model_name in model_download_checkbox_group:
-        if "/" in model_name:
-            model_name = model_name.split("/")[-1]
-        command_str = f"wget "
-        progress_flag = "-q --show-progress "
-        
-        # get full url path
-        url_path = help.full_model_download_link(model_download_types, model_name)
-        if not help.is_windows():
-            command_str = f"{command_str}{progress_flag}"
-            command_str = f"{command_str}{url_path}"
-        else:
-            command_str = f"aria2c "
-            command_str = f"{command_str}{url_path} {disable_flag}"
-        help.verbose_print(f"DOWNLOADING:\t{model_name}")
-        for line in help.execute(command_str.split(" ")):
-            help.verbose_print(line)
-        help.verbose_print(f"Done")
-    if len(tagging_model_download_types) > 0:
-        # download zack3d's model
-        help.download_zack3d_model()
-        # add to new tagging feature
-        global auto_tag_models
-        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
-            auto_tag_models.append('Z3D-E621-Convnext.onnx')
+def download_models(model_download_types, model_download_checkbox_group, tagging_model_download_types, nested_model_links_checkbox_group):
+    global auto_tag_models
+    auto_tag_models = help.download_models(model_download_types, model_download_checkbox_group, tagging_model_download_types, nested_model_links_checkbox_group)
+    model_download_types = gr.update(value=None)
+    tagging_model_download_types = gr.update(value=None)
+    nested_model_links_checkbox_group = gr.update(value=None)
+    return model_download_types, tagging_model_download_types, nested_model_links_checkbox_group
 
 def show_model_downloads_options(model_download_types, event_data: gr.SelectData):
     model_download_checkbox_group = gr.update(choices=help.get_model_names(event_data.value), visible=True)
     model_download_button = gr.update(visible=True)
-    return model_download_checkbox_group, model_download_button
+    nested_model_links_checkbox_group = gr.update(visible=True)
+    return model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group
+
+def show_nested_fluffyrock_models(nested_model_links_checkbox_group):
+    model_download_checkbox_group = gr.update(visible=True)
+    model_download_button = gr.update(visible=True)
+    nested_model_links_checkbox_group = gr.update(visible=True, choices=help.get_nested_fluffyrock_models(nested_model_links_checkbox_group))
+    return model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group
 
 def set_ckbx_state(select_multiple_images_checkbox, multi_select_ckbx_state):
     if select_multiple_images_checkbox:
@@ -2591,6 +2465,7 @@ def prompt_string_builder(use_tag_opts_radio, any_selected_tags, threshold):
 
 # check to update the tags csv
 help.check_to_update_csv()
+
 # load the everything tags csv
 current_list_of_csvs = help.sort_csv_files_by_date(cwd)
 # Read the CSV file, skip the header, and only keep columns at index 1 and 2
@@ -2941,24 +2816,23 @@ with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_len
         """)
         with gr.Column():
             repo_download_options = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "AUTO1111 WEBUI", "InvokeAI"]
+
             repo_download_releases_only = gr.Checkbox(label='Select ALL Code Repositories to Download', value=False)
-
             repo_download_checkbox_group = gr.CheckboxGroup(choices=repo_download_options, label='Select ALL Code Repositories to Download', value=[])
-
             repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI"]
             repo_download_radio = gr.Radio(choices=repo_download_options_no_auto1111, label='Select ALL Code Repositories to Download', visible=False)
-
             release_options_radio = gr.Radio(choices=[], label='Select ALL Releases to Download', visible=False)
-
             release_assets_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Releases to Download', value=[], visible=False)
-
             repo_download_button = gr.Button(value="Download Repo/s", variant='primary')
         with gr.Column():
             model_download_options = ["Fluffusion", "FluffyRock"]
             tagging_model_download_options = ["Zack3D AutoTagging Model"]
+
             model_download_types = gr.Dropdown(choices=model_download_options, label='Diffusion Model Selection')
             tagging_model_download_types = gr.Dropdown(choices=tagging_model_download_options, label='AutoTagging Model Selection')
             model_download_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Code Repositories to Download', value=[], visible=False)
+            nested_model_links_checkbox_group = gr.CheckboxGroup(choices=[], label='Specific Model Versions', value=[],
+                                                                 visible=False)
             model_download_button = gr.Button(value="Download Model/s", variant='primary', visible=False)
     with gr.Tab("Add Custom Dataset"):
         gr.Markdown(
@@ -3119,8 +2993,15 @@ with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_len
                                        outputs=[repo_download_checkbox_group, repo_download_radio, release_options_radio, repo_download_button, release_assets_checkbox_group])
 
     repo_download_button.click(fn=download_repos, inputs=[repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group], outputs=[])
-    model_download_types.select(fn=show_model_downloads_options, inputs=[model_download_types], outputs=[model_download_checkbox_group, model_download_button])
-    model_download_button.click(fn=download_models, inputs=[model_download_types, model_download_checkbox_group, tagging_model_download_types], outputs=[])
+
+    model_download_types.select(fn=show_model_downloads_options, inputs=[model_download_types],
+                                outputs=[model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group])
+
+    model_download_checkbox_group.change(fn=show_nested_fluffyrock_models, inputs=[model_download_checkbox_group],
+                                outputs=[model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group])
+
+    model_download_button.click(fn=download_models, inputs=[model_download_types, model_download_checkbox_group, tagging_model_download_types, nested_model_links_checkbox_group],
+                                outputs=[model_download_types, tagging_model_download_types, nested_model_links_checkbox_group])
 
     images_full_change_dict_run_button.click(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_collect]).then(fn=auto_config_apply,
             inputs=[images_full_change_dict_textbox], outputs=[progress_bar_textbox_collect])

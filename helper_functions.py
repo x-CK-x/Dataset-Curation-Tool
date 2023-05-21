@@ -277,7 +277,6 @@ def get_href_links(url):
         print(f"Request to {url} failed with status code: {response.status_code}")
         return []
 
-
 def extract_time_and_href(url):
     response = requests.get(url)
 
@@ -309,29 +308,9 @@ def extract_time_and_href(url):
 
 model_download_options = ["Fluffusion", "FluffyRock"]
 
-def get_fluffyrock_models():
-    # get all model names
-    url = "https://huggingface.co/lodestones/furryrock-model-safetensors/tree/main/"
-    href_links = extract_time_and_href(url)
-    temp_list = set()
-    for href_link in href_links:
-        href_link, time_element = href_link
-        if "/" in href_link:
-            temp_list.add(f'{href_link.split(" / ")[-1]}---{time_element}')
-        else:
-            temp_list.add(f'{href_link}---{time_element}')
-        verbose_print(f"href_link:\t{href_link}\tand\ttime_element:\t{time_element}")
-    # filter out non-safetensor files
-    temp_list = list(temp_list)
-    for i in range(len(temp_list) - 1, -1, -1):
-        if not "safetensors" in (temp_list[i]).split(".")[-1]:
-            temp_list.remove(temp_list[i])
-    sorted_results = sorted(temp_list, key=lambda x: (x.split('---'))[-1], reverse=True)
-    return sorted_results
-
 def get_fluffusion_models():
     # get all model names
-    url = "https://static.treehaus.dev/"
+    url = "https://static.treehaus.dev/sd-checkpoints/fluffusionR1/"#####https://static.treehaus.dev/sd-checkpoints/fluffusionR1/archive/
     href_links = get_href_links(url)
     temp_list = set()
     for href_link in href_links:
@@ -343,24 +322,10 @@ def get_fluffusion_models():
     # filter out fluffyrock models
     temp_list = list(temp_list)
     for i in range(len(temp_list)-1, -1, -1):
-        if (model_download_options[-1]).lower() in temp_list[i] or not "ckpt" in (temp_list[i]).split(".")[-1]:
+        if (model_download_options[-1]).lower() in temp_list[i] or not "safetensors" in (temp_list[i]).split(".")[-1]:
             temp_list.remove(temp_list[i])
     sorted_results = sorted(temp_list, key=lambda x: x)
     return sorted_results
-
-def get_model_names(name):
-    if name == "Fluffusion":
-        return get_fluffusion_models()
-    elif name == "FluffyRock":
-        return get_fluffyrock_models()
-
-def full_model_download_link(name, file_name):
-    if name == "Fluffusion":
-        url = "https://static.treehaus.dev/"
-        return f"{url}{file_name}"
-    elif name == "FluffyRock":
-        url = "https://huggingface.co/lodestones/furryrock-model-safetensors/resolve/main/"
-        return f"{url}{(file_name.split('---')[0])}"
 
 def extract_time_and_href_github(api_url):
     response = requests.get(api_url)
@@ -439,16 +404,29 @@ def download_all_e6_tags_csv():
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)
-    if not is_windows():
-        # finally unzip the file
-        command_str = "gzip -d "
-        command_str = f"{command_str}{repo_name}"
-        verbose_print(f"unzipping zip of model:\t{repo_name}")
+
+    if not len(glob.glob(os.path.join(os.getcwd(), f"*.gz"))) > 0:
+        day = int((((repo_name.split('.csv.gz')[0]).split('-'))[-1]))
+        temp = '-'.join(((repo_name.split('.csv.gz')[0]).split('-'))[:-1])
+        repo_name = f"{temp}-{(day-1)}.csv.gz"
+
+        verbose_print(f"repo_name:\t{repo_name}")
+
+        url = f"{'https://e621.net/db_export/'}{repo_name}"
+        command_str = f"wget "
+        progress_flag = "-q --show-progress "
+        if not is_windows():
+            command_str = f"{command_str}{progress_flag}{url}"
+        else:
+            command_str = f"aria2c "
+            command_str = f"{command_str}{url} {disable_flag}"
+        verbose_print(f"DOWNLOADING asset:\t{url}")
         for line in execute(command_str.split(" ")):
             verbose_print(line)
-    else:
-        # finally unzip the file
-        unzip_file(repo_name)
+
+    # finally unzip the file
+    unzip_all()
+    delete_all_archives()
     verbose_print("Done")
 
 def download_zack3d_model():
@@ -465,20 +443,10 @@ def download_zack3d_model():
     verbose_print(f"DOWNLOADING asset:\t{url}")
     for line in execute(command_str.split(" ")):
         verbose_print(line)
-    repo_name = "Z3D-E621-Convnext"
 
-    new_path = os.getcwd()
-
-    if not is_windows():
-        # finally unzip the file
-        command_str = "unzip "
-        command_str = f"{command_str}{repo_name}.zip -d {new_path}"
-        verbose_print(f"unzipping zip of model:\t{new_path}")
-        for line in execute(command_str.split(" ")):
-            verbose_print(line)
-    else:
-        # finally unzip the file
-        unzip_file(f"{repo_name}.zip")
+    # finally unzip the file
+    unzip_all()
+    delete_all_archives()
     verbose_print("Done")
 
 def days_since(date_str: str) -> int:
@@ -614,3 +582,246 @@ def unzip_file(file_path, new_name=""):
 def make_all_dirs(list_of_paths):
     for path in list_of_paths:
         create_dirs(path)
+
+def full_model_download_link(name, file_name):
+    verbose_print(f"file_name:\t{file_name}")
+    if name == "Fluffusion":
+        url = "https://static.treehaus.dev/sd-checkpoints/fluffusionR1/"#####https://static.treehaus.dev/sd-checkpoints/fluffusionR1/archive/
+        return f"{url}{file_name}"
+    elif name == "FluffyRock":
+        url = "https://huggingface.co/lodestones/furryrock-model-safetensors/resolve/main/"
+        return f"{url}{(file_name.split('---')[0])}"
+
+def get_nested_fluffyrock_models(folder_name_list):
+    verbose_print(f"folder_name_list:\t{folder_name_list}")
+    temp_list = set()
+    for folder_name in folder_name_list:
+        folder_name = ((folder_name.split('---'))[0]).split('/')[-1]
+        verbose_print(f"url:\t{folder_name}")
+        url = f"https://huggingface.co/lodestones/furryrock-model-safetensors/tree/main/{folder_name}/"
+        verbose_print(f"url:\t{url}")
+
+        # get all model names
+        href_links = extract_time_and_href(url)
+        for href_link in href_links:
+            href_link, time_element = href_link
+            if "/" in href_link:
+                temp_list.add(f'{"/".join(((href_link.split(" / ")[-1]).split("/"))[-2:])}---{time_element}')
+            else:
+                temp_list.add(f'{"/".join(((href_link).split("/"))[-2:])}---{time_element}')
+            verbose_print(f'href_link:\t{"/".join(((href_link).split("/"))[-2:])}\tand\ttime_element:\t{time_element}')
+        # filter out non-safetensor files
+    temp_list = list(temp_list)
+    for i in range(len(temp_list) - 1, -1, -1):
+        if not "safetensors" in (temp_list[i]).split(".")[-1]:
+            temp_list.remove(temp_list[i])
+    sorted_results = sorted(temp_list, key=lambda x: (x.split('---'))[-1], reverse=True)
+    return sorted_results
+
+def get_fluffyrock_models():
+    # get all model names
+    url = "https://huggingface.co/lodestones/furryrock-model-safetensors/tree/main/"
+    href_links = extract_time_and_href(url)
+    temp_list = set()
+    for href_link in href_links:
+        href_link, time_element = href_link
+        if "/" in href_link:
+            temp_list.add(f'{href_link.split(" / ")[-1]}---{time_element}')
+        else:
+            temp_list.add(f'{href_link}---{time_element}')
+        verbose_print(f"href_link:\t{href_link}\tand\ttime_element:\t{time_element}")
+    # filter out non-safetensor files
+    temp_list = list(temp_list)
+    for i in range(len(temp_list) - 1, -1, -1):
+        if not "safetensors" in (temp_list[i]).split(".")[-1]:
+            temp_list.remove(temp_list[i])
+    sorted_results = sorted(temp_list, key=lambda x: (x.split('---'))[-1], reverse=True)
+    return sorted_results
+
+def get_model_names(name):
+    if name == "Fluffusion":
+        return get_fluffusion_models()
+    elif name == "FluffyRock":
+        return get_fluffyrock_models()
+
+def download_models(model_download_types, model_download_checkbox_group, tagging_model_download_types, nested_model_links_checkbox_group):
+    disable_flag = "--disable-ipv6"
+    model_flag = False
+    for model_name in model_download_checkbox_group:
+        if "rock" in model_name.lower():
+            model_flag = True
+            break
+
+    model_name_list = model_download_checkbox_group
+    if model_flag:
+        model_name_list = nested_model_links_checkbox_group
+
+    auto_tag_models = []
+    for model_name in model_name_list:
+        verbose_print(f"model name:\t{model_name}")
+
+        if "/" in model_name:
+            if "rock" in model_name.lower():
+                model_name = "/".join(model_name.split("/")[-2:])
+            else:
+                model_name = "/".join(model_name.split("/")[-1])
+        command_str = f"wget "
+        progress_flag = "-q --show-progress "
+
+        # get full url path
+        url_path = full_model_download_link(model_download_types, model_name)
+
+        if not is_windows():
+            command_str = f"{command_str}{progress_flag}"
+            command_str = f"{command_str}{url_path}"
+        else:
+            command_str = f"aria2c "
+            command_str = f"{command_str}{url_path} {disable_flag}"
+        verbose_print(f"DOWNLOADING:\t{model_name}")
+        for line in execute(command_str.split(" ")):
+            verbose_print(line)
+        verbose_print(f"Done")
+    if tagging_model_download_types is not None and len(tagging_model_download_types) > 0:
+        # download zack3d's model
+        download_zack3d_model()
+        # add to new tagging feature
+        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
+                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
+            auto_tag_models.append('Z3D-E621-Convnext')
+        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
+                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
+            auto_tag_models.append('Fluffusion-AutoTag')
+    return auto_tag_models
+
+
+
+def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group):
+    disable_flag = "--disable-ipv6"
+    temp = '\\' if is_windows() else '/'
+    if repo_download_releases_only:
+        for asset_url in release_assets_checkbox_group:
+            command_str = f"wget "
+            progress_flag = "-q --show-progress "
+            if not is_windows():
+                command_str = f"{command_str}{progress_flag}{asset_url}"
+            else:
+                command_str = f"aria2c "
+                command_str = f"{command_str}{asset_url} {disable_flag}"
+            verbose_print(f"DOWNLOADING asset:\t{asset_url}")
+            for line in execute(command_str.split(" ")):
+                verbose_print(line)
+
+            # finally unzip the file
+            unzip_all()
+            delete_all_archives()
+            verbose_print("Done")
+    else:
+        for repo_name in repo_download_checkbox_group:
+            command_str = "git clone --progress "
+            if "kohya" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/bmaltais/kohya_ss.git"
+                command_str = f"{command_str}{url_path}"
+                verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in execute(command_str.split(" ")):
+                    verbose_print(line)
+            elif "tag" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/KichangKim/DeepDanbooru.git"
+                command_str = f"{command_str}{url_path}"
+                verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in execute(command_str.split(" ")):
+                    verbose_print(line)
+                # also install the latest pre-trained model
+                command_str = f"wget "
+                progress_flag = "-q --show-progress "
+
+                url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip"  # newest model
+                if not is_windows():
+                    command_str = f"{command_str}{progress_flag}"
+                    command_str = f"{command_str}{url_path}"
+                else:
+                    command_str = f"aria2c "
+                    command_str = f"{command_str}{url_path} {disable_flag}"
+                verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
+                for line in execute(command_str.split(" ")):
+                    verbose_print(line)
+
+                # finally unzip the file
+                unzip_all()
+                delete_all_archives()
+                verbose_print("Done")
+            elif "webui" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/AUTOMATIC1111/stable-diffusion-webui.git"
+                command_str = f"{command_str}{url_path}"
+                verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in execute(command_str.split(" ")):
+                    verbose_print(line)
+            elif "invoke" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/invoke-ai/InvokeAI.git"
+                command_str = f"{command_str}{url_path}"
+                verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in execute(command_str.split(" ")):
+                    verbose_print(line)
+            verbose_print(f"Done")
+
+
+def get_repo_releases(event_data):
+    repo_release_urls = {}
+    # populate the release options list & make button visible
+    repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI"]
+    url = None
+    release_options_radio_list = []
+
+    if event_data.value == repo_download_options_no_auto1111[0]:
+        owner = 'bmaltais'
+        repo = 'kohya_ss'
+        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
+    elif event_data.value == repo_download_options_no_auto1111[1]:
+        owner = 'KichangKim'
+        repo = 'DeepDanbooru'
+        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
+    elif event_data.value == repo_download_options_no_auto1111[2]:
+        owner = 'invoke-ai'
+        repo = 'InvokeAI'
+        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
+
+    all_releases = extract_time_and_href_github(url) # list of lists containing [release name, list of downloads]
+    verbose_print(f"all_releases:\t{all_releases}")
+
+    for release in all_releases:
+        header_text, urls = release
+        release_options_radio_list.append(f"{header_text}")
+        repo_release_urls[header_text] = urls
+    return copy.deepcopy(release_options_radio_list), copy.deepcopy(repo_release_urls)
+
+def delete_all_archives():
+    zip_list = glob.glob(os.path.join(os.getcwd(), f"*.zip"))
+    rar_list = glob.glob(os.path.join(os.getcwd(), f"*.rar"))
+    gz_list = glob.glob(os.path.join(os.getcwd(), f"*.gz"))
+    for zip in zip_list:
+        os.remove(zip)
+    for rar in rar_list:
+        os.remove(rar)
+    for gz in gz_list:
+        os.remove(gz)
+
+
+def unzip_all():
+    zip_list = glob.glob(os.path.join(os.getcwd(), f"*.zip"))
+    rar_list = glob.glob(os.path.join(os.getcwd(), f"*.rar"))
+    gz_list = glob.glob(os.path.join(os.getcwd(), f"*.gz"))
+    for zip in zip_list:
+        unzip_file(zip)
+    for rar in rar_list:
+        unzip_file(rar)
+    for gz in gz_list:
+        unzip_file(gz)
+
+
+
+
+
+
