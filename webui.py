@@ -2469,13 +2469,16 @@ def load_tags_csv():
 
     # load the everything tags csv
     current_list_of_csvs = help.sort_csv_files_by_date(cwd)
-    # Read the CSV file, skip the header, and only keep columns at index 1 and 2
-    data = pd.read_csv(current_list_of_csvs[0], header=None, skiprows=1, usecols=[1, 2])
-    # Iterate through the rows and add the values to the dictionary
-    for index, row in tqdm(data.iterrows(), desc='Loading all E6 tags CSV', total=len(data.index)):
-        tag_name = row.iloc[0]
-        category_index = row.iloc[1]
-        all_tags_ever_dict[tag_name] = category_index
+    
+    # Read the CSV file, and use the name column as the index column
+    data = pd.read_csv(current_list_of_csvs[0], index_col='name')
+    print(data)
+    
+    # Get the part of the data we are interested as a dictionary
+    data_columns_dict = data.to_dict() # {column: {tag_name -> value}}
+    all_tags_ever_dict = data_columns_dict['post_count']
+    #print(all_tags_ever_dict)
+        
     # remove the dataframe
     del data
     return all_tags_ever_dict
