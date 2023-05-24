@@ -7,6 +7,9 @@ import copy
 import batch_downloader
 import autotag
 import helper_functions as help
+import css_constants as css_
+import js_constants as js_
+import md_constants as md_
 
 import argparse
 import datetime
@@ -2374,78 +2377,11 @@ def unload_component():
 '''
 
 def build_ui():
-    ### The below CSS is dependent on the version of Gradio the user has, (gradio DEVs should have this fixed in the next version 22.0 of gradio)
-    cyan_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04 {background: linear-gradient(#00ffff, #2563eb)}"
-    red_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04.selected {background: linear-gradient(#ff0000, #404040)}"
-    green_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04 {background: linear-gradient(#2fa614, #2563eb)}"
-
-    thumbnail_colored_border_css = """
-    .selected-custom {
-        --ring-color: red !important;
-        transform: scale(0.9) !important;
-        border-color: red !important;
-    }
-    """
-
-    preview_hide_rule = """
-    .hidden {
-      display: none;
-    }
-    """
-
-    refresh_aspect_btn_rule = """
-    #refresh_aspect_btn {
-      margin: 0.6em 0em 0.55em 1.25em;
-      max-width: 2.5em;
-      min-width: 2.5em !important;
-      height: 2.4em;
-    }
-    """
-
-    #
-    #  min-width: 10em !important;
-    #  margin: 15em 0em 15em 0;
-    #  height: 8em;
-    trim_row_length = """
-    #trim_row_length {
-      max-width: 0em;
-      min-width: 6.5em !important;
-    }
-    """
-
-    trim_markdown_length = """
-    #trim_markdown_length {
-      margin: 0.6em 0em 0.55em 0;
-      max-width: 7.5em;
-      min-width: 2.5em !important;
-      height: 2.4em;
-    }
-    """
-
-    cpu_checkbox_length = """
-    #cpu_checkbox_length {
-      max-width: 0em;
-      min-width: 6.5em !important;
-    }
-    """
-
-    cpu_checkbox_length_class = """
-    .cpu_checkbox_length {
-      max-width: 0em;
-      min-width: 6.5em !important;
-    }
-    """
-
-    with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_length} {trim_markdown_length} {cpu_checkbox_length} {cpu_checkbox_length_class} {thumbnail_colored_border_css} {green_button_css} {red_button_css}") as demo:
+    with gr.Blocks(css=f"{css_.preview_hide_rule} {css_.refresh_aspect_btn_rule} {css_.trim_row_length} {css_.trim_markdown_length} {css_.cpu_checkbox_length} {css_.cpu_checkbox_length_class} {css_.thumbnail_colored_border_css} {css_.green_button_css} {css_.red_button_css}") as demo:
         with gr.Tab("General Config"):
             with gr.Row():
                 config_save_var0 = gr.Button(value="Apply & Save Settings", variant='primary')
-            gr.Markdown(
-        """
-        ### Make sure all necessary dependencies have been installed.
-        ### This UI currently works in the case of ( SINGLE ) batch configurations.
-        ### Note: Tag/s appended/prepended and/or replaced are not included in the "GALLERY Preview" if they are not in the "category" relative tag files.
-        """)
+            gr.Markdown(md_.general_config)
             with gr.Row():
                 with gr.Column():
                     batch_folder = gr.Textbox(lines=1, label='Path to Batch Directory', value=settings_json["batch_folder"])
@@ -2471,10 +2407,7 @@ def build_ui():
         with gr.Tab("Stats Config"):
             with gr.Row():
                 config_save_var1 = gr.Button(value="Apply & Save Settings", variant='primary')
-            gr.Markdown(
-        """
-        ### All except last two sliders represents the \"minimum\" requirements for any given image to be downloaded.
-        """)
+            gr.Markdown(md_.stats_config)
             with gr.Row():
                 min_score = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Min Score', value=settings_json["min_score"])
             with gr.Row():
@@ -2497,22 +2430,13 @@ def build_ui():
                 config_save_var2 = gr.Button(value="Apply & Save Settings", variant='primary')
             with gr.Row():
                 with gr.Column():
-                    gr.Markdown(
-                """
-                ### Data Collection Options
-                """)
+                    gr.Markdown(md_.collect)
                     collect_checkbox_group_var = gr.CheckboxGroup(choices=collect_checkboxes, label='Collect Checkboxes', value=help.grab_pre_selected(settings_json, collect_checkboxes))
                 with gr.Column():
-                    gr.Markdown(
-                """
-                ###  Data Download Options
-                """)
+                    gr.Markdown(md_.download)
                     download_checkbox_group_var = gr.CheckboxGroup(choices=download_checkboxes, label='Download Checkboxes', value=help.grab_pre_selected(settings_json, download_checkboxes))
                 with gr.Column():
-                    gr.Markdown(
-                """
-                ###  Data Resize Options
-                """)
+                    gr.Markdown(md_.resize)
                     resize_checkbox_group_var = gr.CheckboxGroup(choices=resize_checkboxes, label='Resize Checkboxes', value=help.grab_pre_selected(settings_json, resize_checkboxes))
         with gr.Tab("Required Tags Config"):
             with gr.Row():
@@ -2539,16 +2463,7 @@ def build_ui():
             with gr.Row():
                 blacklist_group_var = gr.CheckboxGroup(choices=blacklist_tags, label='ALL Blacklisted Tags', value=[])
         with gr.Tab("Additional Components Config"):
-            gr.Markdown(
-        """
-        ### By DEFAULT the: Path to negative tags file is filled in. Edit or remove file and/or tags as necessary.
-        ### Tags specified in the negative tag file, removes all tag instances from images (when downloaded).
-        ### Prepend text radio button options are ONLY used when the keyword for the search is not specified.
-        ### Note: Tag/s appended/prepended and/or replaced are not included in the "GALLERY Preview" if they are not in the "category" relative tag files.
-        ### To replace Tags with the file, they must follow the format of the first tag as the keyword, then after the first comma will be all replacement tag/s.
-        ### Only ONE search keyword per line. (Remove and Replace button effects are Permanent!)
-        ### The user can manually remove tags from batched images in the "Preview Gallery" w/ the search bar and selected the searched checkbox option for tag deletion.
-        """)
+            gr.Markdown(md_.add_comps_config)
             with gr.Row():
                 config_save_var5 = gr.Button(value="Apply & Save Settings", variant='primary')
             with gr.Row():
@@ -2592,22 +2507,7 @@ def build_ui():
             with gr.Row():
                 prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
         with gr.Tab("Run Tab"):
-            gr.Markdown(
-        """
-        ### By DEFAULT the: Path to Image Full Change Log JSON (Optional) text field is BLANK. 
-        ### This file is generated from tag and/or image changes in the Image Gallery tab "after" downloading.
-        ### The process runs for post-processing and ONLY starts tracking add/remove tag and/or image changes done after the backend script gets run.
-        ### This includes any interaction with the webui.
-        ### Settings used prior to the post-processing step with this file must be identical to the original from when it was created.
-        ### This is due to the file tracking the respective changes only with the webui, so anything before that step with the backend script is assumed to be correct.
-        ### Or in other words, ONLY interactions with the webui that "instantly" adds and/or removes tag/s and/or image/s get saved.
-        ### (NOTE) A new file tracking config "WILL" be created if the batch name is changed, e.g. places that could happen:
-        ### ----> at start
-        ### ----> when saving a new batch name
-        ### ----> when loading new config
-        ### ----> when saving new config
-        ### After downloading images, OPTIONALLY use the Post-Processing Run Button to apply all additional changes to the images.
-        """)
+            gr.Markdown(md_.run)
             with gr.Row():
                 with gr.Column():
                     basefolder = gr.Textbox(lines=1, label='Root Output Dir Path', value=cwd)
@@ -2647,14 +2547,7 @@ def build_ui():
                 with gr.Row():
                     progress_run_batch = gr.Textbox(interactive=False, visible=False)
         with gr.Tab("Image Preview Gallery"):
-            gr.Markdown(
-        """
-        ### The square checkboxes are used to do batch calculations, e.g. searching tag/s, adding and removing.
-        ### (USER MUST SELECT AT LEAST ONE CHECKBOX) if searching.
-        ### TAGS WITHOUT A CATEGORY ARE NOT DISPLAYED e.g. tag/s added with the append, prepend, replace Option (if they are also not in a "category" csv).
-        ### (NOTE) ALL images "SEARCHED" can ONLY be deleted if checkbox option is selected; otherwise it is single image deletions.
-        ### Remove tags from batches of images the same way you remove tags from individual images and then select the "searched" checkbox.
-        """)
+            gr.Markdown(md_.preview)
             with gr.Row():
                 with gr.Column():
                     with gr.Row():
@@ -2697,11 +2590,7 @@ def build_ui():
                                                headers=["Tag Category", "Count"], datatype=["str", "number"], max_cols=2,
                                                type="array")
         with gr.Tab("Download Extra/s: Model/s & Code Repos"):
-            gr.Markdown(
-        """
-        ### Here you can download pre-trained stable diffusion models for your training and/or generation purposes.
-        ### In addition, you can download several different repos to help set up for these ^^^ purposes. 
-        """)
+            gr.Markdown(md_.extra)
             with gr.Column():
                 repo_download_options = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "AUTO1111 WEBUI", "InvokeAI"]
 
@@ -2723,15 +2612,7 @@ def build_ui():
                                                                  visible=False)
                 model_download_button = gr.Button(value="Download Model/s", variant='primary', visible=False)
         with gr.Tab("Add Custom Dataset"):
-            gr.Markdown(
-            """
-            ### This tab populates with the auto-tagging option ONLY after downloading one of those models from the previous tab.
-            ### The (above) line \'assumes\' the user has the (image and tag) file pairs named the same thing.
-            ### To Run the model: (1) Select your model (2) Set your Threshold (3) Select your Image/s (4) Interrogate with the model.
-            ### ( NOTE ) Using Batch mode, will disable the single image predictions on the right side. (batch mode is also defined as using a folder with MORE than ONE image in it)
-            ### To transfer Tag/s AND/OR Image/s, simply check the \'copy\' checkbox and click the save option preferred. Tag files will be create for images without them (if transferred).
-            ### ( NOTE ) When running Batch mode, the (copy checkbox) and (Use & Write Tag Options) are automatically applied and image/s and tag/s are automatically saved.
-            """)
+            gr.Markdown(md_.custom)
             image_modes = ['Single', 'Batch']
             if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
                 and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
@@ -2758,8 +2639,8 @@ def build_ui():
                     with gr.Row():
                         landscape_crop_dropdown = gr.Dropdown(choices=['left', 'mid', 'right'], label="Landscape Crop", info="Mandatory", visible=False)
                         portrait_crop_dropdown = gr.Dropdown(choices=['top', 'mid', 'bottom'], label="Portrait Crop", info="Mandatory", visible=False)
-                # with gr.Row():
-                #     square_image_edit_slider = gr.Slider(minimum=0, maximum=3000, step=1, label='Crop/Resize Square Image Size', info='Length or Width', value=448, visible=True, interactive=True)
+                    # with gr.Row():
+                    #     square_image_edit_slider = gr.Slider(minimum=0, maximum=3000, step=1, label='Crop/Resize Square Image Size', info='Length or Width', value=448, visible=True, interactive=True)
                     with gr.Row():
                         confidence_threshold_slider = gr.Slider(minimum=0, maximum=100, step=1, label='Confidence Threshold', value=75, visible=True, interactive=True)
                     with gr.Row():
@@ -2792,38 +2673,6 @@ def build_ui():
         images_selected_state = gr.JSON([], visible=False)
         multi_select_ckbx_state = gr.JSON([1], visible=False)
         only_selected_state_object = gr.State(dict())
-        js_do_everything = """
-        async (images_selected_state, multi_select_ckbx_state) => {
-          const gallery = document.querySelector("#gallery_id")
-          const buttons_thumbnails = gallery.querySelectorAll(".thumbnails > button");
-          const buttons_large = gallery.querySelectorAll(".grid-container > button");
-          buttons_thumbnails.forEach((btn, idx) => {
-            if(images_selected_state.includes(idx)){
-              btn.classList.add('selected-custom');
-            }else{
-              btn.classList.remove('selected-custom');
-            }
-            btn.classList.remove('selected');
-          })
-          buttons_large.forEach((btn, idx) => {
-            if(images_selected_state.includes(idx)){
-              btn.classList.add('selected-custom');
-            }else{
-              btn.classList.remove('selected-custom');
-            }
-          })
-          const elements = document.querySelectorAll('*[class^="preview"], *[class*=" preview"]');
-          elements.forEach(element => {
-            if (multi_select_ckbx_state[0]==0) {
-              element.style.display = 'none';
-            } else {
-              element.style.display = '';
-              element.style.removeProperty('display');
-            }
-          })
-          return images_selected_state
-        }
-        """
 
         refresh_aspect_btn.click(fn=force_reload_show_gallery,
                              inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
@@ -2963,7 +2812,7 @@ def build_ui():
         outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
                  img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, images_selected_state,
                  only_selected_state_object]).then(None,
-        inputs=[images_selected_state, multi_select_ckbx_state], outputs=None, _js=js_do_everything)
+        inputs=[images_selected_state, multi_select_ckbx_state], outputs=None, _js=js_.js_do_everything)
 
         load_json_file_button.click(fn=change_config, inputs=[quick_json_select,settings_path], outputs=[batch_folder,resized_img_folder,
                 tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,method_tag_files,min_score,min_fav_count,
