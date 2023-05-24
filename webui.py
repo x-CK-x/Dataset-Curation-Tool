@@ -2356,23 +2356,10 @@ def load_tags_csv():
     # Read the CSV file, and use the name column as the index column
     data = pd.read_csv(current_list_of_csvs[0], index_col='name')
     
-    # For future reference, the csv tags file from e621 looks like this:
-    """
-                                id  category  post_count
-    name
-    dragon                      1         5      277817
-    cbee                       11         1           0
-    fiscal                     14         4          14
-    ...                       ...       ...         ...
-    lee_harry_(artist)    1189706         0           1
-    plumsauce             1189707         1           1
-    celeste_(art_preben)  1189708         4           1
-    """
-
     # Get the part of the data we are interested as a dictionary
     data_columns_dict = data.to_dict() # {column: {tag_name -> value}}
-    all_tags_ever_dict = data_columns_dict['category']
-    
+    all_tags_ever_dict = data_columns_dict['post_count']
+        
     # remove the dataframe
     del data
     return all_tags_ever_dict
@@ -3079,6 +3066,18 @@ def build_ui():
         parse_button_required.click(fn=parse_file_required, inputs=[file_all_tags_list_required], outputs=[required_tags_group_var])
         parse_button_blacklist.click(fn=parse_file_blacklist, inputs=[file_all_tags_list_blacklist], outputs=[blacklist_group_var])
     return demo
+
+def load_tags_csv():
+    # check to update the tags csv
+    help.check_to_update_csv()
+    # get newest
+    current_list_of_csvs = help.sort_csv_files_by_date(os.getcwd())
+    # load
+    data = pd.read_csv(current_list_of_csvs[0], index_col='name')
+    data_columns_dict = data.to_dict()
+    all_tags_ever_dict = data_columns_dict['category']
+    del data
+    return all_tags_ever_dict
 
 def UI(**kwargs):
     # Show the interface
