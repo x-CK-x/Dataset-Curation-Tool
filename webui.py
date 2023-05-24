@@ -2356,10 +2356,23 @@ def load_tags_csv():
     # Read the CSV file, and use the name column as the index column
     data = pd.read_csv(current_list_of_csvs[0], index_col='name')
     
+    # For future reference, the csv tags file from e621 looks like this:
+    """
+                                id  category  post_count
+    name
+    dragon                      1         5      277817
+    cbee                       11         1           0
+    fiscal                     14         4          14
+    ...                       ...       ...         ...
+    lee_harry_(artist)    1189706         0           1
+    plumsauce             1189707         1           1
+    celeste_(art_preben)  1189708         4           1
+    """
+
     # Get the part of the data we are interested as a dictionary
     data_columns_dict = data.to_dict() # {column: {tag_name -> value}}
-    all_tags_ever_dict = data_columns_dict['post_count']
-        
+    all_tags_ever_dict = data_columns_dict['category']
+    
     # remove the dataframe
     del data
     return all_tags_ever_dict
@@ -3228,19 +3241,7 @@ if __name__ == "__main__":
 
     help.verbose_print(f"EVERYTHING INITIALIZING")
     help.verbose_print(f"Initial check to download & load tags CSV")
-    # check to update the tags csv
-    help.check_to_update_csv()
-    # load the everything tags csv
-    current_list_of_csvs = help.sort_csv_files_by_date(cwd)
-    # Read the CSV file, skip the header, and only keep columns at index 1 and 2
-    data = pd.read_csv(current_list_of_csvs[0], header=None, skiprows=1, usecols=[1, 2])
-    # Iterate through the rows and add the values to the dictionary
-    for index, row in tqdm(data.iterrows(), desc='Loading all E6 tags CSV', total=len(data.index)):
-        tag_name = row.iloc[0]
-        category_index = row.iloc[1]
-        all_tags_ever_dict[tag_name] = category_index
-    # remove the dataframe
-    del data
+    all_tags_ever_dict = load_tags_csv()
 
     demo = build_ui()
 
