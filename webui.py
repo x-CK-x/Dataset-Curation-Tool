@@ -17,122 +17,6 @@ from PIL import Image
 
 '''
 ##################################################################################################################################
-#############################################     PRIMARY VARIABLE DECLARATIONS     ##############################################
-##################################################################################################################################
-'''
-
-# set local path
-cwd = os.getcwd()
-categories_map = {0: 'general', 1: 'artist', 2: 'rating', 3: 'copyright', 4: 'character', 5: 'species', 6: 'invalid',
-                      7: 'meta', 8: 'lore'}
-
-# options
-img_extensions = ["png", "jpg", "same_as_original"]
-method_tag_files_opts = ["relocate", "copy"]
-collect_checkboxes = ["include_tag_file", "include_explicit_tag", "include_questionable_tag", "include_safe_tag",
-                      "include_png", "include_jpg", "include_gif", "include_webm", "include_swf", "include_explicit",
-                      "include_questionable", "include_safe"]
-download_checkboxes = ["skip_post_download", "reorder_tags", "replace_underscores", "remove_parentheses", "do_sort"]
-resize_checkboxes = ["skip_resize", "delete_original"]
-file_extn_list = ["png", "jpg", "gif"]
-
-### assume settings.json at the root dir of repo
-
-# session config
-global config_name, auto_complete_config_name
-config_name = "settings.json"
-
-global is_csv_loaded
-is_csv_loaded = False
-global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict # load on dropdown click - stats / radio click - gallery (always do BOOL check)
-artist_csv_dict = {}
-character_csv_dict = {}
-species_csv_dict = {}
-general_csv_dict = {}
-meta_csv_dict = {}
-rating_csv_dict = {}
-tags_csv_dict = {}
-# ignore the first line in the csv file
-global selected_image_dict # set on every click ::  # id -> {categories: tag/s}, type -> string
-selected_image_dict = None### key:category, value:tag_list
-global all_images_dict # load on radio click - gallery (always do BOOL check)
-all_images_dict = {}### add images by key:id, value:selected_image_dict
-
-global settings_json
-settings_json = help.load_session_config(os.path.join(cwd, config_name))
-
-global required_tags_list
-required_tags_list = help.get_list(settings_json["required_tags"], settings_json["tag_sep"])
-for tag in required_tags_list:
-    if len(tag) == 0:
-        required_tags_list.remove(tag)
-
-global blacklist_tags
-blacklist_tags = help.get_list(settings_json["blacklist"], " | ")
-for tag in blacklist_tags:
-    if len(tag) == 0:
-        blacklist_tags.remove(tag)
-
-help.verbose_print(f"{settings_json}")
-help.verbose_print(f"json key count: {len(settings_json)}")
-
-# UPDATE json with new key, value pairs
-if not "min_date" in settings_json:
-    settings_json["min_year"] = 2000
-elif isinstance(settings_json["min_date"], str) and "-" in settings_json["min_date"]:
-    settings_json["min_year"] = int(settings_json["min_date"].split("-")[0])
-else:
-    settings_json["min_year"] = int(settings_json["min_date"])
-
-if not "min_month" in settings_json:
-    settings_json["min_month"] = 1
-elif isinstance(settings_json["min_date"], str) and "-" in settings_json["min_date"]:
-    settings_json["min_month"] = help.from_padded(settings_json["min_date"].split("-")[1])
-
-if not "min_day" in settings_json:
-    settings_json["min_day"] = 1
-elif isinstance(settings_json["min_date"], str) and settings_json["min_date"].count("-") > 1:
-    settings_json["min_day"] = help.from_padded(settings_json["min_date"].split("-")[-1])
-
-help.update_JSON(settings_json, config_name)
-
-global blacklist_images_dict
-global whitelist_images_all_changes_dict
-global auto_complete_config
-# load if data present / create if file not yet created
-auto_config_path = os.path.join(cwd, "auto_configs")
-auto_complete_config_name = f"auto_complete_{settings_json['batch_folder']}.json"
-temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
-if not os.path.exists(auto_config_path):
-    os.makedirs(auto_config_path)
-auto_complete_config = help.load_session_config(temp_config_path)
-
-if not auto_complete_config:
-    auto_complete_config = {'png': {}, 'jpg': {}, 'gif': {}}
-    help.update_JSON(auto_complete_config, temp_config_path)
-
-global repo_release_urls
-repo_release_urls = {}
-
-global image_creation_times
-image_creation_times = {}
-
-global all_tags_ever_dict
-all_tags_ever_dict = {}
-
-global autotagmodel
-autotagmodel = None
-
-global auto_tag_models
-auto_tag_models = []
-
-global all_predicted_confidences
-global all_predicted_tags
-all_predicted_confidences = {}
-all_predicted_tags = []
-
-'''
-##################################################################################################################################
 #################################################     COMPONENT/S FUNCTION/S     #################################################
 ##################################################################################################################################
 '''
@@ -359,7 +243,7 @@ def make_run_visible():
 def make_invisible():
     return gr.update(interactive=False, visible=False)
 
-def run_script(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath=''):
+def run_script(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath=''):
     help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
 
     #### ADD A PIPE parameter that passes the connection to the other process
@@ -369,7 +253,7 @@ def run_script(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,kee
     e6_downloader = mp.Process(target=batch_downloader.E6_Downloader, args=(basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn),)
     e6_downloader.start()
 
-def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath='',run_button_batch=None,images_full_change_dict_textbox=None,progress=gr.Progress()):
+def run_script_batch(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath='',run_button_batch=None,images_full_change_dict_textbox=None,progress=gr.Progress()):
     global settings_json
     help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
 
@@ -787,7 +671,6 @@ def reload_selected_image_dict(ext, img_name):
     else:
         selected_image_dict = None
 
-
 def extract_name_and_extention(gallery_comp_path):
     # help.verbose_print(f"gallery_comp_path:\t\t{gallery_comp_path}")
     temp = '\\' if help.is_windows() else '/'
@@ -813,7 +696,7 @@ def get_full_text_path(download_folder_type, img_name):
 def get_img_tags(gallery_comp, select_multiple_images_checkbox, images_selected_state, event_data: gr.SelectData):
     global selected_image_dict  # id -> {categories: tag/s}, type -> string
 
-    # help.verbose_print(f"event_data:\t{event_data}")
+    help.verbose_print(f"gallery_comp[event_data.index]['name']:\t{gallery_comp[event_data.index]['name']}")
 
     img_name = None
     artist_comp_checkboxgroup = gr.update(choices=[])
@@ -2390,7 +2273,7 @@ def interrogate_images(image_mode_choice_state, confidence_threshold_slider):
     return gr.update(value=temp_confids), gr.update(choices=temp_tags), image_preview_pil
 
 # also creates an empty tag file for the image file if there isn't one already
-def save_custom_images(image_mode_choice_state, image_with_tag_path_textbox):
+def save_custom_images(image_mode_choice_state, image_with_tag_path_textbox, copy_mode_ckbx):
     global autotagmodel, all_predicted_confidences, all_predicted_tags
     generate_all_dirs()
 
@@ -2472,19 +2355,14 @@ def load_tags_csv():
     
     # Read the CSV file, and use the name column as the index column
     data = pd.read_csv(current_list_of_csvs[0], index_col='name')
-    print(data)
     
     # Get the part of the data we are interested as a dictionary
     data_columns_dict = data.to_dict() # {column: {tag_name -> value}}
     all_tags_ever_dict = data_columns_dict['post_count']
-    #print(all_tags_ever_dict)
         
     # remove the dataframe
     del data
     return all_tags_ever_dict
-
-# Do this in the __name__ == 'main' check so it doesn't happen for every forked process.
-#all_tags_ever_dict = load_tags_csv()
 
 def unload_component():
     return gr.update(value=None)
@@ -2494,70 +2372,70 @@ def unload_component():
 #######################################################     GUI BLOCKS     #######################################################
 ##################################################################################################################################
 '''
-### The below CSS is dependent on the version of Gradio the user has, (gradio DEVs should have this fixed in the next version 22.0 of gradio)
-cyan_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04 {background: linear-gradient(#00ffff, #2563eb)}"
-red_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04.selected {background: linear-gradient(#ff0000, #404040)}"
-green_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04 {background: linear-gradient(#2fa614, #2563eb)}"
-
-thumbnail_colored_border_css = """
-.selected-custom {
-    --ring-color: red !important;
-    transform: scale(0.9) !important;
-    border-color: red !important;
-}
-"""
-
-preview_hide_rule = """
-.hidden {
-  display: none;
-}
-"""
-
-refresh_aspect_btn_rule = """
-#refresh_aspect_btn {
-  margin: 0.6em 0em 0.55em 1.25em;
-  max-width: 2.5em;
-  min-width: 2.5em !important;
-  height: 2.4em;
-}
-"""
-
-#
-#  min-width: 10em !important;
-#  margin: 15em 0em 15em 0;
-#  height: 8em;
-trim_row_length = """
-#trim_row_length {
-  max-width: 0em;
-  min-width: 6.5em !important;
-}
-"""
-
-trim_markdown_length = """
-#trim_markdown_length {
-  margin: 0.6em 0em 0.55em 0;
-  max-width: 7.5em;
-  min-width: 2.5em !important;
-  height: 2.4em;
-}
-"""
-
-cpu_checkbox_length = """
-#cpu_checkbox_length {
-  max-width: 0em;
-  min-width: 6.5em !important;
-}
-"""
-
-cpu_checkbox_length_class = """
-.cpu_checkbox_length {
-  max-width: 0em;
-  min-width: 6.5em !important;
-}
-"""
-
 
 def build_ui():
+    ### The below CSS is dependent on the version of Gradio the user has, (gradio DEVs should have this fixed in the next version 22.0 of gradio)
+    cyan_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04 {background: linear-gradient(#00ffff, #2563eb)}"
+    red_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04.selected {background: linear-gradient(#ff0000, #404040)}"
+    green_button_css = "label.svelte-1qxcj04.svelte-1qxcj04.svelte-1qxcj04 {background: linear-gradient(#2fa614, #2563eb)}"
+
+    thumbnail_colored_border_css = """
+    .selected-custom {
+        --ring-color: red !important;
+        transform: scale(0.9) !important;
+        border-color: red !important;
+    }
+    """
+
+    preview_hide_rule = """
+    .hidden {
+      display: none;
+    }
+    """
+
+    refresh_aspect_btn_rule = """
+    #refresh_aspect_btn {
+      margin: 0.6em 0em 0.55em 1.25em;
+      max-width: 2.5em;
+      min-width: 2.5em !important;
+      height: 2.4em;
+    }
+    """
+
+    #
+    #  min-width: 10em !important;
+    #  margin: 15em 0em 15em 0;
+    #  height: 8em;
+    trim_row_length = """
+    #trim_row_length {
+      max-width: 0em;
+      min-width: 6.5em !important;
+    }
+    """
+
+    trim_markdown_length = """
+    #trim_markdown_length {
+      margin: 0.6em 0em 0.55em 0;
+      max-width: 7.5em;
+      min-width: 2.5em !important;
+      height: 2.4em;
+    }
+    """
+
+    cpu_checkbox_length = """
+    #cpu_checkbox_length {
+      max-width: 0em;
+      min-width: 6.5em !important;
+    }
+    """
+
+    cpu_checkbox_length_class = """
+    .cpu_checkbox_length {
+      max-width: 0em;
+      min-width: 6.5em !important;
+    }
+    """
+
     with gr.Blocks(css=f"{preview_hide_rule} {refresh_aspect_btn_rule} {trim_row_length} {trim_markdown_length} {cpu_checkbox_length} {cpu_checkbox_length_class} {thumbnail_colored_border_css} {green_button_css} {red_button_css}") as demo:
         with gr.Tab("General Config"):
             with gr.Row():
@@ -2872,7 +2750,7 @@ def build_ui():
                                                             interactive=True, file_types=["image"], visible=True, type="file")
                         with gr.Tab("Batch"):
                             file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
-                                                           interactive=True, file_types=["image"], visible=True, type="file")
+                                                           interactive=True, visible=True, type="file")
                     with gr.Row():
                         cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True)
                         model_choice_dropdown = gr.Dropdown(choices=auto_tag_models, label="Model Selection")
@@ -2905,47 +2783,47 @@ def build_ui():
                         image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil")
 
         '''
-    ##################################################################################################################################
-    ####################################################     EVENT HANDLER/S     #####################################################
-    ##################################################################################################################################
-    '''
+        ##################################################################################################################################
+        ####################################################     EVENT HANDLER/S     #####################################################
+        ##################################################################################################################################
+        '''
 
         image_mode_choice_state = gr.State("")
         images_selected_state = gr.JSON([], visible=False)
         multi_select_ckbx_state = gr.JSON([1], visible=False)
         only_selected_state_object = gr.State(dict())
         js_do_everything = """
-    async (images_selected_state, multi_select_ckbx_state) => {
-      const gallery = document.querySelector("#gallery_id")
-      const buttons_thumbnails = gallery.querySelectorAll(".thumbnails > button");
-      const buttons_large = gallery.querySelectorAll(".grid-container > button");
-      buttons_thumbnails.forEach((btn, idx) => {
-        if(images_selected_state.includes(idx)){
-          btn.classList.add('selected-custom');
-        }else{
-          btn.classList.remove('selected-custom');
+        async (images_selected_state, multi_select_ckbx_state) => {
+          const gallery = document.querySelector("#gallery_id")
+          const buttons_thumbnails = gallery.querySelectorAll(".thumbnails > button");
+          const buttons_large = gallery.querySelectorAll(".grid-container > button");
+          buttons_thumbnails.forEach((btn, idx) => {
+            if(images_selected_state.includes(idx)){
+              btn.classList.add('selected-custom');
+            }else{
+              btn.classList.remove('selected-custom');
+            }
+            btn.classList.remove('selected');
+          })
+          buttons_large.forEach((btn, idx) => {
+            if(images_selected_state.includes(idx)){
+              btn.classList.add('selected-custom');
+            }else{
+              btn.classList.remove('selected-custom');
+            }
+          })
+          const elements = document.querySelectorAll('*[class^="preview"], *[class*=" preview"]');
+          elements.forEach(element => {
+            if (multi_select_ckbx_state[0]==0) {
+              element.style.display = 'none';
+            } else {
+              element.style.display = '';
+              element.style.removeProperty('display');
+            }
+          })
+          return images_selected_state
         }
-        btn.classList.remove('selected');
-      })
-      buttons_large.forEach((btn, idx) => {
-        if(images_selected_state.includes(idx)){
-          btn.classList.add('selected-custom');
-        }else{
-          btn.classList.remove('selected-custom');
-        }
-      })
-      const elements = document.querySelectorAll('*[class^="preview"], *[class*=" preview"]');
-      elements.forEach(element => {
-        if (multi_select_ckbx_state[0]==0) {
-          element.style.display = 'none';
-        } else {
-          element.style.display = '';
-          element.style.removeProperty('display');
-        }
-      })
-      return images_selected_state
-    }
-    """
+        """
 
         refresh_aspect_btn.click(fn=force_reload_show_gallery,
                              inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
@@ -2960,7 +2838,7 @@ def build_ui():
                                   outputs=[image_confidence_values, image_generated_tags, image_preview_pil])
 
         save_custom_images_button.click(fn=save_custom_images,
-                                    inputs=[image_mode_choice_state, image_with_tag_path_textbox],
+                                    inputs=[image_mode_choice_state, image_with_tag_path_textbox, copy_mode_ckbx],
                                     outputs=[image_confidence_values, image_generated_tags, image_preview_pil])
         interrogate_button.click(unload_component, None, image_preview_pil).then(fn=interrogate_images,
                                                                              inputs=[image_mode_choice_state,
@@ -2973,7 +2851,7 @@ def build_ui():
                                                                               outputs=[image_generated_tags_prompt_builder_textbox])
         crop_or_resize_radio.change(fn=make_menus_visible, inputs=[crop_or_resize_radio], outputs=[landscape_crop_dropdown, portrait_crop_dropdown])
         model_choice_dropdown.select(fn=load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
-    # cpu_only_ckbx.change(fn=re_load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
+        # cpu_only_ckbx.change(fn=re_load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
         confidence_threshold_slider.change(fn=set_threshold,
                                        inputs=[confidence_threshold_slider],
                                        outputs=[image_confidence_values, image_generated_tags]).then(fn=prompt_string_builder,
@@ -2984,7 +2862,7 @@ def build_ui():
         crop_or_resize_radio.change(fn=set_crop_or_resize, inputs=[crop_or_resize_radio], outputs=[])
         landscape_crop_dropdown.select(fn=set_landscape_square_crop, inputs=[landscape_crop_dropdown], outputs=[])
         portrait_crop_dropdown.select(fn=set_portrait_square_crop, inputs=[portrait_crop_dropdown], outputs=[])
-    # square_image_edit_slider.change(fn=set_square_size, inputs=[square_image_edit_slider], outputs=[])
+        # square_image_edit_slider.change(fn=set_square_size, inputs=[square_image_edit_slider], outputs=[])
         write_tag_opts_dropdown.select(fn=set_write_tag_opts, inputs=[], outputs=[])
         use_tag_opts_radio.select(fn=set_use_tag_opts_radio, inputs=[], outputs=[]).then(fn=prompt_string_builder,
                                                                               inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
@@ -3079,7 +2957,7 @@ def build_ui():
                         outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_general_tag_checkbox_group,
                                 img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
 
-    # there is a networking "delay" bug for the below feature to work (do NOT click on the same image after selected) i.e. click on a different image before going back to that one
+        # there is a networking "delay" bug for the below feature to work (do NOT click on the same image after selected) i.e. click on a different image before going back to that one
         gallery_comp.select(fn=get_img_tags,
         inputs=[gallery_comp, select_multiple_images_checkbox, images_selected_state],
         outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
@@ -3189,9 +3067,6 @@ def build_ui():
         parse_button_blacklist.click(fn=parse_file_blacklist, inputs=[file_all_tags_list_blacklist], outputs=[blacklist_group_var])
     return demo
 
-# Do this in the __name__ == 'main' check so it doesn't happen for every forked process.
-#demo = build_ui(cwd, img_extensions, method_tag_files_opts, collect_checkboxes, download_checkboxes, resize_checkboxes, file_extn_list, config_name, settings_json, required_tags_list, blacklist_tags, auto_config_path, auto_tag_models, reset_selected_img, config_save_button, textbox_handler_required, textbox_handler_blacklist, check_box_group_handler_required, check_box_group_handler_blacklist, parse_file_required, parse_file_blacklist, make_run_visible, run_script, run_script_batch, data_collect, data_download, data_resize, end_connection, show_gallery, force_reload_show_gallery, clear_categories, show_searched_gallery, reset_gallery, change_config, get_img_tags, run_stats, search_tags, add_tag_changes, remove_tag_changes, remove_images, save_tag_changes, save_image_changes, remove_from_all, replace_from_all, prepend_with_keyword, check_to_reload_auto_complete_config, auto_config_apply, download_repos, reload_release_options, get_repo_releases, get_repo_assets, download_models, show_model_downloads_options, show_nested_fluffyrock_models, set_ckbx_state, make_visible, load_model, set_threshold, load_images, make_menus_visible, set_crop_or_resize, set_landscape_square_crop, set_portrait_square_crop, set_write_tag_opts, set_use_tag_opts_radio, set_image_with_tag_path_textbox, set_copy_mode_ckbx, interrogate_images, save_custom_images, save_custom_tags, prompt_string_builder, unload_component, red_button_css, green_button_css, thumbnail_colored_border_css, preview_hide_rule, refresh_aspect_btn_rule, trim_row_length, trim_markdown_length, cpu_checkbox_length, cpu_checkbox_length_class)
-
 def UI(**kwargs):
     # Show the interface
     launch_kwargs = {}
@@ -3233,9 +3108,142 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    all_tags_ever_dict = load_tags_csv()
+    '''
+    ##################################################################################################################################
+    #############################################     PRIMARY VARIABLE DECLARATIONS     ##############################################
+    ##################################################################################################################################
+    '''
+
+    # set local path
+    cwd = os.getcwd()
+    categories_map = {0: 'general', 1: 'artist', 2: 'rating', 3: 'copyright', 4: 'character', 5: 'species',
+                      6: 'invalid',
+                      7: 'meta', 8: 'lore'}
+
+    # options
+    img_extensions = ["png", "jpg", "same_as_original"]
+    method_tag_files_opts = ["relocate", "copy"]
+    collect_checkboxes = ["include_tag_file", "include_explicit_tag", "include_questionable_tag", "include_safe_tag",
+                          "include_png", "include_jpg", "include_gif", "include_webm", "include_swf",
+                          "include_explicit",
+                          "include_questionable", "include_safe"]
+    download_checkboxes = ["skip_post_download", "reorder_tags", "replace_underscores", "remove_parentheses", "do_sort"]
+    resize_checkboxes = ["skip_resize", "delete_original"]
+    file_extn_list = ["png", "jpg", "gif"]
+
+    ### assume settings.json at the root dir of repo
+
+    # session config
+    global config_name, auto_complete_config_name
+    config_name = "settings.json"
+
+    global is_csv_loaded
+    is_csv_loaded = False
+    global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict  # load on dropdown click - stats / radio click - gallery (always do BOOL check)
+    artist_csv_dict = {}
+    character_csv_dict = {}
+    species_csv_dict = {}
+    general_csv_dict = {}
+    meta_csv_dict = {}
+    rating_csv_dict = {}
+    tags_csv_dict = {}
+    # ignore the first line in the csv file
+    global selected_image_dict  # set on every click ::  # id -> {categories: tag/s}, type -> string
+    selected_image_dict = None  ### key:category, value:tag_list
+    global all_images_dict  # load on radio click - gallery (always do BOOL check)
+    all_images_dict = {}  ### add images by key:id, value:selected_image_dict
+
+    global settings_json
+    settings_json = help.load_session_config(os.path.join(cwd, config_name))
+
+    global required_tags_list
+    required_tags_list = help.get_list(settings_json["required_tags"], settings_json["tag_sep"])
+    for tag in required_tags_list:
+        if len(tag) == 0:
+            required_tags_list.remove(tag)
+
+    global blacklist_tags
+    blacklist_tags = help.get_list(settings_json["blacklist"], " | ")
+    for tag in blacklist_tags:
+        if len(tag) == 0:
+            blacklist_tags.remove(tag)
+
+    help.verbose_print(f"{settings_json}")
+    help.verbose_print(f"json key count: {len(settings_json)}")
+
+    # UPDATE json with new key, value pairs
+    if not "min_date" in settings_json:
+        settings_json["min_year"] = 2000
+    elif isinstance(settings_json["min_date"], str) and "-" in settings_json["min_date"]:
+        settings_json["min_year"] = int(settings_json["min_date"].split("-")[0])
+    else:
+        settings_json["min_year"] = int(settings_json["min_date"])
+
+    if not "min_month" in settings_json:
+        settings_json["min_month"] = 1
+    elif isinstance(settings_json["min_date"], str) and "-" in settings_json["min_date"]:
+        settings_json["min_month"] = help.from_padded(settings_json["min_date"].split("-")[1])
+
+    if not "min_day" in settings_json:
+        settings_json["min_day"] = 1
+    elif isinstance(settings_json["min_date"], str) and settings_json["min_date"].count("-") > 1:
+        settings_json["min_day"] = help.from_padded(settings_json["min_date"].split("-")[-1])
+
+    help.update_JSON(settings_json, config_name)
+
+    global blacklist_images_dict
+    global whitelist_images_all_changes_dict
+    global auto_complete_config
+    # load if data present / create if file not yet created
+    auto_config_path = os.path.join(cwd, "auto_configs")
+    auto_complete_config_name = f"auto_complete_{settings_json['batch_folder']}.json"
+    temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+    if not os.path.exists(auto_config_path):
+        os.makedirs(auto_config_path)
+    auto_complete_config = help.load_session_config(temp_config_path)
+
+    if not auto_complete_config:
+        auto_complete_config = {'png': {}, 'jpg': {}, 'gif': {}}
+        help.update_JSON(auto_complete_config, temp_config_path)
+
+    global repo_release_urls
+    repo_release_urls = {}
+
+    global image_creation_times
+    image_creation_times = {}
+
+    global all_tags_ever_dict
+    all_tags_ever_dict = {}
+
+    global autotagmodel
+    autotagmodel = None
+
+    global auto_tag_models
+    auto_tag_models = []
+
+    global all_predicted_confidences
+    global all_predicted_tags
+    all_predicted_confidences = {}
+    all_predicted_tags = []
+
+    help.verbose_print(f"EVERYTHING INITIALIZING")
+    help.verbose_print(f"Initial check to download & load tags CSV")
+    # check to update the tags csv
+    help.check_to_update_csv()
+    # load the everything tags csv
+    current_list_of_csvs = help.sort_csv_files_by_date(cwd)
+    # Read the CSV file, skip the header, and only keep columns at index 1 and 2
+    data = pd.read_csv(current_list_of_csvs[0], header=None, skiprows=1, usecols=[1, 2])
+    # Iterate through the rows and add the values to the dictionary
+    for index, row in tqdm(data.iterrows(), desc='Loading all E6 tags CSV', total=len(data.index)):
+        tag_name = row.iloc[0]
+        category_index = row.iloc[1]
+        all_tags_ever_dict[tag_name] = category_index
+    # remove the dataframe
+    del data
+
     demo = build_ui()
-    
+
     UI(
         username=args.username,
         password=args.password,
