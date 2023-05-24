@@ -271,7 +271,7 @@ class AutoTag:
             del data
 
         if self.max_data_loader_n_workers is not None:
-            self.dataset = image_data_loader.ImageLoadingPrepDataset(self.image_paths)
+            self.dataset = image_data_loader.ImageLoadingPrepDataset(copy.deepcopy(self.image_paths))
 
             self.dataset.set_crop_image_size(self.crop_image_size)
             print(f"self.dataset.crop_image_size is now:\t{self.dataset.crop_image_size}")
@@ -284,23 +284,34 @@ class AutoTag:
             print(f"self.dataset.landscape_square_crop is now:\t{self.dataset.landscape_square_crop}")
             print(f"=============================")
 
-            data = torch.utils.data.DataLoader(
-                self.dataset,
-                batch_size=self.batch_size,
-                shuffle=False,
-                num_workers=self.max_data_loader_n_workers,
-                collate_fn=self.collate_fn_remove_corrupted,
-                drop_last=False,
-            )
+            data = None
+            if help.is_windows():
+                data = torch.utils.data.DataLoader(
+                    self.dataset,
+                    batch_size=self.batch_size,
+                    shuffle=False,
+                    collate_fn=self.collate_fn_remove_corrupted,
+                    drop_last=False,
+                )
+            else:
+                data = torch.utils.data.DataLoader(
+                    self.dataset,
+                    batch_size=self.batch_size,
+                    num_workers=self.max_data_loader_n_workers,
+                    shuffle=False,
+                    collate_fn=self.collate_fn_remove_corrupted,
+                    drop_last=False,
+                )
         else:
             data = [[(None, ip)] for ip in self.image_paths]
         self.global_images_list = []
         b_imgs = []
-        for data_entry in tqdm(data, smoothing=0.0):
-            for data in data_entry:
-                if data is None:
+
+        for entry in tqdm(data, smoothing=0.0):
+            for image_data in entry:
+                if image_data is None:
                     continue
-                image, image_path = data
+                image, image_path = image_data
                 if image is not None:
                     image = image.detach().numpy()
                     self.global_images_list.append(copy.deepcopy(image))

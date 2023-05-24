@@ -3,8 +3,10 @@ polars == 0.16.18
 requests
 tqdm
 pyarrow
-gradio == 3.29.0
+gradio == 3.32.0
 beautifulsoup4
 Pillow
 pandas
 onnxruntime
+torch
+onnxruntime-gpu
