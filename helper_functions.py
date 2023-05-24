@@ -391,6 +391,9 @@ def get_today_datetime():
     return formatted_date
 
 def download_all_e6_tags_csv():
+    before_count = len(glob.glob(os.path.join(os.getcwd(), f"tags-*.csv")))
+    verbose_print(f"before_count:\t{before_count}")
+
     disable_flag = "--disable-ipv6"
     repo_name = f"{'tags-'}{get_today_datetime()}{'.csv.gz'}"
     url = f"{'https://e621.net/db_export/'}{repo_name}"
@@ -405,7 +408,15 @@ def download_all_e6_tags_csv():
     for line in execute(command_str.split(" ")):
         verbose_print(line)
 
-    if not len(glob.glob(os.path.join(os.getcwd(), f"*.gz"))) > 0:
+    if len(glob.glob(os.path.join(os.getcwd(), f"*.gz"))) > 0:
+        # finally unzip the file
+        unzip_all()
+        delete_all_archives()
+
+    after_count = len(glob.glob(os.path.join(os.getcwd(), f"tags-*.csv")))
+    verbose_print(f"after_count:\t{after_count}")
+
+    if (after_count - before_count) == 0:
         day = int((((repo_name.split('.csv.gz')[0]).split('-'))[-1]))
         temp = '-'.join(((repo_name.split('.csv.gz')[0]).split('-'))[:-1])
         repo_name = f"{temp}-{(day-1)}.csv.gz"
@@ -424,9 +435,10 @@ def download_all_e6_tags_csv():
         for line in execute(command_str.split(" ")):
             verbose_print(line)
 
-    # finally unzip the file
-    unzip_all()
-    delete_all_archives()
+        # finally unzip the file
+        unzip_all()
+        delete_all_archives()
+
     verbose_print("Done")
 
 def download_zack3d_model():
