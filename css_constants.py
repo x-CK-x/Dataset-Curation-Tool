@@ -25,10 +25,6 @@ refresh_aspect_btn_rule = """
 }
 """
 
-#
-#  min-width: 10em !important;
-#  margin: 15em 0em 15em 0;
-#  height: 8em;
 trim_row_length = """
 #trim_row_length {
   max-width: 0em;
@@ -45,18 +41,28 @@ trim_markdown_length = """
 }
 """
 
-cpu_checkbox_length = """
-#cpu_checkbox_length {
-  max-width: 0em;
-  min-width: 6.5em !important;
+refresh_models_btn_rule = """
+#refresh_models_btn {
+  margin: 0.0em 0em 0.0em 0.35em;
+  max-width: 0.5em;
+  min-width: 0em !important;
+  height: 0em;
 }
 """
 
-cpu_checkbox_length_class = """
-.cpu_checkbox_length {
-  max-width: 0em;
-  min-width: 6.5em !important;
+gallery_fix_height = """
+.fixed-height.svelte-g4rw9.svelte-g4rw9 {
+	min-height: 971px;
+	max-height: 0vh;
 }
 """
+
+
+
+
+
+
+
+
 
 

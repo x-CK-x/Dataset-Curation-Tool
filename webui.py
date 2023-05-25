@@ -2370,6 +2370,19 @@ def load_tags_csv():
 def unload_component():
     return gr.update(value=None)
 
+def refresh_model_list():
+    if not "Z3D-E621-Convnext" in auto_tag_models and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
+            and os.path.exists(
+        os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
+        auto_tag_models.append('Z3D-E621-Convnext')
+    if not "Fluffusion-AutoTag" in auto_tag_models and os.path.exists(
+            os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
+            and os.path.exists(
+        os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
+        auto_tag_models.append('Fluffusion-AutoTag')
+    model_choice_dropdown = gr.update(choices=auto_tag_models)
+    return model_choice_dropdown
+
 '''
 ##################################################################################################################################
 #######################################################     GUI BLOCKS     #######################################################
@@ -2377,7 +2390,9 @@ def unload_component():
 '''
 
 def build_ui():
-    with gr.Blocks(css=f"{css_.preview_hide_rule} {css_.refresh_aspect_btn_rule} {css_.trim_row_length} {css_.trim_markdown_length} {css_.cpu_checkbox_length} {css_.cpu_checkbox_length_class} {css_.thumbnail_colored_border_css} {css_.green_button_css} {css_.red_button_css}") as demo:
+    with gr.Blocks(css=f"{css_.preview_hide_rule} {css_.refresh_aspect_btn_rule} {css_.trim_row_length} {css_.trim_markdown_length} "
+                       f"{css_.thumbnail_colored_border_css} {css_.refresh_models_btn_rule}"
+                       f"{css_.green_button_css} {css_.red_button_css}") as demo:# {css_.gallery_fix_height}
         with gr.Tab("General Config"):
             with gr.Row():
                 config_save_var0 = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -2579,6 +2594,7 @@ def build_ui():
                     img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                     img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                     img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
+                #with gr.Column():
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id").style(columns=[3], object_fit="contain", height="auto")
         with gr.Tab("Data Stats"):
             with gr.Row():
@@ -2614,10 +2630,10 @@ def build_ui():
         with gr.Tab("Add Custom Dataset"):
             gr.Markdown(md_.custom)
             image_modes = ['Single', 'Batch']
-            if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
+            if not "Z3D-E621-Convnext" in auto_tag_models and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
                 and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
                 auto_tag_models.append('Z3D-E621-Convnext')
-            if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
+            if not "Fluffusion-AutoTag" in auto_tag_models and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
                 and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
                 auto_tag_models.append('Fluffusion-AutoTag')
 
@@ -2633,7 +2649,12 @@ def build_ui():
                             file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
                                                            interactive=True, visible=True, type="file")
                     with gr.Row():
-                        cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True)
+                        with gr.Column(elem_id="trim_row_length"):
+                            cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True)
+                        with gr.Column(elem_id="trim_row_length"):
+                            gr.Markdown("""Refresh""", elem_id="trim_markdown_length")
+                            refresh_symbol = '\U0001f504'  # 🔄
+                            refresh_models_btn = gr.Button(value=refresh_symbol, variant="variant", elem_id="refresh_models_btn")
                         model_choice_dropdown = gr.Dropdown(choices=auto_tag_models, label="Model Selection")
                         crop_or_resize_radio = gr.Radio(label="Preprocess Options", choices=['Crop','Resize'], value='Resize')
                     with gr.Row():
@@ -2648,9 +2669,12 @@ def build_ui():
                     with gr.Row():
                         image_with_tag_path_textbox = gr.Textbox(label="Path to Image Folder", info="Folder should contain both tag & image files", interactive=True)
                     with gr.Row():
-                        copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
-                        save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
-                        save_custom_tags_button = gr.Button(value="Save/Add Tags", variant='primary')
+                        with gr.Column(min_width=50, scale=1):
+                            copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
+                        with gr.Column(min_width=50, scale=2):
+                            save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
+                        with gr.Column(min_width=50, scale=2):
+                            save_custom_tags_button = gr.Button(value="Save/Add Tags", variant='primary')
                     with gr.Row():
                         write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
                         use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
@@ -2673,6 +2697,8 @@ def build_ui():
         images_selected_state = gr.JSON([], visible=False)
         multi_select_ckbx_state = gr.JSON([1], visible=False)
         only_selected_state_object = gr.State(dict())
+
+        refresh_models_btn.click(fn=refresh_model_list, inputs=[], outputs=[model_choice_dropdown])
 
         refresh_aspect_btn.click(fn=force_reload_show_gallery,
                              inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
