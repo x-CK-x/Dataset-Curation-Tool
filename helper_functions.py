@@ -405,8 +405,11 @@ def download_all_e6_tags_csv():
         command_str = f"aria2c "
         command_str = f"{command_str}{url} {disable_flag}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
-    for line in execute(command_str.split(" ")):
-        verbose_print(line)
+    try:
+        for line in execute(command_str.split(" ")):
+            verbose_print(line)
+    except sub.CalledProcessError as e:
+        verbose_print(f"{e.output}")
 
     if len(glob.glob(os.path.join(os.getcwd(), f"*.gz"))) > 0:
         # finally unzip the file
