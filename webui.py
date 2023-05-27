@@ -2427,6 +2427,9 @@ def build_ui():
                 with gr.Column():
                     resized_img_folder = gr.Textbox(lines=1, label='Path to Resized Images', value=settings_json["resized_img_folder"])
                 with gr.Column():
+                    proxy_value = ""
+                    if not "proxy_url" in settings_json:
+                        settings_json["proxy_url"] = proxy_value
                     proxy_url_textbox = gr.Textbox(lines=1, label='(Optional Proxy URL)', value=settings_json["proxy_url"])
             with gr.Row():
                 tag_sep = gr.Textbox(lines=1, label='Tag Seperator/Delimeter', value=settings_json["tag_sep"])
