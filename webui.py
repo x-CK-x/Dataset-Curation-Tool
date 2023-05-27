@@ -696,7 +696,7 @@ def get_full_text_path(download_folder_type, img_name):
     return full_path
 
 ### Select an image
-def get_img_tags(gallery_comp, select_multiple_images_checkbox, images_selected_state, event_data: gr.SelectData):
+def get_img_tags(gallery_comp, select_multiple_images_checkbox, images_selected_state, select_between_images_checkbox, images_tuple_points, event_data: gr.SelectData):
     global selected_image_dict  # id -> {categories: tag/s}, type -> string
 
     help.verbose_print(f"gallery_comp[event_data.index]['name']:\t{gallery_comp[event_data.index]['name']}")
@@ -710,10 +710,30 @@ def get_img_tags(gallery_comp, select_multiple_images_checkbox, images_selected_
     rating_comp_checkboxgroup = gr.update(choices=[])
 
     if select_multiple_images_checkbox:
-        if (event_data.index in images_selected_state): # toggles images clicked
+        if (event_data.index in images_selected_state):  # toggles images clicked
             images_selected_state.pop(images_selected_state.index(event_data.index))
         else:
             images_selected_state.append(event_data.index)
+
+        if select_between_images_checkbox: # select/unselect all in-between n-1 & n
+            if len(images_tuple_points) < 1:
+                images_tuple_points.append(event_data.index)
+                help.verbose_print(f"images_tuple_points:\t{images_tuple_points}")
+            else:
+                images_tuple_points.append(event_data.index)
+                images_tuple_points = sorted(images_tuple_points) # small to large
+                help.verbose_print(f"images_tuple_points:\t{images_tuple_points}")
+                # temp removal
+                for point in images_tuple_points:
+                    images_selected_state.pop(images_selected_state.index(point))
+                # toggle overlapping repectively
+                # a-b|b-a
+                set_a = set(images_selected_state)
+                set_b = set([x for x in range(images_tuple_points[0], images_tuple_points[1]+1, 1)])
+                set_c = (set_a-set_b)|(set_b-set_a)
+                images_selected_state = list(set_c)
+                images_tuple_points = []
+
         help.verbose_print(f"images_selected_states:\t{images_selected_state}")
     else:
         images_selected_state = []
@@ -744,7 +764,8 @@ def get_img_tags(gallery_comp, select_multiple_images_checkbox, images_selected_
     help.verbose_print(f"only_selected_state_object:\t{only_selected_state_object}")
 
     return gr.update(value=img_name), artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, \
-           general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup, images_selected_state, only_selected_state_object
+           general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup, images_selected_state, only_selected_state_object, \
+           images_tuple_points
 
 def is_csv_dict_empty(stats_load_file):
     tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
@@ -2575,11 +2596,15 @@ def build_ui():
                     with gr.Row():
                         tag_search_textbox = gr.Textbox(label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)", lines=1, value="")
                     with gr.Row():
-                        apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
-                        select_multiple_images_checkbox = gr.Checkbox(label="Multi-Image Select (click)", value=False)
+                        with gr.Column(min_width=50, scale=3):
+                            apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
+                        with gr.Column(min_width=50, scale=1):
+                            select_multiple_images_checkbox = gr.Checkbox(label="Multi-Select", value=False, info="Click Image/s")
+                        with gr.Column(min_width=50, scale=1):
+                            select_between_images_checkbox = gr.Checkbox(label="Shift-Select", value=False, info="Selects All Between Two Images")
                     with gr.Row():
-                        apply_datetime_sort_ckbx = gr.Checkbox(label="Sort Image/s by date", value=False)
-                        apply_datetime_choice_menu = gr.Dropdown(label="Sort Image/s by date", choices=["new-to-old", "old-to-new"], value="")
+                        apply_datetime_sort_ckbx = gr.Checkbox(label="Sort", value=False, info="Image/s by date")
+                        apply_datetime_choice_menu = gr.Dropdown(label="Sort Order", choices=["new-to-old", "old-to-new"], value="", info="Image/s by date")
                     with gr.Row():
                         tag_remove_button = gr.Button(value="Remove Selected Tag/s", variant='primary')
                         tag_save_button = gr.Button(value="Save Tag Changes", variant='primary')
@@ -2595,7 +2620,7 @@ def build_ui():
                     img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                     img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
                 #with gr.Column():
-                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id").style(columns=[3], object_fit="contain", height="auto")
+                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id").style(columns=[3], object_fit="contain")
         with gr.Tab("Data Stats"):
             with gr.Row():
                 stats_run_options = gr.Dropdown(label="Run Method", choices=["frequency table", "inverse freq table"])
@@ -2697,6 +2722,8 @@ def build_ui():
         images_selected_state = gr.JSON([], visible=False)
         multi_select_ckbx_state = gr.JSON([1], visible=False)
         only_selected_state_object = gr.State(dict())
+        images_tuple_points = gr.JSON([], visible=False)
+
 
         refresh_models_btn.click(fn=refresh_model_list, inputs=[], outputs=[model_choice_dropdown])
 
@@ -2834,10 +2861,10 @@ def build_ui():
 
         # there is a networking "delay" bug for the below feature to work (do NOT click on the same image after selected) i.e. click on a different image before going back to that one
         gallery_comp.select(fn=get_img_tags,
-        inputs=[gallery_comp, select_multiple_images_checkbox, images_selected_state],
+        inputs=[gallery_comp, select_multiple_images_checkbox, images_selected_state, select_between_images_checkbox, images_tuple_points],
         outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
                  img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, images_selected_state,
-                 only_selected_state_object]).then(None,
+                 only_selected_state_object, images_tuple_points]).then(None,
         inputs=[images_selected_state, multi_select_ckbx_state], outputs=None, _js=js_.js_do_everything)
 
         load_json_file_button.click(fn=change_config, inputs=[quick_json_select,settings_path], outputs=[batch_folder,resized_img_folder,
