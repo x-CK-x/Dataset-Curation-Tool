@@ -72,7 +72,7 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
                        save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,
                        webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,replace_tags_list,
                        tag_count_list_folder,min_month,min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,
-                       resize_checkbox_group_var,create_new_config_checkbox,settings_path):
+                       resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox):
 
     global settings_json
     settings_json["batch_folder"] = str(batch_folder)
@@ -95,6 +95,8 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
     settings_json["min_area"] = int(min_area)
     settings_json["top_n"] = int(top_n)
     settings_json["min_short_side"] = int(min_short_side)
+
+    settings_json["proxy_url"] = str(min_short_side)
 
     # COLLECT CheckBox Group
     for key in collect_checkboxes:
@@ -622,6 +624,7 @@ def change_config(quick_json_select, file_path):
     remove_tags_list = gr.update(value=settings_json["remove_tags_list"])
     replace_tags_list = gr.update(value=settings_json["replace_tags_list"])
     tag_count_list_folder = gr.update(value=settings_json["tag_count_list_folder"])
+    proxy_url_textbox = gr.update(value=settings_json["proxy_url"])
 
     help.verbose_print(f"{settings_json}")
     help.verbose_print(f"json key count: {len(settings_json)}")
@@ -636,7 +639,7 @@ def change_config(quick_json_select, file_path):
            min_day,min_area,top_n,min_short_side,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,required_tags_group_var, \
            blacklist_group_var,skip_posts_file,skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,apply_filter_to_listed_posts, \
            save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type, \
-           remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select
+           remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox
 
 def reload_selected_image_dict(ext, img_name):
     global selected_image_dict  # id -> {categories: tag/s}, type -> string
@@ -2423,6 +2426,8 @@ def build_ui():
                     batch_folder = gr.Textbox(lines=1, label='Path to Batch Directory', value=settings_json["batch_folder"])
                 with gr.Column():
                     resized_img_folder = gr.Textbox(lines=1, label='Path to Resized Images', value=settings_json["resized_img_folder"])
+                with gr.Column():
+                    proxy_url_textbox = gr.Textbox(lines=1, label='(Optional Proxy URL)', value=settings_json["proxy_url"])
             with gr.Row():
                 tag_sep = gr.Textbox(lines=1, label='Tag Seperator/Delimeter', value=settings_json["tag_sep"])
                 tag_order_format = gr.Textbox(lines=1, label='Tag ORDER', value=settings_json["tag_order_format"])
@@ -2874,7 +2879,7 @@ def build_ui():
                 skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
                 apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,downloaded_posts_folder,
                 png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,
-                replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select]).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
+                replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox]).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
 
         config_save_var0.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
@@ -2884,7 +2889,7 @@ def build_ui():
                                   apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
                                   downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
                                   save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
+                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
                                   ],
                           outputs=[all_json_files_checkboxgroup]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
@@ -2896,7 +2901,7 @@ def build_ui():
                                   apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
                                   downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
                                   save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
+                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
                                   ],
                           outputs=[]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
@@ -2908,7 +2913,7 @@ def build_ui():
                                   apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
                                   downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
                                   save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
+                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
                                   ],
                           outputs=[]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
@@ -2920,7 +2925,7 @@ def build_ui():
                                   apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
                                   downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
                                   save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
+                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
                                   ],
                           outputs=[]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
@@ -2932,7 +2937,7 @@ def build_ui():
                                   apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
                                   downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
                                   save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
+                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
                                   ],
                           outputs=[]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
@@ -2944,7 +2949,7 @@ def build_ui():
                                   apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
                                   downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
                                   save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
+                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
                                   ],
                           outputs=[]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
