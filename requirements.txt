@@ -11,3 +11,4 @@ onnxruntime
 torch
 onnxruntime-gpu
 aiohttp-socks
+pysocks
