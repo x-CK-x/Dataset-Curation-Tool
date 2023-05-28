@@ -2373,24 +2373,6 @@ def prompt_string_builder(use_tag_opts_radio, any_selected_tags, threshold):
                 image_generated_tags_prompt_builder_textbox.update(value=", ".join(any_selected_tags))
     return image_generated_tags_prompt_builder_textbox
 
-def load_tags_csv():
-    # check to update the tags csv
-    help.check_to_update_csv()
-
-    # load the everything tags csv
-    current_list_of_csvs = help.sort_csv_files_by_date(cwd)
-    
-    # Read the CSV file, and use the name column as the index column
-    data = pd.read_csv(current_list_of_csvs[0], index_col='name')
-    
-    # Get the part of the data we are interested as a dictionary
-    data_columns_dict = data.to_dict() # {column: {tag_name -> value}}
-    all_tags_ever_dict = data_columns_dict['post_count']
-        
-    # remove the dataframe
-    del data
-    return all_tags_ever_dict
-
 def unload_component():
     return gr.update(value=None)
 
@@ -3026,6 +3008,11 @@ if __name__ == "__main__":
         '--share',
         action='store_true',
         help='Share live gradio link',
+    )
+    parser.add_argument(
+        '--proxy_url',
+        type=str,
+        help='(Optional) Proxy URL for downloading tags.csv.gz file',
     )
 
     args = parser.parse_args()
