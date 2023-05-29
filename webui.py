@@ -36,7 +36,18 @@ def generate_all_dirs():
     temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, settings_json["gif_folder"]))
     temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, settings_json["swf_folder"]))
     temp_path_list_dirs.append(os.path.join(batch_dir_path, settings_json["tag_count_list_folder"]))
+    # create all dirs
     help.make_all_dirs(temp_path_list_dirs)
+    # check to create tags & category csv files
+    tag_folder = os.path.join(batch_dir_path, settings_json["tag_count_list_folder"])
+    # persist changes to csv dictionary files OR (CREATE NEW)
+    help.write_tags_to_csv(artist_csv_dict, os.path.join(tag_folder, "artist.csv"))
+    help.write_tags_to_csv(character_csv_dict, os.path.join(tag_folder, "character.csv"))
+    help.write_tags_to_csv(species_csv_dict, os.path.join(tag_folder, "species.csv"))
+    help.write_tags_to_csv(general_csv_dict, os.path.join(tag_folder, "general.csv"))
+    help.write_tags_to_csv(meta_csv_dict, os.path.join(tag_folder, "meta.csv"))
+    help.write_tags_to_csv(rating_csv_dict, os.path.join(tag_folder, "rating.csv"))
+    help.write_tags_to_csv(tags_csv_dict, os.path.join(tag_folder, "tags.csv"))
 
 def add_current_images():
     global auto_complete_config, all_images_dict
@@ -2248,12 +2259,13 @@ def interrogate_images(image_mode_choice_state, confidence_threshold_slider):
     global autotagmodel, all_predicted_confidences, all_predicted_tags
     generate_all_dirs()
 
+    folder_path = os.path.join(cwd, settings_json["batch_folder"])
+    folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
+    folder_path = os.path.join(folder_path, settings_json["png_folder"])
+    tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                 settings_json["tag_count_list_folder"])
+
     if autotagmodel is None:
-        folder_path = os.path.join(cwd, settings_json["batch_folder"])
-        folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
-        folder_path = os.path.join(folder_path, settings_json["png_folder"])
-        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
-                                             settings_json["tag_count_list_folder"])
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
         help.check_requirements()
     image_confidence_values = None
