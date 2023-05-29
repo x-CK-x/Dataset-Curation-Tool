@@ -2609,7 +2609,6 @@ def build_ui():
                     img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                     img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                     img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
-                #with gr.Column():
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id").style(columns=[3], object_fit="contain")
         with gr.Tab("Data Stats"):
             with gr.Row():
@@ -2959,9 +2958,9 @@ def build_ui():
         parse_button_blacklist.click(fn=parse_file_blacklist, inputs=[file_all_tags_list_blacklist], outputs=[blacklist_group_var])
     return demo
 
-def load_tags_csv():
+def load_tags_csv(proxy_url=None):
     # check to update the tags csv
-    help.check_to_update_csv()
+    help.check_to_update_csv(proxy_url=proxy_url)
     # get newest
     current_list_of_csvs = help.sort_csv_files_by_date(os.getcwd())
     # load
@@ -3012,6 +3011,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--proxy_url',
         type=str,
+        default=None,
         help='(Optional) Proxy URL for downloading tags.csv.gz file',
     )
 
@@ -3137,7 +3137,7 @@ if __name__ == "__main__":
 
     help.verbose_print(f"EVERYTHING INITIALIZING")
     help.verbose_print(f"Initial check to download & load tags CSV")
-    all_tags_ever_dict = load_tags_csv()
+    all_tags_ever_dict = load_tags_csv(proxy_url=args.proxy_url)
 
     demo = build_ui()
 
