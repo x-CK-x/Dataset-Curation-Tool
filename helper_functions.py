@@ -780,28 +780,44 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 verbose_print(f"DOWNLOADING repo:\t{repo_name}")
                 for line in execute(command_str.split(" ")):
                     verbose_print(line)
+            elif "comfyui" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/comfyanonymous/ComfyUI.git"
+                command_str = f"{command_str}{url_path}"
+                verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in execute(command_str.split(" ")):
+                    verbose_print(line)
+            elif "plasma" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/Jordach/comfy-plasma.git"
+                command_str = f"{command_str}{url_path}"
+                verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in execute(command_str.split(" ")):
+                    verbose_print(line)
             verbose_print(f"Done")
 
 
 def get_repo_releases(event_data):
     repo_release_urls = {}
     # populate the release options list & make button visible
-    repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI"]
-    url = None
+    repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI", "AUTO1111 WEBUI"]
+    owner = None
+    repo = None
     release_options_radio_list = []
 
     if event_data.value == repo_download_options_no_auto1111[0]:
         owner = 'bmaltais'
         repo = 'kohya_ss'
-        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
     elif event_data.value == repo_download_options_no_auto1111[1]:
         owner = 'KichangKim'
         repo = 'DeepDanbooru'
-        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
     elif event_data.value == repo_download_options_no_auto1111[2]:
         owner = 'invoke-ai'
         repo = 'InvokeAI'
-        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
+    elif event_data.value == repo_download_options_no_auto1111[3]:
+        owner = 'AUTOMATIC1111'
+        repo = 'stable-diffusion-webui'
+    url = f'https://api.github.com/repos/{owner}/{repo}/releases'
 
     all_releases = extract_time_and_href_github(url) # list of lists containing [release name, list of downloads]
     verbose_print(f"all_releases:\t{all_releases}")

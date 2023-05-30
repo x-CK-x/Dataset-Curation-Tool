@@ -2634,11 +2634,11 @@ def build_ui():
         with gr.Tab("Download Extra/s: Model/s & Code Repos"):
             gr.Markdown(md_.extra)
             with gr.Column():
-                repo_download_options = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "AUTO1111 WEBUI", "InvokeAI"]
+                repo_download_options = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "AUTO1111 WEBUI", "InvokeAI", "ComfyUI", "comfy-plasma"]
 
                 repo_download_releases_only = gr.Checkbox(label='Select ALL Code Repositories to Download', value=False)
                 repo_download_checkbox_group = gr.CheckboxGroup(choices=repo_download_options, label='Select ALL Code Repositories to Download', value=[])
-                repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI"]
+                repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI", "AUTO1111 WEBUI"]
                 repo_download_radio = gr.Radio(choices=repo_download_options_no_auto1111, label='Select ALL Code Repositories to Download', visible=False)
                 release_options_radio = gr.Radio(choices=[], label='Select ALL Releases to Download', visible=False)
                 release_assets_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Releases to Download', value=[], visible=False)
