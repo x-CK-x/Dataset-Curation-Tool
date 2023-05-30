@@ -103,6 +103,55 @@ def to_padded(num):
 def is_windows():
     return os.name == 'nt'
 
+def unzip_file(file_path, new_name=""):
+    temp = '\\' if is_windows() else '/'
+    name = file_path.split(temp)[-1]
+    ext = name.split('.')[-1]
+    name = name.split('.')[0]
+
+    if len(new_name) == 0:
+        if '.csv' in file_path:
+            new_name = f"{name}.csv"
+        else:
+            new_name = name
+
+    if 'gz' in ext:
+        with gzip.open(file_path, 'rb') as f_in:
+            with open(new_name, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        verbose_print(f"gz file:\t{file_path} & {new_name}")
+    else: # if 'zip' or no extension
+        with ZipFile(file_path, 'r') as zObject:
+            zObject.extractall(path=os.getcwd())
+        verbose_print(f"zip file of some kind:\t{file_path}")
+
+def make_all_dirs(list_of_paths):
+    for path in list_of_paths:
+        create_dirs(path)
+
+def delete_all_archives():
+    zip_list = glob.glob(os.path.join(os.getcwd(), f"*.zip"))
+    rar_list = glob.glob(os.path.join(os.getcwd(), f"*.rar"))
+    gz_list = glob.glob(os.path.join(os.getcwd(), f"*.gz"))
+    for zip in zip_list:
+        os.remove(zip)
+    for rar in rar_list:
+        os.remove(rar)
+    for gz in gz_list:
+        os.remove(gz)
+
+
+def unzip_all():
+    zip_list = glob.glob(os.path.join(os.getcwd(), f"*.zip"))
+    rar_list = glob.glob(os.path.join(os.getcwd(), f"*.rar"))
+    gz_list = glob.glob(os.path.join(os.getcwd(), f"*.gz"))
+    for zip in zip_list:
+        unzip_file(zip)
+    for rar in rar_list:
+        unzip_file(rar)
+    for gz in gz_list:
+        unzip_file(gz)
+
 def parse_single_all_tags(file_path):
     all_tags = []
     # verbose_print(f"file_path:\t\t{file_path}")
@@ -572,32 +621,6 @@ def check_requirements():
                 verbose_print(line)
     print('done')
 
-def unzip_file(file_path, new_name=""):
-    temp = '\\' if is_windows() else '/'
-    name = file_path.split(temp)[-1]
-    ext = name.split('.')[-1]
-    name = name.split('.')[0]
-
-    if len(new_name) == 0:
-        if '.csv' in file_path:
-            new_name = f"{name}.csv"
-        else:
-            new_name = name
-
-    if 'gz' in ext:
-        with gzip.open(file_path, 'rb') as f_in:
-            with open(new_name, 'wb') as f_out:
-                shutil.copyfileobj(f_in, f_out)
-        verbose_print(f"gz file:\t{file_path} & {new_name}")
-    else: # if 'zip' or no extension
-        with ZipFile(file_path, 'r') as zObject:
-            zObject.extractall(path=os.getcwd())
-        verbose_print(f"zip file of some kind:\t{file_path}")
-
-def make_all_dirs(list_of_paths):
-    for path in list_of_paths:
-        create_dirs(path)
-
 def full_model_download_link(name, file_name):
     verbose_print(f"file_name:\t{file_name}")
     if name == "Fluffusion":
@@ -703,6 +726,13 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
         if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
                 and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
             auto_tag_models.append('Z3D-E621-Convnext')
+        else:# linux didn't register the file extension
+            os.rename(src="iNMyyi2w", dst="iNMyyi2w.zip")
+            # finally unzip the file
+            unzip_all()
+            delete_all_archives()
+            auto_tag_models.append('Z3D-E621-Convnext')
+            verbose_print("Done")
         if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
                 and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
             auto_tag_models.append('Fluffusion-AutoTag')
@@ -710,7 +740,7 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
 
 
 
-def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group):
+def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group, repo_download_radio):
     disable_flag = "--disable-ipv6"
     temp = '\\' if is_windows() else '/'
     if repo_download_releases_only:
@@ -726,9 +756,21 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
             for line in execute(command_str.split(" ")):
                 verbose_print(line)
 
-            # finally unzip the file
-            unzip_all()
-            delete_all_archives()
+            # no zip extension check (ONLY) check repos with the known issue on Linux
+            if "kohya" in repo_download_radio.lower() or "auto1111" in repo_download_radio.lower():
+                temp_file_name = asset_url.split("/")[-1]
+                verbose_print(f"temp_file_name:\t{temp_file_name}")
+                os.rename(src=temp_file_name, dst=temp_file_name+".zip")
+                # finally unzip the file
+                unzip_all()
+                delete_all_archives()
+                if os.path.exists(temp_file_name+".1"):
+                    verbose_print(temp_file_name+".1")
+                    os.remove(temp_file_name+".1") # if a copy remains
+            else:
+                # finally unzip the file
+                unzip_all()
+                delete_all_archives()
             verbose_print("Done")
     else:
         for repo_name in repo_download_checkbox_group:
@@ -827,32 +869,6 @@ def get_repo_releases(event_data):
         release_options_radio_list.append(f"{header_text}")
         repo_release_urls[header_text] = urls
     return copy.deepcopy(release_options_radio_list), copy.deepcopy(repo_release_urls)
-
-def delete_all_archives():
-    zip_list = glob.glob(os.path.join(os.getcwd(), f"*.zip"))
-    rar_list = glob.glob(os.path.join(os.getcwd(), f"*.rar"))
-    gz_list = glob.glob(os.path.join(os.getcwd(), f"*.gz"))
-    for zip in zip_list:
-        os.remove(zip)
-    for rar in rar_list:
-        os.remove(rar)
-    for gz in gz_list:
-        os.remove(gz)
-
-
-def unzip_all():
-    zip_list = glob.glob(os.path.join(os.getcwd(), f"*.zip"))
-    rar_list = glob.glob(os.path.join(os.getcwd(), f"*.rar"))
-    gz_list = glob.glob(os.path.join(os.getcwd(), f"*.gz"))
-    for zip in zip_list:
-        unzip_file(zip)
-    for rar in rar_list:
-        unzip_file(rar)
-    for gz in gz_list:
-        unzip_file(gz)
-
-
-
 
 
 

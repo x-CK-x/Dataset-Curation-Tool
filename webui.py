@@ -1962,8 +1962,8 @@ def auto_config_apply(images_full_change_dict_textbox, progress=gr.Progress()):
     else:
         raise ValueError('no path name specified | no config created | config empty')
 
-def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group):
-    help.download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group)
+def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group, repo_download_radio):
+    help.download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group, repo_download_radio)
 
 def reload_release_options(repo_download_releases_only):
     if repo_download_releases_only:
@@ -2636,12 +2636,12 @@ def build_ui():
             with gr.Column():
                 repo_download_options = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "AUTO1111 WEBUI", "InvokeAI", "ComfyUI", "comfy-plasma"]
 
-                repo_download_releases_only = gr.Checkbox(label='Select ALL Code Repositories to Download', value=False)
-                repo_download_checkbox_group = gr.CheckboxGroup(choices=repo_download_options, label='Select ALL Code Repositories to Download', value=[])
+                repo_download_releases_only = gr.Checkbox(label='Download ONLY Releases', value=False)
+                repo_download_checkbox_group = gr.CheckboxGroup(choices=repo_download_options, label='Repository Downloads', value=[])
                 repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI", "AUTO1111 WEBUI"]
-                repo_download_radio = gr.Radio(choices=repo_download_options_no_auto1111, label='Select ALL Code Repositories to Download', visible=False)
-                release_options_radio = gr.Radio(choices=[], label='Select ALL Releases to Download', visible=False)
-                release_assets_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Releases to Download', value=[], visible=False)
+                repo_download_radio = gr.Radio(choices=repo_download_options_no_auto1111, label='Repository Downloads', visible=False)
+                release_options_radio = gr.Radio(choices=[], label='Repository Downloads by Release', visible=False)
+                release_assets_checkbox_group = gr.CheckboxGroup(choices=[], label='Repository Release Downloads', value=[], visible=False)
                 repo_download_button = gr.Button(value="Download Repo/s", variant='primary')
             with gr.Column():
                 model_download_options = ["Fluffusion", "FluffyRock"]
@@ -2781,7 +2781,7 @@ def build_ui():
         repo_download_releases_only.change(fn=reload_release_options, inputs=[repo_download_releases_only],
                                        outputs=[repo_download_checkbox_group, repo_download_radio, release_options_radio, repo_download_button, release_assets_checkbox_group])
 
-        repo_download_button.click(fn=download_repos, inputs=[repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group], outputs=[])
+        repo_download_button.click(fn=download_repos, inputs=[repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group, repo_download_radio], outputs=[])
 
         model_download_types.select(fn=show_model_downloads_options, inputs=[model_download_types],
                                 outputs=[model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group])
