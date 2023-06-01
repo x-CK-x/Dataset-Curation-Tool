@@ -898,6 +898,9 @@ class E6_Downloader:
             all_tag_count = prms["get_all_tag_counter_from_path"][path]
             category_ctr = prms["get_cat_tag_counter_from_path"][path]
             selected_cats = prms["selected_cats"][batch_num]
+
+            print(f"selected_cats:\t{selected_cats}")
+
             reorder_tags = prms["reorder_tags"][batch_num]
             tag_sep = prms["tag_sep"][batch_num]
             prepend_tags = [s.strip() for s in prms["prepend_tags"][batch_num].split(tag_sep)]
@@ -932,18 +935,38 @@ class E6_Downloader:
                     post_creation_date = tag_date_list[idx]
                     format_string = "%Y-%m-%d %H:%M:%S.%f"
                     parsed_datetime = datetime.strptime(post_creation_date, format_string)
-                    if not parsed_datetime.year in tags:
-                        print(f"ADDING YEAR TO FILE:\t{parsed_datetime.year}")
-                        tags += [parsed_datetime.year]
+                    if not str(parsed_datetime.year) in tags:
+                        # only add new tag under the following condition
+                        # check that no other year tag within a 5 year radius exists in the tag list
+                        year_tag_exists = False
+                        # past
+                        for year_mark in range(int(parsed_datetime.year)-5, int(parsed_datetime.year), 1):
+                            if str(year_mark) in tags:
+                                year_tag_exists = True
+                        # future
+                        for year_mark in range(int(parsed_datetime.year)+1, int(parsed_datetime.year)+6, 1):
+                            if str(year_mark) in tags:
+                                year_tag_exists = True
+
+                        if not year_tag_exists:
+                            print(f"\nADDING YEAR TO FILE:\t{str(parsed_datetime.year)}")
+                            tags += [str(parsed_datetime.year)]
 
                     segregate = {}
                     unsegregated = []
                     for tag in tags:
                         if tag not in remove_tags:
-                            if tag in tag_to_cat:
-                                category_num = tag_to_cat[tag]
+                            if tag in tag_to_cat or str(tag) == str(parsed_datetime.year):
+                                category_num = None
+                                if str(tag) == str(parsed_datetime.year):
+                                    # 5 : meta
+                                    category_num = 5
+                                else:
+                                    category_num = tag_to_cat[tag]
+
                                 if tag in replace_tags:
                                     tag = replace_tags[tag]
+
                                 if category_num in selected_cats:
                                     if reorder_tags:
                                         if category_num in segregate:
@@ -952,6 +975,7 @@ class E6_Downloader:
                                             segregate[category_num] = [tag]
                                     else:
                                         unsegregated.append(tag)
+
                                     if path and not dont_count:
                                         if tag in all_tag_count:
                                             all_tag_count[tag] += 1
@@ -969,22 +993,24 @@ class E6_Downloader:
                             updated_tags += segregate[cat_num]
                     else:
                         updated_tags = unsegregated
+
                     if prepend_tags:
                         updated_tags = [tag for tag in prepend_tags if tag not in updated_tags] + updated_tags
+
                     if append_tags:
                         updated_tags = updated_tags + [tag for tag in append_tags if tag not in updated_tags]
+
                     updated_tags = tag_sep.join(updated_tags)
+
                     if replace_underscores:
                         updated_tags = updated_tags.replace('_', ' ')
+
                     if remove_parentheses:
                         updated_tags = updated_tags.replace('(', '')
                         updated_tags = updated_tags.replace(')', '')
 
-                    # ### DEBUG
-                    # print(f"===================")
-                    # print(f"\nDEBUG::\t\ttagfilename_lst:\t{tagfilename_lst}")
-                    # print(f"\nDEBUG::\t\ttagfilename_lst[idx]:\t{tagfilename_lst[idx]}")
-                    # print(f"===================")
+                    if not str(parsed_datetime.year) in tags:
+                        print(f"\n{str(parsed_datetime.year)} was not added to the tag list for some reason?!?!")
 
                     if tagfilebasename_lst[idx] in tagfiles_no_post:
                         with open(tagfiles_no_post_folder + tagfilebasename_lst[idx], 'w', encoding="utf-8") as f:
