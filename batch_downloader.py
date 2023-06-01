@@ -917,6 +917,8 @@ class E6_Downloader:
 
             tag_date_list = df['created_at'].to_list()
 
+            MAX_YEAR_DIFF = 30
+
             if prms["include_tag_file"][batch_num]:
                 for idx in range(length):
                     print(f'\r## Saving tag files for batch {batch_num}: {idx + 1}/{length}', end='')
@@ -940,11 +942,11 @@ class E6_Downloader:
                         # check that no other year tag within a 5 year radius exists in the tag list
                         year_tag_exists = False
                         # past
-                        for year_mark in range(int(parsed_datetime.year)-5, int(parsed_datetime.year), 1):
+                        for year_mark in range(int(parsed_datetime.year)-(MAX_YEAR_DIFF), int(parsed_datetime.year), 1):
                             if str(year_mark) in tags:
                                 year_tag_exists = True
                         # future
-                        for year_mark in range(int(parsed_datetime.year)+1, int(parsed_datetime.year)+6, 1):
+                        for year_mark in range(int(parsed_datetime.year)+1, int(parsed_datetime.year)+(MAX_YEAR_DIFF)+1, 1):
                             if str(year_mark) in tags:
                                 year_tag_exists = True
 
