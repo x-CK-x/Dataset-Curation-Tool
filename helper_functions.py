@@ -458,7 +458,7 @@ def download_all_e6_tags_csv(proxy_url=None):
         for line in execute(command_str.split(" ")):
             verbose_print(line)
     except sub.CalledProcessError as e:
-        verbose_print(f"{e.output}")
+        verbose_print(f"Tag file not yet uploaded/created. Trying again with (DAY - 1)")
 
     if len(glob.glob(os.path.join(os.getcwd(), f"*.gz"))) > 0:
         # finally unzip the file

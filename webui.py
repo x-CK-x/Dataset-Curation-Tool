@@ -1003,7 +1003,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                     add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
     if len(apply_to_all_type_select_checkboxgroup) > 0:
         if "searched" in apply_to_all_type_select_checkboxgroup: # edit searched and then all the instances of the respective types
-            if multi_select_ckbx_state:
+            if multi_select_ckbx_state[0]:
                 ##### returns index -> [ext, img_id]
                 for index in images_selected_state:
                     ext, img_id = only_selected_state_object[index]
@@ -1062,7 +1062,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                 # create or increment category table AND frequency table for (all) tags
                                 add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
         else:
-            if multi_select_ckbx_state:
+            if multi_select_ckbx_state[0]:
                 ##### returns index -> [ext, img_id]
                 for index in images_selected_state:
                     ext, img_id = only_selected_state_object[index]
@@ -1235,7 +1235,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
 
     if len(apply_to_all_type_select_checkboxgroup) > 0:
         if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
-            if multi_select_ckbx_state:
+            if multi_select_ckbx_state[0]:
                 ##### returns index -> [ext, img_id]
                 for index in images_selected_state:
                     ext, img_id = only_selected_state_object[index]
@@ -1273,7 +1273,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                 # create or increment category table AND frequency table for (all) tags
                                 remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
         else:
-            if multi_select_ckbx_state:
+            if multi_select_ckbx_state[0]:
                 ##### returns index -> [ext, img_id]
                 for index in images_selected_state:
                     ext, img_id = only_selected_state_object[index]
@@ -1331,7 +1331,7 @@ def remove_images(apply_to_all_type_select_checkboxgroup, image_id, sort_images,
     image_id = str(image_id)
 
     if not "searched" in apply_to_all_type_select_checkboxgroup:
-        if multi_select_ckbx_state and len(apply_to_all_type_select_checkboxgroup) > 0:
+        if multi_select_ckbx_state[0] and len(apply_to_all_type_select_checkboxgroup) > 0:
             ##### returns index -> [ext, img_id]
             for index in images_selected_state:
                 ext, img_id = only_selected_state_object[index]
@@ -1362,7 +1362,7 @@ def remove_images(apply_to_all_type_select_checkboxgroup, image_id, sort_images,
                 if (len(list(all_images_dict["searched"].keys())) > 0) and (image_id in list(all_images_dict["searched"][selected_image_dict["type"]].keys())):
                     del all_images_dict["searched"][selected_image_dict["type"]][image_id]
     else:
-        if multi_select_ckbx_state:
+        if multi_select_ckbx_state[0]:
             ##### returns index -> [ext, img_id]
             for index in images_selected_state:
                 ext, img_id = only_selected_state_object[index]
@@ -2023,11 +2023,8 @@ def show_nested_fluffyrock_models(nested_model_links_checkbox_group):
     nested_model_links_checkbox_group = gr.update(visible=True, choices=help.get_nested_fluffyrock_models(nested_model_links_checkbox_group))
     return model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group
 
-def set_ckbx_state(select_multiple_images_checkbox, multi_select_ckbx_state):
-    if select_multiple_images_checkbox:
-        multi_select_ckbx_state = [0]
-    else:
-        multi_select_ckbx_state = [1]
+def set_ckbx_state(select_multiple_images_checkbox, multi_select_ckbx_state): # UI boolean component, JSON boolean component wrapped in a list
+    multi_select_ckbx_state = [select_multiple_images_checkbox]
     return multi_select_ckbx_state
 
 def make_visible():
@@ -2719,11 +2716,11 @@ def build_ui():
         ##################################################################################################################################
         '''
 
-        image_mode_choice_state = gr.State("")
-        images_selected_state = gr.JSON([], visible=False)
-        multi_select_ckbx_state = gr.JSON([1], visible=False)
-        only_selected_state_object = gr.State(dict())
-        images_tuple_points = gr.JSON([], visible=False)
+        image_mode_choice_state = gr.State("") # state of image mode for autotag model represented as a string
+        images_selected_state = gr.JSON([], visible=False) # JSON list of image ids in the gallery
+        multi_select_ckbx_state = gr.JSON([False], visible=False) # JSON boolean component wrapped in a list
+        only_selected_state_object = gr.State(dict()) # state of image mappings represented by index -> [ext, img_id]
+        images_tuple_points = gr.JSON([], visible=False) # JSON list of all images selected given by two points: a-b|b-a
 
 
         refresh_models_btn.click(fn=refresh_model_list, inputs=[], outputs=[model_choice_dropdown])

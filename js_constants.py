@@ -20,7 +20,7 @@ js_do_everything = """
           })
           const elements = document.querySelectorAll('*[class^="preview"], *[class*=" preview"]');
           elements.forEach(element => {
-            if (multi_select_ckbx_state[0]==0) {
+            if (multi_select_ckbx_state[0]) {
               element.style.display = 'none';
             } else {
               element.style.display = '';
