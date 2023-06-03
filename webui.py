@@ -1564,7 +1564,7 @@ def load_images_and_csvs():
         rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
         tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
 
-def remove_from_all(file_path):
+def remove_from_all(file_path, apply_to_all_type_select_checkboxgroup):
     global auto_complete_config
     # gather the tags
     all_tags = help.get_text_file_data(file_path, 1)
@@ -1576,8 +1576,8 @@ def remove_from_all(file_path):
 
     all_keys_temp = list(all_images_dict.keys())
     search_flag = False
-    if "searched" in all_keys_temp:
-        all_keys_temp.remove("searched")
+    all_keys_temp.remove("searched")
+    if "searched" in apply_to_all_type_select_checkboxgroup:
         search_flag = True
 
     # update the csvs and global dictionaries
@@ -1589,14 +1589,21 @@ def remove_from_all(file_path):
             # edit csv dictionaries
             remove_to_csv_dictionaries(category_key, tag) # remove
         # update all the image text files
+        searched_ids_list = list(all_images_dict["searched"].keys())
         for img_type in all_keys_temp:
-            searched_img_id_keys_temp = list(all_images_dict["searched"][img_type].keys())
+            searched_img_id_keys_temp = None
+            if img_type in searched_ids_list:
+                searched_img_id_keys_temp = list(all_images_dict["searched"][img_type].keys())
+            else:
+                searched_img_id_keys_temp = list(all_images_dict[img_type].keys())
+
             for every_image in list(all_images_dict[img_type].keys()):
                 if tag in all_images_dict[img_type][every_image]:
                     while tag in all_images_dict[img_type][every_image]:
                         all_images_dict[img_type][every_image].remove(tag)
                         if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                            all_images_dict["searched"][img_type][every_image].remove(tag)
+                            if img_type in searched_ids_list:
+                                all_images_dict["searched"][img_type][every_image].remove(tag)
 
                         if not every_image in auto_complete_config[img_type]:
                             auto_complete_config[img_type][every_image] = []
@@ -1619,7 +1626,7 @@ def remove_from_all(file_path):
 
     help.verbose_print("Done")
 
-def replace_from_all(file_path):
+def replace_from_all(file_path, apply_to_all_type_select_checkboxgroup):
     global auto_complete_config
     # gather the (keyword, tag/s) pairs
     all_tags = help.get_text_file_data(file_path, 2)
@@ -1636,8 +1643,8 @@ def replace_from_all(file_path):
 
     all_keys_temp = list(all_images_dict.keys())
     search_flag = False
-    if "searched" in all_keys_temp:
-        all_keys_temp.remove("searched")
+    all_keys_temp.remove("searched")
+    if "searched" in apply_to_all_type_select_checkboxgroup:
         search_flag = True
 
     # update the csvs
@@ -1654,15 +1661,22 @@ def replace_from_all(file_path):
             if category_key:
                 add_to_csv_dictionaries(category_key, replacement_tag) # add
         # update all the image text files
+        searched_ids_list = list(all_images_dict["searched"].keys())
         for img_type in all_keys_temp:
-            searched_img_id_keys_temp = list(all_images_dict["searched"][img_type].keys())
+            searched_img_id_keys_temp = None
+            if img_type in searched_ids_list:
+                searched_img_id_keys_temp = list(all_images_dict["searched"][img_type].keys())
+            else:
+                searched_img_id_keys_temp = list(all_images_dict[img_type].keys())
+
             for every_image in list(all_images_dict[img_type].keys()):
                 if tag in all_images_dict[img_type][every_image]:
                     # get index of keyword
                     index = (all_images_dict[img_type][every_image]).index(tag)
                     all_images_dict[img_type][every_image].remove(tag) ############ consider repeats present
                     if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                        all_images_dict["searched"][img_type][every_image].remove(tag)
+                        if img_type in searched_ids_list:
+                            all_images_dict["searched"][img_type][every_image].remove(tag)
 
                     if not every_image in auto_complete_config[img_type]:
                         auto_complete_config[img_type][every_image] = []
@@ -1671,7 +1685,8 @@ def replace_from_all(file_path):
                     for i in range(0, len(replacement_tags)):
                         all_images_dict[img_type][every_image].insert((index + i), replacement_tags[i])
                         if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                            all_images_dict["searched"][img_type][every_image].insert((index + i), replacement_tags[i])
+                            if img_type in searched_ids_list:
+                                all_images_dict["searched"][img_type][every_image].insert((index + i), replacement_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
                             auto_complete_config[img_type][every_image] = []
@@ -1693,7 +1708,7 @@ def replace_from_all(file_path):
 
     help.verbose_print("Done")
 
-def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
+def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option, apply_to_all_type_select_checkboxgroup):
     global auto_complete_config
     if not prepend_text or prepend_text == "":
         raise ValueError('REPLACEMENT TEXT and/or TAG/S MUST BE SPECIFIED!\n'
@@ -1706,8 +1721,8 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
 
     all_keys_temp = list(all_images_dict.keys())
     search_flag = False
-    if "searched" in all_keys_temp:
-        all_keys_temp.remove("searched")
+    all_keys_temp.remove("searched")
+    if "searched" in apply_to_all_type_select_checkboxgroup:
         search_flag = True
 
     # update the csvs
@@ -2792,9 +2807,9 @@ def build_ui():
         images_full_change_dict_run_button.click(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_collect]).then(fn=auto_config_apply,
             inputs=[images_full_change_dict_textbox], outputs=[progress_bar_textbox_collect])
 
-        remove_now_button.click(fn=remove_from_all, inputs=[remove_tags_list], outputs=[])
-        replace_now_button.click(fn=replace_from_all, inputs=[replace_tags_list], outputs=[])
-        prepend_now_button.click(fn=prepend_with_keyword, inputs=[keyword_search_text, prepend_text, prepend_option], outputs=[])
+        remove_now_button.click(fn=remove_from_all, inputs=[remove_tags_list, apply_to_all_type_select_checkboxgroup], outputs=[])
+        replace_now_button.click(fn=replace_from_all, inputs=[replace_tags_list, apply_to_all_type_select_checkboxgroup], outputs=[])
+        prepend_now_button.click(fn=prepend_with_keyword, inputs=[keyword_search_text, prepend_text, prepend_option, apply_to_all_type_select_checkboxgroup], outputs=[])
 
         image_remove_button.click(fn=remove_images, inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox, apply_datetime_sort_ckbx,
                             apply_datetime_choice_menu, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
