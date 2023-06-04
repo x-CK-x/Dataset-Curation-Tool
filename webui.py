@@ -953,7 +953,8 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
             temp_ext = each_key
             break
     # reload the categories for the selected_image_dict
-    reload_selected_image_dict(temp_ext, img_id)
+    if len(images_selected_state) == 0 and not multi_select_ckbx_state[0]:
+        reload_selected_image_dict(temp_ext, img_id)
 
     # updates selected image ONLY when it ( IS ) specified AND its TYPE is specified for edits in "apply_to_all_type_select_checkboxgroup"
     if img_id and len(img_id) > 0 and selected_image_dict and (not apply_to_all_type_select_checkboxgroup or len(apply_to_all_type_select_checkboxgroup) == 0):
@@ -1169,7 +1170,8 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
             temp_ext = each_key
             break
     # reload the categories for the selected_image_dict
-    reload_selected_image_dict(temp_ext, img_id)
+    if len(images_selected_state) == 0 and not multi_select_ckbx_state[0]:
+        reload_selected_image_dict(temp_ext, img_id)
 
     category_component = None
     # updates selected image ONLY when it ( IS ) specified AND its TYPE is specified for edits in "apply_to_all_type_select_checkboxgroup"
@@ -1345,11 +1347,26 @@ def remove_images(apply_to_all_type_select_checkboxgroup, image_id, sort_images,
                             remove_to_csv_dictionaries(category_key, tag)  # remove
                     del all_images_dict[ext][img_id]
                 del only_selected_state_object[index]
-                images_selected_state.pop(index)
+            images_selected_state = []
+        elif multi_select_ckbx_state[0] and len(images_selected_state) == 1:
+            ##### returns index -> [ext, img_id]
+            for index in images_selected_state:
+                ext, img_id = only_selected_state_object[index]
+                # iterate over all the tags for each image
+                for tag in all_images_dict[ext][img_id]:
+                    category_key = get_category_name(tag)
+                    if category_key:
+                        # help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}")
+                        # edit csv dictionaries
+                        remove_to_csv_dictionaries(category_key, tag)  # remove
+                del all_images_dict[ext][img_id]
+                del only_selected_state_object[index]
+            images_selected_state = []
         else:
             # remove single image ONLY
-            if image_id:
-                if image_id in list(all_images_dict[selected_image_dict["type"]].keys()):
+            if image_id and (selected_image_dict is not None):
+                image_type = selected_image_dict["type"]
+                if image_id in list(all_images_dict[image_type].keys()):
                     # remove tag count from csvs
                     category_keys = list(selected_image_dict[image_id].keys())
                     for category_key in category_keys:
@@ -1378,7 +1395,7 @@ def remove_images(apply_to_all_type_select_checkboxgroup, image_id, sort_images,
                             remove_to_csv_dictionaries(category_key, tag)  # remove
                     del all_images_dict[ext][img_id]
                 del only_selected_state_object[index]
-                images_selected_state.pop(index)
+            images_selected_state = []
         else:
             # remove all images that are "searched"
             for key_type in list(all_images_dict["searched"].keys()):
@@ -2633,7 +2650,7 @@ def build_ui():
                     img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                     img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                     img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
-                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id").style(columns=[3], object_fit="contain")
+                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id").style(columns=[3], object_fit="contain", height="auto")
         with gr.Tab("Data Stats"):
             with gr.Row():
                 stats_run_options = gr.Dropdown(label="Run Method", choices=["frequency table", "inverse freq table"])
