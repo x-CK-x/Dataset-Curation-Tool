@@ -1,6 +1,6 @@
 # Dataset-Curation-Tool
 
-A tool for downloading from public image boards (which allow scraping) / preview your images & tags / edit your images & tags. Additional tabs for downloading other desired code repositories as well as S.O.T.A. diffusion and clips models for your purposes. Custom datasets can be added!
+A tool for downloading from public image boards (which allow scraping) / preview your images & tags / edit your tags. Additional tabs for downloading other desired code repositories as well as S.O.T.A. Diffusion and Clip models for your purposes. Custom datasets can be added!
 
 ![visitor badge](https://visitor-badge.glitch.me/badge?page_id=x-CK-x.Dataset-Curation-Tool)
 
