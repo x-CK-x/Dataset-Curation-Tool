@@ -2366,7 +2366,8 @@ def save_custom_images(image_mode_choice_state, image_with_tag_path_textbox, cop
     image_confidence_values = {}
     image_generated_tags = []
     image_preview_pil = None
-    return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), gr.update(value=image_preview_pil)
+    image_generated_tags_prompt_builder_textbox = ""
+    return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), gr.update(value=image_preview_pil), gr.update(value=image_generated_tags_prompt_builder_textbox)
 
 def save_custom_tags(image_mode_choice_state, image_with_tag_path_textbox, any_selected_tags):
     global autotagmodel, all_predicted_tags
@@ -2386,7 +2387,8 @@ def save_custom_tags(image_mode_choice_state, image_with_tag_path_textbox, any_s
     image_confidence_values = {}
     image_generated_tags = []
     image_preview_pil = None
-    return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), gr.update(value=image_preview_pil)
+    image_generated_tags_prompt_builder_textbox = ""
+    return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), gr.update(value=image_preview_pil), gr.update(value=image_generated_tags_prompt_builder_textbox)
 
 def prompt_string_builder(use_tag_opts_radio, any_selected_tags, threshold):
     global all_predicted_tags, all_predicted_confidences
@@ -2414,8 +2416,8 @@ def prompt_string_builder(use_tag_opts_radio, any_selected_tags, threshold):
                 image_generated_tags_prompt_builder_textbox.update(value=", ".join(any_selected_tags))
     return image_generated_tags_prompt_builder_textbox
 
-def unload_component():
-    return gr.update(value=None)
+def unload_component(value=None):
+    return gr.update(value=value)
 
 def refresh_model_list():
     if not "Z3D-E621-Convnext" in auto_tag_models and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
@@ -2767,12 +2769,14 @@ def build_ui():
 
         save_custom_tags_button.click(fn=save_custom_tags,
                                   inputs=[image_mode_choice_state, image_with_tag_path_textbox, image_generated_tags],
-                                  outputs=[image_confidence_values, image_generated_tags, image_preview_pil])
+                                  outputs=[image_confidence_values, image_generated_tags, image_preview_pil, image_generated_tags_prompt_builder_textbox])
 
         save_custom_images_button.click(fn=save_custom_images,
                                     inputs=[image_mode_choice_state, image_with_tag_path_textbox, copy_mode_ckbx],
-                                    outputs=[image_confidence_values, image_generated_tags, image_preview_pil])
-        interrogate_button.click(unload_component, None, image_preview_pil).then(fn=interrogate_images,
+                                    outputs=[image_confidence_values, image_generated_tags, image_preview_pil, image_generated_tags_prompt_builder_textbox])
+        interrogate_button.click(unload_component, None, image_preview_pil)\
+            .then(unload_component, gr.State([]), image_generated_tags)\
+            .then(unload_component, gr.State(""), image_generated_tags_prompt_builder_textbox).then(fn=interrogate_images,
                                                                              inputs=[image_mode_choice_state,
                                                                                      confidence_threshold_slider],
                                                                              outputs=[image_confidence_values,
