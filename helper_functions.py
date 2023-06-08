@@ -471,7 +471,8 @@ def download_all_e6_tags_csv(proxy_url=None):
     if (after_count - before_count) == 0:
         day = int((((repo_name.split('.csv.gz')[0]).split('-'))[-1]))
         temp = '-'.join(((repo_name.split('.csv.gz')[0]).split('-'))[:-1])
-        repo_name = f"{temp}-{(day-1)}.csv.gz"
+        day = str(day-1).zfill(2)
+        repo_name = f"{temp}-{day}.csv.gz"
 
         verbose_print(f"repo_name:\t{repo_name}")
 
