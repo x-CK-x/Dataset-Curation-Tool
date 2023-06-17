@@ -2432,6 +2432,33 @@ def refresh_model_list():
     model_choice_dropdown = gr.update(choices=auto_tag_models)
     return model_choice_dropdown
 
+def gen_tags_list(reference_model_tags_file):
+    help.convert_to_list_file(reference_model_tags_file)
+    help.verbose_print(f"done")
+
+def gen_tags_diff_list(reference_model_tags_file):
+    df_keep = pd.read_csv(reference_model_tags_file)
+    first_column_keep = df_keep.iloc[:, 0]
+    first_column_keep = first_column_keep.iloc[1:]
+    set_keep = set(first_column_keep)
+
+    tags_current_path = os.path.join(os.getcwd(), str(settings_json["batch_folder"]), str(settings_json["tag_count_list_folder"]), "tags.csv")
+    df_current = pd.read_csv(tags_current_path)
+    first_column_current = df_current.iloc[:, 0]
+    first_column_current = first_column_current.iloc[1:]
+    set_current = set(first_column_current)
+
+    # Calculate the difference between set1 and set2
+    difference_set = set_current - (set_current & set_keep)
+    # Save the difference elements to a text file
+    with open('remove_tags.txt', 'w') as f:
+        for element in difference_set:
+            f.write(element + '\n')
+    # Delete the dataframe
+    del first_column_keep
+    del first_column_current
+    help.verbose_print(f"done")
+
 '''
 ##################################################################################################################################
 #######################################################     GUI BLOCKS     #######################################################
@@ -2562,8 +2589,12 @@ def build_ui():
             with gr.Row():
                 download_remove_tag_file_button = gr.Button(value="(Optional) Download Negative Tags File", variant='secondary')
             with gr.Row():
+                reference_model_tags_file = gr.Textbox(lines=1, label='Path to model tags file')
+                gen_tags_list_button = gr.Button(value="Generate Tag/s List", variant='secondary')
+                gen_tags_diff_list_button = gr.Button(value="Generate Tag/s Diff List", variant='secondary')
+            with gr.Row():
                 save_filename_type = gr.Radio(choices=["id","md5"], label='Select Filename Type', value=settings_json["save_filename_type"])
-                remove_tags_list = gr.Textbox(lines=1, label='Path to negative tags file', value=settings_json["remove_tags_list"])
+                remove_tags_list = gr.Textbox(lines=1, label='Path to remove tags file', value=settings_json["remove_tags_list"])
                 replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value=settings_json["replace_tags_list"])
                 tag_count_list_folder = gr.Textbox(lines=1, label='Path to tag count file', value=settings_json["tag_count_list_folder"])
             with gr.Row():
@@ -2756,6 +2787,9 @@ def build_ui():
         only_selected_state_object = gr.State(dict()) # state of image mappings represented by index -> [ext, img_id]
         images_tuple_points = gr.JSON([], visible=False) # JSON list of all images selected given by two points: a-b|b-a
 
+
+        gen_tags_list_button.click(fn=gen_tags_list, inputs=[reference_model_tags_file], outputs=[])
+        gen_tags_diff_list_button.click(fn=gen_tags_diff_list, inputs=[reference_model_tags_file], outputs=[])
 
         refresh_models_btn.click(fn=refresh_model_list, inputs=[], outputs=[model_choice_dropdown])
 

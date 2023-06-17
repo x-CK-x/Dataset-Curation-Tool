@@ -14,6 +14,7 @@ import importlib.util
 import shutil
 from zipfile import ZipFile
 import gzip
+import pandas as pd
 
 ops = {'+': operator.add, '-': operator.sub}
 
@@ -871,5 +872,14 @@ def get_repo_releases(event_data):
         repo_release_urls[header_text] = urls
     return copy.deepcopy(release_options_radio_list), copy.deepcopy(repo_release_urls)
 
-
+def convert_to_list_file(filepath):
+    df = pd.read_csv(filepath)
+    # Keep only the first column
+    first_column = df.iloc[:, 0]
+    # Delete the first row
+    first_column = first_column.iloc[1:]
+    # Save first column to a text file with one element per line
+    first_column.to_csv('keep_tags.txt', index=False, header=False, lineterminator='\n')
+    # Delete the dataframe
+    del df
 
