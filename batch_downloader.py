@@ -1,6 +1,4 @@
-import os
 import json
-import requests
 from tqdm.auto import tqdm
 import shutil
 import gzip
@@ -13,6 +11,10 @@ from ctypes import c_int
 import re
 import time
 from datetime import datetime
+import os
+import requests
+from concurrent.futures import ThreadPoolExecutor
+import helper_functions as help
 
 class E6_Downloader:
     def check_param_batch_count(self, prms):
@@ -344,9 +346,10 @@ class E6_Downloader:
                keep_db=False):
         if all((posts_csv == '', e621_posts_list_filename == '')) or all((tags_csv == '', e621_tags_list_filename == '')):
             db_export_file_path = os.path.join(base_folder, 'db_export.html')
-            subprocess.check_output(
-                f'"{self.aria2c_path}" -d "{base_folder}" -o db_export.html --allow-overwrite=true --auto-file-renaming=false https://e621.net/db_export/',
-                shell=True)
+            if shutil.which('wget') is not None:
+                subprocess.check_output(f'wget https://e621.net/db_export/ -O {db_export_file_path}', shell=True)
+            elif shutil.which('curl') is not None:
+                subprocess.check_output(f'curl https://e621.net/db_export/ -o {db_export_file_path}', shell=True)
             with open(db_export_file_path) as f:
                 contents = f.read()
 
@@ -614,45 +617,64 @@ class E6_Downloader:
                     with open(path, 'w') as f:
                         f.write('\n'.join([str(s) for s in l]))
 
-
     def run_download(self, file, length, dwn_log_path, err_log_path):
         failed_md5 = set()
-        cmd = [self.aria2c_path, '-c', '-x', '16', '-k', '1M', '-j', str(multiprocessing.cpu_count()), '-i', file]
-        popen = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-        out_log = ''
-        ctr = 0
+        start_time = time.time()
         DL = ''
         padding = len(str(length))
-        start_time = time.time()
-        for line in popen.stdout:
-            out = line.decode()
-            out_log += out
-            if 'Download complete' in out:
-                ctr += 1
-            if '[DL:' in out:
-                DL = out.split('[DL:')[1].split(']')[0]
-            if 'Download aborted. URI=https://static1.e621.net/data/' in out:
-                ctr += 1
-                failed_md5.add(
-                    out.split('Download aborted. URI=https://static1.e621.net/data/')[1].split('.')[0].split('/')[2])
-            elapsed = time.time() - start_time
-            print(
-                f'\r## Downloading: {ctr: >{padding}}/{length} | {f"{elapsed // 60:02.0f}:{elapsed % 60:02.0f}": >6}, {DL: >7}/s',
-                end='')
+        with open(file, 'r') as f:
+            urls = [line.strip() for line in f]
+        sublists = [urls[i:i + 3] for i in range(0, len(urls), 3)]
+
+        failed_downloads = {}
+        MAX_ATTEMPTS = 3
+        # Shared counter and lock
+        ctr = multiprocessing.Value('i', 0)
+        lock = multiprocessing.Lock()
+        def download_url(url, file_name):
+            print(f"url\t{url}")
+            print(f"file_name\t{file_name}")
+            nonlocal ctr
+            try:
+                r = requests.get(url, stream=True)
+                r.raise_for_status()  # If the response was unsuccessful, this will raise a HTTPError
+
+                with open(file_name, 'wb') as file:
+                    for chunk in r.iter_content(chunk_size=1024):
+                        if chunk:  # Filter out keep-alive new chunks
+                            file.write(chunk)
+                with lock:  # Ensure that updates to the counter are atomic
+                    ctr.value += 1
+                    elapsed = time.time() - start_time
+                    print(f'\r## Downloading: {ctr.value: >{padding}}/{length} | {f"{elapsed // 60:02.0f}:{elapsed % 60:02.0f}": >6}', end='')
+            except requests.exceptions.RequestException as err:
+                print(f"Error occurred with {url}: {err}")
+                if url not in failed_downloads:
+                    failed_downloads[url] = {'filename': file_name, 'attempts': 1}  # Save for retry later
+                else:
+                    failed_downloads[url]['attempts'] += 1
+        with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+            for sublist in sublists:
+                image_id_w_ext = (sublist[2].replace('out=',''))
+                # Split the path into parts
+                parts = (sublist[1].replace('dir=','')).split('\\')
+                parts = [subpart for part in parts for subpart in part.split('/')]
+                new_path = f'{help.get_OS_delimeter()}'.join(parts)
+                url = sublist[0]
+                executor.submit(download_url, url, os.path.join(new_path, image_id_w_ext)) # fn, url, path+file_name
+        # Retry failed downloads
+        if failed_downloads:
+            print("Retrying failed downloads...")
+            with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+                for url, data in failed_downloads.items():
+                    if data['attempts'] < MAX_ATTEMPTS:
+                        executor.submit(download_url, url, data['filename'])
+                    else:
+                        print(f"Failed to download {url} after {MAX_ATTEMPTS} attempts")
+                        failed_md5.add(url)
         print('')
-        popen.stdout.close()
-        return_code = popen.wait()
-
-        if return_code:
-            with open(err_log_path, 'w', encoding="utf-8") as f:
-                f.write(out_log)
-        else:
-            with open(dwn_log_path, 'w', encoding="utf-8") as f:
-                f.write(out_log)
-
         os.remove(file)
         return failed_md5
-
 
     def download_posts(self, prms, batch_nums, posts_save_paths, tag_to_cat, base_folder='', batch_mode=False):
         _img_lists_df = pl.DataFrame()
@@ -1197,7 +1219,7 @@ class E6_Downloader:
         if self.backend_conn:
             self.backend_conn.close()
 
-    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn):
+    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, backend_conn):
         self.basefolder = basefolder
         self.settings = settings
         self.numcpu = numcpu
@@ -1207,7 +1229,6 @@ class E6_Downloader:
         self.postsparquet = postsparquet
         self.tagsparquet = tagsparquet
         self.keepdb = keepdb
-        self.aria2cpath = aria2cpath
         self.cachepostsdb = cachepostsdb
 
         print("============================")
@@ -1223,7 +1244,6 @@ class E6_Downloader:
         self.counter = None
         self.counter_lock = None
         self.processed_tag_files = None
-        self.aria2c_path = None
         self.cached_e621_posts = None
 
         base_folder = os.path.dirname(os.path.abspath(__file__))
@@ -1234,16 +1254,6 @@ class E6_Downloader:
 
         with open(self.settings, 'r') as json_file:
             prms = json.load(json_file)
-
-        if self.aria2cpath != '':
-            if not os.path.isfile(self.aria2cpath):
-                raise RuntimeError(
-                    f'aria2c was not found at {self.aria2cpath}. Install https://github.com/aria2/aria2/releases/')
-            self.aria2c_path = self.aria2cpath
-        else:
-            if shutil.which('aria2c') is None:
-                raise RuntimeError('aria2c is not installed. Install https://github.com/aria2/aria2/releases/')
-            self.aria2c_path = "aria2c"
 
         if self.postscsv != '':
             if not self.postscsv.endswith('.csv'):

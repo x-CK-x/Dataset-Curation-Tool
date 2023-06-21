@@ -259,19 +259,19 @@ def make_run_visible():
 def make_invisible():
     return gr.update(interactive=False, visible=False)
 
-def run_script(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath=''):
-    help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
+def run_script(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet=''):
+    help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb}")
 
     #### ADD A PIPE parameter that passes the connection to the other process
     global frontend_conn, backend_conn
     frontend_conn, backend_conn = mp.Pipe()
     global e6_downloader
-    e6_downloader = mp.Process(target=batch_downloader.E6_Downloader, args=(basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn),)
+    e6_downloader = mp.Process(target=batch_downloader.E6_Downloader, args=(basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, backend_conn),)
     e6_downloader.start()
 
-def run_script_batch(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath='',run_button_batch=None,images_full_change_dict_textbox=None,progress=gr.Progress()):
+def run_script_batch(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',run_button_batch=None,images_full_change_dict_textbox=None,progress=gr.Progress()):
     global settings_json
-    help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
+    help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb}")
 
     progress(0, desc="Starting...")
     for setting in progress.tqdm(run_button_batch, desc="Tracking Total Progress"):
@@ -279,7 +279,7 @@ def run_script_batch(basefolder='',settings_path=os.getcwd(),numcpu=-1,phaseperb
         if not ".json" in path:
             path += ".json"
 
-        e6_downloader = batch_downloader.E6_Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, None)
+        e6_downloader = batch_downloader.E6_Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, None)
         #
         # settings_json = help.load_session_config(path)
         # # apply post-processing
@@ -2624,7 +2624,6 @@ def build_ui():
                 tagscsv = gr.Textbox(lines=1, label='Path to e6 tags csv', value="")
                 postsparquet = gr.Textbox(lines=1, label='Path to e6 posts parquet', value="")
                 tagsparquet = gr.Textbox(lines=1, label='Path to e6 tags parquet', value="")
-                aria2cpath = gr.Textbox(lines=1, label='Path to aria2c program', value="")
             with gr.Row():
                 images_full_change_dict_textbox = gr.Textbox(lines=1, label='Path to Image Full Change Log JSON (Optional)',
                                                          value=os.path.join(auto_config_path, f"auto_complete_{settings_json['batch_folder']}.json"))
@@ -3017,14 +3016,14 @@ def build_ui():
                           outputs=[]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
 
-        run_button.click(fn=run_script,inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,aria2cpath],
+        run_button.click(fn=run_script,inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet],
                      outputs=[]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_collect]).then(fn=data_collect, inputs=[],
                      outputs=[progress_bar_textbox_collect]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_download]).then(fn=data_download, inputs=[],
                      outputs=[progress_bar_textbox_download]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_resize]).then(fn=data_resize, inputs=[resize_checkbox_group_var],
                      outputs=[progress_bar_textbox_resize]).then(fn=end_connection,inputs=[],outputs=[])
 
         run_button_batch.click(fn=make_run_visible,inputs=[],outputs=[progress_run_batch]).then(fn=run_script_batch,
-                     inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,aria2cpath,all_json_files_checkboxgroup,images_full_change_dict_textbox],
+                     inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,all_json_files_checkboxgroup,images_full_change_dict_textbox],
                      outputs=[progress_run_batch])
 
         required_tags.submit(fn=textbox_handler_required, inputs=[required_tags], outputs=[required_tags,required_tags_group_var])
