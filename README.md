@@ -20,12 +20,8 @@ cd Dataset-Curation-Tool
 pip install -r requirements.txt
 ```
 
-#### aria2
-This downloader uses aria2 for fast downloading.
-
 (Linux)
 ```
-sudo apt-get install aria2
 sudo apt-get install wget
 ```
 #### other system installs
@@ -35,21 +31,6 @@ sudo apt-get install wget
 ```
 sudo apt-get install unzip
 ```
-
-(Windows)
-
-For Windows, install the aria2 build https://github.com/aria2/aria2/releases/
-
-Add aria2 in your environment variable paths.
-
-Here's two way's to add to PATH on your Windows machine:
-
-https://www.java.com/en/download/help/path.html
-
-https://docs.oracle.com/en/database/oracle/machine-learning/oml4r/1.5.1/oread/creating-and-modifying-environment-variables-on-windows.html#GUID-DD6F9982-60D5-48F6-8270-A27EC53807D0
-
-##### You can test that your machine recognizes aria2 (and that it was added **"correctly"** to the PATH environment variable), by running the following on the command line
-> aria2c
 
 ## How to use
 
