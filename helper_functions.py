@@ -56,6 +56,17 @@ def load_session_config(f_name):
                 json_file.close()
     return session_config
 
+def download_url(url, file_name):
+    try:
+        r = requests.get(url, stream=True)
+        r.raise_for_status()  # If the response was unsuccessful, this will raise a HTTPError
+        with open(file_name, 'wb') as file:
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:  # Filter out keep-alive new chunks
+                    file.write(chunk)
+    except requests.exceptions.RequestException as err:
+        print(f"Error occurred with {url}: {err}")
+
 def grab_pre_selected(settings, all_checkboxes):
     pre_selected_checkboxes = []
     for key in all_checkboxes:
@@ -103,6 +114,12 @@ def to_padded(num):
 
 def is_windows():
     return os.name == 'nt'
+
+def get_OS_delimeter():
+    if is_windows() == 'nt':
+        return '\\'
+    else:
+        return '/'
 
 def unzip_file(file_path, new_name=""):
     temp = '\\' if is_windows() else '/'
@@ -420,18 +437,9 @@ def extract_time_and_href_github(api_url):
     return copy.deepcopy(release_list)
 
 def download_negative_tags_file():
-    disable_flag = "--disable-ipv6"
     url = "https://raw.githubusercontent.com/pikaflufftuft/pikaft-e621-posts-downloader/main/remove_tags.txt"
-    command_str = f"wget "
-    progress_flag = "-q --show-progress "
-    if not is_windows():
-        command_str = f"{command_str}{progress_flag}{url}"
-    else:
-        command_str = f"aria2c "
-        command_str = f"{command_str}{url} {disable_flag}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
-    for line in execute(command_str.split(" ")):
-        verbose_print(line)
+    download_url(url, url.split('/')[-1])
     verbose_print("Done")
 
 def get_today_datetime():
@@ -444,20 +452,11 @@ def download_all_e6_tags_csv(proxy_url=None):
     before_count = len(glob.glob(os.path.join(os.getcwd(), f"tags-*.csv")))
     verbose_print(f"before_count:\t{before_count}")
 
-    disable_flag = "--disable-ipv6"
     repo_name = f"{'tags-'}{get_today_datetime()}{'.csv.gz'}"
     url = f"{'https://e621.net/db_export/'}{repo_name}"
-    command_str = f"wget "
-    progress_flag = "-q --show-progress "
-    if not is_windows():
-        command_str = f"{command_str}{progress_flag}{url}"
-    else:
-        command_str = f"aria2c "
-        command_str = f"{command_str}{url} {disable_flag}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
     try:
-        for line in execute(command_str.split(" ")):
-            verbose_print(line)
+        download_url(url, repo_name)
     except sub.CalledProcessError as e:
         verbose_print(f"Tag file not yet uploaded/created. Trying again with (DAY - 1)")
 
@@ -478,16 +477,8 @@ def download_all_e6_tags_csv(proxy_url=None):
         verbose_print(f"repo_name:\t{repo_name}")
 
         url = f"{'https://e621.net/db_export/'}{repo_name}"
-        command_str = f"wget "
-        progress_flag = "-q --show-progress "
-        if not is_windows():
-            command_str = f"{command_str}{progress_flag}{url}"
-        else:
-            command_str = f"aria2c "
-            command_str = f"{command_str}{url} {disable_flag}"
         verbose_print(f"DOWNLOADING asset:\t{url}")
-        for line in execute(command_str.split(" ")):
-            verbose_print(line)
+        download_url(url, repo_name)
 
         # finally unzip the file
         unzip_all()
@@ -496,19 +487,9 @@ def download_all_e6_tags_csv(proxy_url=None):
     verbose_print("Done")
 
 def download_zack3d_model():
-    disable_flag = "--disable-ipv6"
-    temp = '\\' if is_windows() else '/'
     url = "https://pixeldrain.com/api/file/iNMyyi2w"
-    command_str = f"wget "
-    progress_flag = "-q --show-progress "
-    if not is_windows():
-        command_str = f"{command_str}{progress_flag}{url}"
-    else:
-        command_str = f"aria2c "
-        command_str = f"{command_str}{url} {disable_flag}"
     verbose_print(f"DOWNLOADING asset:\t{url}")
-    for line in execute(command_str.split(" ")):
-        verbose_print(line)
+    download_url(url, url.split('/')[-1])
 
     # finally unzip the file
     unzip_all()
@@ -705,22 +686,13 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
                 model_name = "/".join(model_name.split("/")[-2:])
             else:
                 model_name = "/".join(model_name.split("/")[-1])
-        command_str = f"wget "
-        progress_flag = "-q --show-progress "
 
         # get full url path
         url_path = full_model_download_link(model_download_types, model_name)
-
-        if not is_windows():
-            command_str = f"{command_str}{progress_flag}"
-            command_str = f"{command_str}{url_path}"
-        else:
-            command_str = f"aria2c "
-            command_str = f"{command_str}{url_path} {disable_flag}"
         verbose_print(f"DOWNLOADING:\t{model_name}")
-        for line in execute(command_str.split(" ")):
-            verbose_print(line)
+        download_url(url_path, url_path.split('/')[-1])
         verbose_print(f"Done")
+
     if tagging_model_download_types is not None and len(tagging_model_download_types) > 0:
         # download zack3d's model
         download_zack3d_model()
@@ -743,20 +715,10 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
 
 
 def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group, repo_download_radio):
-    disable_flag = "--disable-ipv6"
-    temp = '\\' if is_windows() else '/'
     if repo_download_releases_only:
         for asset_url in release_assets_checkbox_group:
-            command_str = f"wget "
-            progress_flag = "-q --show-progress "
-            if not is_windows():
-                command_str = f"{command_str}{progress_flag}{asset_url}"
-            else:
-                command_str = f"aria2c "
-                command_str = f"{command_str}{asset_url} {disable_flag}"
             verbose_print(f"DOWNLOADING asset:\t{asset_url}")
-            for line in execute(command_str.split(" ")):
-                verbose_print(line)
+            download_url(asset_url, asset_url.split('/')[-1])
 
             # no zip extension check (ONLY) check repos with the known issue on Linux
             if "kohya" in repo_download_radio.lower() or "auto1111" in repo_download_radio.lower():
@@ -792,19 +754,9 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                 for line in execute(command_str.split(" ")):
                     verbose_print(line)
                 # also install the latest pre-trained model
-                command_str = f"wget "
-                progress_flag = "-q --show-progress "
-
                 url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip"  # newest model
-                if not is_windows():
-                    command_str = f"{command_str}{progress_flag}"
-                    command_str = f"{command_str}{url_path}"
-                else:
-                    command_str = f"aria2c "
-                    command_str = f"{command_str}{url_path} {disable_flag}"
                 verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
-                for line in execute(command_str.split(" ")):
-                    verbose_print(line)
+                download_url(url_path, repo_name)
 
                 # finally unzip the file
                 unzip_all()
