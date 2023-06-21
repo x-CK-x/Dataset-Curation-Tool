@@ -20,10 +20,6 @@ cd Dataset-Curation-Tool
 pip install -r requirements.txt
 ```
 
-(Linux)
-```
-sudo apt-get install wget
-```
 #### other system installs
 - unzip for the (optionally) downloaded zip files
 
