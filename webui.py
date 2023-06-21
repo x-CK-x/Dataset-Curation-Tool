@@ -164,8 +164,10 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
     help.update_JSON(settings_json, config_name)
 
     temp = '\\' if help.is_windows() else '/'
-    return gr.update(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]),
-                                                                label='Select to Run', value=[])
+    all_json_files_checkboxgroup = gr.update(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), value=[])
+    quick_json_select = gr.update(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]))
+
+    return all_json_files_checkboxgroup, quick_json_select
 
 def textbox_handler_required(tag_string_comp):
     temp_tags = None
@@ -550,16 +552,21 @@ def change_config(quick_json_select, file_path):
     global settings_json
     global config_name
 
+    settings_path = None
+
     if quick_json_select != config_name:
         settings_json = help.load_session_config(os.path.join(cwd, quick_json_select))
         config_name = os.path.join(cwd, quick_json_select)
+        settings_path = gr.update(value=config_name)
     else:
         if temp in file_path:
             settings_json = help.load_session_config(file_path)
             config_name = file_path
+            settings_path = gr.update(value=config_name)
         else:
             settings_json = help.load_session_config(os.path.join(cwd, file_path))
             config_name = os.path.join(cwd, file_path)
+            settings_path = gr.update(value=config_name)
 
     global required_tags_list
     required_tags_list = help.get_list(settings_json["required_tags"], settings_json["tag_sep"])
@@ -650,7 +657,7 @@ def change_config(quick_json_select, file_path):
            min_day,min_area,top_n,min_short_side,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,required_tags_group_var, \
            blacklist_group_var,skip_posts_file,skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,apply_filter_to_listed_posts, \
            save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type, \
-           remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox
+           remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox,settings_path
 
 def reload_selected_image_dict(ext, img_name):
     global selected_image_dict  # id -> {categories: tag/s}, type -> string
@@ -2345,7 +2352,14 @@ def save_custom_images(image_mode_choice_state, image_with_tag_path_textbox, cop
     global autotagmodel, all_predicted_confidences, all_predicted_tags
     generate_all_dirs()
 
-    all_paths = autotagmodel.get_dataset().get_image_paths()
+    all_paths = None
+    try:
+        all_paths = autotagmodel.get_dataset().get_image_paths()
+    except AttributeError:
+        all_paths = glob.glob(os.path.join(image_with_tag_path_textbox, f"*.jpg")) + \
+                    glob.glob(os.path.join(image_with_tag_path_textbox, f"*.png")) + \
+                    glob.glob(os.path.join(image_with_tag_path_textbox, f"*.gif"))
+
     help.verbose_print(f"all image paths to save:\t{all_paths}")
     help.verbose_print(f"image_with_tag_path_textbox:\t{image_with_tag_path_textbox}")
     images_path = all_paths
@@ -2494,7 +2508,7 @@ def build_ui():
                 with gr.Column():
                     method_tag_files = gr.Radio(choices=method_tag_files_opts, label='Resized Img Tag Handler', value=settings_json["method_tag_files"])
                 with gr.Column():
-                    settings_path = gr.Textbox(lines=1, label='Path to JSON (REQUIRED)', value=config_name)
+                    settings_path = gr.Textbox(lines=1, label='Path/Name to \"NEW\" JSON (REQUIRED)', value=config_name)
                 create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
                 temp = '\\' if help.is_windows() else '/'
                 quick_json_select = gr.Dropdown(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), label='JSON Select',
@@ -2941,7 +2955,7 @@ def build_ui():
                 skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
                 apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,downloaded_posts_folder,
                 png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,
-                replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox]).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
+                replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox, settings_path]).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
 
         config_save_var0.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
@@ -2953,7 +2967,7 @@ def build_ui():
                                   save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
                                   min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
                                   ],
-                          outputs=[all_json_files_checkboxgroup]
+                          outputs=[all_json_files_checkboxgroup, quick_json_select]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
         config_save_var1.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
