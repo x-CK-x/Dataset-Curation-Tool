@@ -241,7 +241,7 @@ def merge_dict(path1, path2, path3):
 def write_tags_to_text_file(input_string, file_path):
     print(f"input_string:\t{input_string}")
     print(f"file_path:\t{file_path}")
-    with open(file_path, 'w') as file:
+    with open(file_path, 'w', encoding="utf-8") as file:
         file.write(input_string)
     file.close()
 
@@ -257,7 +257,7 @@ def write_tags_to_csv(dictionary, file_path):
     # sort tags descending by frequency
     sort_dictionary_to_list = dict_to_sorted_list(dictionary)
 
-    with open(file_path, 'w') as file:
+    with open(file_path, 'w', encoding="utf-8") as file:
         file.write(f"{header_string}\n")
         for pair in sort_dictionary_to_list:
             file.write(f"{pair[0]},{pair[1]}\n")
