@@ -1326,6 +1326,20 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
     return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
            img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
 
+def remove_all(artist, character, species, general, meta, rating, apply_to_all_type_select_checkboxgroup, img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state):
+    remove_tag_changes(artist, apply_to_all_type_select_checkboxgroup,
+        img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
+    remove_tag_changes(character, apply_to_all_type_select_checkboxgroup,
+        img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
+    remove_tag_changes(species, apply_to_all_type_select_checkboxgroup,
+        img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
+    remove_tag_changes(general, apply_to_all_type_select_checkboxgroup,
+        img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
+    remove_tag_changes(meta, apply_to_all_type_select_checkboxgroup,
+        img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
+    return remove_tag_changes(rating, apply_to_all_type_select_checkboxgroup,
+        img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
+
 def get_category_name(tag):
     global all_tags_ever_dict
     if tag in all_tags_ever_dict:
@@ -2892,30 +2906,30 @@ def build_ui():
 
         stats_run_button.click(fn=run_stats, inputs=[stats_run_options, stats_load_file], outputs=[stats_selected_data])
 
-        tag_remove_button.click(fn=remove_tag_changes, inputs=[img_artist_tag_checkbox_group, apply_to_all_type_select_checkboxgroup,
-                img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
-                outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
-                                           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group]).then(fn=remove_tag_changes,
-                inputs=[img_character_tag_checkbox_group, apply_to_all_type_select_checkboxgroup,
-                img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
-                outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
-                                           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group]).then(fn=remove_tag_changes,
-                inputs=[img_species_tag_checkbox_group, apply_to_all_type_select_checkboxgroup,
-                img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
-                outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
-                                           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group]).then(fn=remove_tag_changes,
-                inputs=[img_general_tag_checkbox_group, apply_to_all_type_select_checkboxgroup,
-                img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
-                outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
-                                           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group]).then(fn=remove_tag_changes,
-                inputs=[img_meta_tag_checkbox_group, apply_to_all_type_select_checkboxgroup,
-                img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
-                outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
-                                           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group]).then(fn=remove_tag_changes,
-                inputs=[img_rating_tag_checkbox_group, apply_to_all_type_select_checkboxgroup,
-                img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
-                outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
-                                           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
+        tag_remove_button.click(
+            fn=remove_all,
+            inputs=[
+                img_artist_tag_checkbox_group,
+                img_character_tag_checkbox_group,
+                img_species_tag_checkbox_group,
+                img_general_tag_checkbox_group,
+                img_meta_tag_checkbox_group,
+                img_rating_tag_checkbox_group,
+                apply_to_all_type_select_checkboxgroup,
+                img_id_textbox,
+                multi_select_ckbx_state,
+                only_selected_state_object,
+                images_selected_state
+            ],
+            outputs=[
+                img_artist_tag_checkbox_group,
+                img_character_tag_checkbox_group,
+                img_species_tag_checkbox_group,
+                img_general_tag_checkbox_group,
+                img_meta_tag_checkbox_group,
+                img_rating_tag_checkbox_group
+            ]
+        )
 
         tag_add_textbox.submit(fn=add_tag_changes, inputs=[tag_add_textbox, apply_to_all_type_select_checkboxgroup,
                                 img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
