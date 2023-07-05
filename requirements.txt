@@ -1,9 +1,9 @@
-opencv_python
+opencv-python
 polars == 0.16.18
 requests
 tqdm
 pyarrow
-gradio == 3.32.0
+gradio == 3.35.2
 beautifulsoup4
 Pillow
 pandas
