@@ -466,7 +466,7 @@ def sort_csv_files_by_date(path: str) -> list:
     verbose_print(f"sorted_csv_files:\t{sorted_csv_files}")
     return sorted_csv_files
 
-def check_to_update_csv():
+def check_to_update_csv(proxy_url: str | None = None):
     VALID_TIME_RANGE = 7
     cwd = os.getcwd()
     csv_files = sort_csv_files_by_date(cwd)
@@ -474,10 +474,10 @@ def check_to_update_csv():
         # get datatime string from newest
         date = ((csv_files[0].split("tags-"))[-1]).split(".csv")[0]
         if days_since(date) >= VALID_TIME_RANGE:
-            download_all_e6_tags_csv()
+            download_all_e6_tags_csv(proxy_url=proxy_url)
             verbose_print(f"ALL TAGS CSV HAS BEEN UPDATED. PLEASE REMOVE OLDER VERSION/S")
     else:
-        download_all_e6_tags_csv()
+        download_all_e6_tags_csv(proxy_url=proxy_url)
         verbose_print(f"ALL TAGS CSV HAS BEEN UPDATED. PLEASE REMOVE OLDER VERSION/S")
 
 def is_installed(package):
