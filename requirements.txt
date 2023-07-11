@@ -3,7 +3,7 @@ polars == 0.16.18
 requests
 tqdm
 pyarrow
-gradio == 3.35.2
+gradio == 3.36.1
 beautifulsoup4
 Pillow
 pandas
