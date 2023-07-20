@@ -31,4 +31,126 @@ js_do_everything = """
         }
         """
 
+js_set_colors_on_list_required = """
+        async (tags, categories) => {
+          // I'm assuming you have a mapping from categories to colors
+          let categoryToColor = {
+            "artist": "yellow",
+            "character": "green",
+            "species": "red",
+            "general": "white",
+            "rating": "cyan",
+            "meta": "purple",
+            "invalid": "black",
+            "lore": "black",
+            "copyright": "violet"
+          };
 
+          const gallery = document.querySelector("#required_dropdown");
+          const ulElements = gallery.querySelectorAll("ul");
+
+          for(let ul of ulElements) {
+            let liElements = ul.querySelectorAll("li");
+            // If there are <li> elements, we add the class
+            liElements.forEach(li => {
+              let tagIndex = tags.indexOf(li.getAttribute('data-value'));
+              if(tagIndex !== -1) {
+                li.style.color = categoryToColor[categories[tagIndex]];
+              }
+            });
+          }
+        }
+        """
+
+js_set_colors_on_list_blacklist = """
+        async (tags, categories) => {
+          // I'm assuming you have a mapping from categories to colors
+          let categoryToColor = {
+            "artist": "yellow",
+            "character": "green",
+            "species": "red",
+            "general": "white",
+            "rating": "cyan",
+            "meta": "purple",
+            "invalid": "black",
+            "lore": "black",
+            "copyright": "violet"
+          };
+
+          const gallery = document.querySelector("#blacklist_dropdown");
+          const ulElements = gallery.querySelectorAll("ul");
+
+          for(let ul of ulElements) {
+            let liElements = ul.querySelectorAll("li");
+            // If there are <li> elements, we add the class
+            liElements.forEach(li => {
+              let tagIndex = tags.indexOf(li.getAttribute('data-value'));
+              if(tagIndex !== -1) {
+                li.style.color = categoryToColor[categories[tagIndex]];
+              }
+            });
+          }
+        }
+        """
+
+js_set_colors_on_list_add_tag = """
+        async (tags, categories) => {
+          // I'm assuming you have a mapping from categories to colors
+          let categoryToColor = {
+            "artist": "yellow",
+            "character": "green",
+            "species": "red",
+            "general": "white",
+            "rating": "cyan",
+            "meta": "purple",
+            "invalid": "black",
+            "lore": "black",
+            "copyright": "violet"
+          };
+
+          const gallery = document.querySelector("#add_tag_dropdown");
+          const ulElements = gallery.querySelectorAll("ul");
+
+          for(let ul of ulElements) {
+            let liElements = ul.querySelectorAll("li");
+            // If there are <li> elements, we add the class
+            liElements.forEach(li => {
+              let tagIndex = tags.indexOf(li.getAttribute('data-value'));
+              if(tagIndex !== -1) {
+                li.style.color = categoryToColor[categories[tagIndex]];
+              }
+            });
+          }
+        }
+        """
+
+js_set_colors_on_list_searchbar = """
+        async (tags, categories) => {
+          // I'm assuming you have a mapping from categories to colors
+          let categoryToColor = {
+            "artist": "yellow",
+            "character": "green",
+            "species": "red",
+            "general": "white",
+            "rating": "cyan",
+            "meta": "purple",
+            "invalid": "black",
+            "lore": "black",
+            "copyright": "violet"
+          };
+
+          const gallery = document.querySelector("#searchbar_dropdown");
+          const ulElements = gallery.querySelectorAll("ul");
+
+          for(let ul of ulElements) {
+            let liElements = ul.querySelectorAll("li");
+            // If there are <li> elements, we add the class
+            liElements.forEach(li => {
+              let tagIndex = tags.indexOf(li.getAttribute('data-value'));
+              if(tagIndex !== -1) {
+                li.style.color = categoryToColor[categories[tagIndex]];
+              }
+            });
+          }
+        }
+        """

@@ -43,7 +43,7 @@ trim_markdown_length = """
 
 refresh_models_btn_rule = """
 #refresh_models_btn {
-  margin: 0.0em 0em 0.0em 0.35em;
+  margin: -1.50em 0.75em 0.75em 0.35em;
   max-width: 0.5em;
   min-width: 0em !important;
   height: 0em;
@@ -56,13 +56,3 @@ gallery_fix_height = """
 	max-height: 0vh;
 }
 """
-
-
-
-
-
-
-
-
-
-

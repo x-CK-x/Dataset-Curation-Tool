@@ -1,3 +1,5 @@
+import string
+
 import gradio as gr
 import os
 import multiprocessing as mp
@@ -10,6 +12,7 @@ import helper_functions as help
 import css_constants as css_
 import js_constants as js_
 import md_constants as md_
+import Video2Frames as vid2frames
 
 import argparse
 import datetime
@@ -17,6 +20,7 @@ import pandas as pd
 from tqdm import tqdm
 import numpy as np
 from PIL import Image
+import datrie
 
 '''
 ##################################################################################################################################
@@ -168,36 +172,6 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
     quick_json_select = gr.update(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]))
 
     return all_json_files_checkboxgroup, quick_json_select
-
-def textbox_handler_required(tag_string_comp):
-    temp_tags = None
-    if settings_json["tag_sep"] in tag_string_comp:
-        temp_tags = tag_string_comp.split(settings_json["tag_sep"])
-    elif " | " in tag_string_comp:
-        temp_tags = tag_string_comp.split(" | ")
-    else:
-        temp_tags = [tag_string_comp]
-
-    for tag in temp_tags:
-        if not tag in required_tags_list:
-            required_tags_list.append(tag)
-    return gr.update(lines=1, label='Press Enter to ADD tag/s (E.g. tag1    or    tag1, tag2, ..., etc.)', value=""), \
-           gr.update(choices=required_tags_list, label='ALL Required Tags', value=[])
-
-def textbox_handler_blacklist(tag_string_comp):
-    temp_tags = None
-    if settings_json["tag_sep"] in tag_string_comp:
-        temp_tags = tag_string_comp.split(settings_json["tag_sep"])
-    elif " | " in tag_string_comp:
-        temp_tags = tag_string_comp.split(" | ")
-    else:
-        temp_tags = [tag_string_comp]
-
-    for tag in temp_tags:
-        if not tag in blacklist_tags:
-            blacklist_tags.append(tag)
-    return gr.update(lines=1, label='Press Enter to ADD tag/s (E.g. tag1    or    tag1, tag2, ..., etc.)', value=""), \
-           gr.update(choices=blacklist_tags, label='ALL Blacklisted Tags', value=[])
 
 def check_box_group_handler_required(check_box_group):
     for tag in check_box_group:
@@ -547,16 +521,16 @@ def reset_gallery():
     return gr.update(value=[], visible=True)
 
 # load a different config
-def change_config(quick_json_select, file_path):
+def change_config(selected: gr.SelectData, file_path):
     temp = '\\' if help.is_windows() else '/'
     global settings_json
     global config_name
 
     settings_path = None
 
-    if quick_json_select != config_name:
-        settings_json = help.load_session_config(os.path.join(cwd, quick_json_select))
-        config_name = os.path.join(cwd, quick_json_select)
+    if selected.value != config_name:
+        settings_json = help.load_session_config(os.path.join(cwd, selected.value))
+        config_name = os.path.join(cwd, selected.value)
         settings_path = gr.update(value=config_name)
     else:
         if temp in file_path:
@@ -662,6 +636,7 @@ def change_config(quick_json_select, file_path):
 def reload_selected_image_dict(ext, img_name):
     global selected_image_dict  # id -> {categories: tag/s}, type -> string
     global all_tags_ever_dict
+    global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
     if img_name:
         img_tag_list = copy.deepcopy(all_images_dict[ext][img_name])
         help.verbose_print(f"img_tag_list:\t\t{img_tag_list}")
@@ -669,18 +644,34 @@ def reload_selected_image_dict(ext, img_name):
         temp_tag_dict = {}
         temp_list = [[],[],[],[],[],[]]
         for tag in img_tag_list:
-            if categories_map[all_tags_ever_dict[tag]] == 'artist':
-                temp_list[0].append(tag)
-            if categories_map[all_tags_ever_dict[tag]] == 'character':
-                temp_list[1].append(tag)
-            if categories_map[all_tags_ever_dict[tag]] == 'species':
-                temp_list[2].append(tag)
-            if categories_map[all_tags_ever_dict[tag]] == 'general':
-                temp_list[3].append(tag)
-            if categories_map[all_tags_ever_dict[tag]] == 'meta':
-                temp_list[4].append(tag)
-            if categories_map[all_tags_ever_dict[tag]] == 'rating':
-                temp_list[5].append(tag)
+            if tag in all_tags_ever_dict:
+                if categories_map[all_tags_ever_dict[tag][0]] == 'artist':
+                    temp_list[0].append(tag)
+                if categories_map[all_tags_ever_dict[tag][0]] == 'character':
+                    temp_list[1].append(tag)
+                if categories_map[all_tags_ever_dict[tag][0]] == 'species':
+                    temp_list[2].append(tag)
+                if categories_map[all_tags_ever_dict[tag][0]] == 'general':
+                    temp_list[3].append(tag)
+                if categories_map[all_tags_ever_dict[tag][0]] == 'meta':
+                    temp_list[4].append(tag)
+                if categories_map[all_tags_ever_dict[tag][0]] == 'rating':
+                    temp_list[5].append(tag)
+            else:
+                help.verbose_print(f"tag:\t{tag}\tnot in all_tags_ever_dict")
+                if tag in artist_csv_dict: # artist
+                    temp_list[0].append(tag)
+                if tag in character_csv_dict: # character
+                    temp_list[1].append(tag)
+                if tag in species_csv_dict: # species
+                    temp_list[2].append(tag)
+                if tag in general_csv_dict: # general
+                    temp_list[3].append(tag)
+                if tag in meta_csv_dict: # meta
+                    temp_list[4].append(tag)
+                if tag in rating_csv_dict: # rating
+                    temp_list[5].append(tag)
+
         temp_tag_dict["artist"] = temp_list[0]
         temp_tag_dict["character"] = temp_list[1]
         temp_tag_dict["species"] = temp_list[2]
@@ -759,6 +750,9 @@ def get_img_tags(gallery_comp, select_multiple_images_checkbox, images_selected_
     else:
         images_selected_state = []
         download_folder_type, img_name = extract_name_and_extention(gallery_comp[event_data.index]['name'])
+
+        help.verbose_print(f"download_folder_type:\t{download_folder_type}")
+        help.verbose_print(f"img_name:\t{img_name}")
 
         # if image name is not in the global dictionary --- then reload the gallery before loading the tags
         temp_all_images_dict_keys = list(all_images_dict.keys())
@@ -936,19 +930,101 @@ def get_insert_last_tags_name(string_category, ext, img_id, new_tag):
         selected_image_dict[img_id][string_category].append(new_tag)
     return temp_tag_name
 
+def textbox_handler_required(tag_string_comp, state, is_textbox):
+    # help.verbose_print(f"tag_string_comp:\t{tag_string_comp}")
+    # help.verbose_print(f"state:\t{state}")
+    # help.verbose_print(f"len(tag_string_comp):\t{len(tag_string_comp)}")
+
+    if tag_string_comp is not None and len(tag_string_comp) and (not tag_string_comp in required_tags_list):
+        required_tags_list.append(tag_string_comp)
+
+    new_textbox_value = "" if is_textbox else state
+    new_state_tag = new_textbox_value
+
+    check_box_group = gr.update(choices=required_tags_list, value=[])
+    return new_state_tag, check_box_group, gr.update(value=new_textbox_value)
+def textbox_handler_blacklist(tag_string_comp, state, is_textbox):
+    # help.verbose_print(f"tag_string_comp:\t{tag_string_comp}")
+    # help.verbose_print(f"state:\t{state}")
+    # help.verbose_print(f"len(tag_string_comp):\t{len(tag_string_comp)}")
+
+    if tag_string_comp is not None and len(tag_string_comp) and (not tag_string_comp in blacklist_tags):
+        blacklist_tags.append(tag_string_comp)
+
+    new_textbox_value = "" if is_textbox else state
+    new_state_tag = new_textbox_value
+
+    check_box_group = gr.update(choices=blacklist_tags, value=[])
+    return new_state_tag, check_box_group, gr.update(value=new_textbox_value)
+
 # this method only effects ONE category at a time
 # selected_image_dict has the form:
 #     id -> {categories: [tags]}
 #     type -> ext
-def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, multi_select_ckbx_state, only_selected_state_object, images_selected_state):
+def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id,
+                    multi_select_ckbx_state, only_selected_state_object, images_selected_state, state_of_suggestion, is_textbox):
     global auto_complete_config
-    tag_list = tag_string.replace(" ", "").split(",")
-    img_id = str(img_id)
-
     global all_images_dict
     global selected_image_dict
-
     global all_tags_ever_dict
+    img_id = str(img_id)
+
+    # help.verbose_print(f"$$$$$$$$$ tag_string:\t{tag_string}")
+    # help.verbose_print(f"$$$$$$$$$ state_of_suggestion:\t{state_of_suggestion}")
+    # help.verbose_print(f"$$$$$$$$$ len(tag_string):\t{len(tag_string)}")
+
+    tag_list = []
+
+    # this if statement will have more logic to prevent the two tags present case
+    if tag_string is None or len(tag_string) == 0: #  or selected_image_dict is not None
+
+        new_state_of_suggestion_tag = "" if is_textbox else state_of_suggestion
+        new_state_of_suggestion_textbox = gr.update(value=new_state_of_suggestion_tag)
+
+        # find type of selected image
+        temp_ext = None
+        temp_all_images_dict_keys = list(all_images_dict.keys())
+        if "searched" in temp_all_images_dict_keys:
+            temp_all_images_dict_keys.remove("searched")
+        for each_key in temp_all_images_dict_keys:
+            if img_id in list(all_images_dict[each_key]):
+                temp_ext = each_key
+                break
+
+        img_artist_tag_checkbox_group = None
+        img_character_tag_checkbox_group = None
+        img_species_tag_checkbox_group = None
+        img_general_tag_checkbox_group = None
+        img_meta_tag_checkbox_group = None
+        img_rating_tag_checkbox_group = None
+        if selected_image_dict is not None:
+            # reload the categories for the selected_image_dict
+            reload_selected_image_dict(temp_ext, img_id)
+
+            img_artist_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['artist'], value=[])
+            img_character_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['character'], value=[])
+            img_species_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['species'], value=[])
+            img_general_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['general'], value=[])
+            img_meta_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['meta'], value=[])
+            img_rating_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['rating'], value=[])
+        else:
+            img_artist_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_character_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_species_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_general_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_meta_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_rating_tag_checkbox_group = gr.update(choices=[], value=[])
+
+        return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
+               img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
+               new_state_of_suggestion_tag, new_state_of_suggestion_textbox
+
+    tag_list.append(tag_string)
+
+    # help.verbose_print(f">>>>>>>>>>>> tag_list:\t{tag_list}")
+
+    new_state_of_suggestion_tag = "" if is_textbox else state_of_suggestion
+    new_state_of_suggestion_textbox = gr.update(value=new_state_of_suggestion_tag)
 
     # find type of selected image
     temp_ext = None
@@ -970,7 +1046,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
             for tag in tag_list:
                 if not tag in all_images_dict["searched"][selected_image_dict["type"]][img_id]:
                     # get last tag in category
-                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], selected_image_dict["type"], img_id, tag) # i.e. the tag before the new one
+                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag][0]], selected_image_dict["type"], img_id, tag) # i.e. the tag before the new one
                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                     # get its index on the global list
@@ -988,12 +1064,12 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                     auto_complete_config[selected_image_dict["type"]][img_id].append(['+', tag, (glob_index)])
 
                     # create or increment category table AND frequency table for (all) tags
-                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
+                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag) # add
         elif img_id in list(all_images_dict[selected_image_dict["type"]].keys()): # find image in ( TYPE ) : id
             for tag in tag_list:
                 if not tag in all_images_dict[selected_image_dict["type"]][img_id]:
                     # get last tag in category
-                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], selected_image_dict["type"], img_id, tag) # i.e. the tag before the new one
+                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag][0]], selected_image_dict["type"], img_id, tag) # i.e. the tag before the new one
                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                     # get its index on the global list
@@ -1008,7 +1084,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                     auto_complete_config[selected_image_dict["type"]][img_id].append(['+', tag, (glob_index)])
 
                     # create or increment category table AND frequency table for (all) tags
-                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
+                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag) # add
     if len(apply_to_all_type_select_checkboxgroup) > 0:
         if "searched" in apply_to_all_type_select_checkboxgroup: # edit searched and then all the instances of the respective types
             if multi_select_ckbx_state[0]:
@@ -1020,7 +1096,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                             for tag in tag_list:
                                 if not tag in all_images_dict["searched"][ext][img_id]:  # add tag
                                     # get last tag in category
-                                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], ext, img_id,
+                                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag][0]], ext, img_id,
                                                                          tag)  # i.e. the tag before the new one
                                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
@@ -1041,14 +1117,14 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                     auto_complete_config[ext][img_id].append(['+', tag, (glob_index)])
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag)  # add
+                                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag)  # add
             else:
                 for key_type in list(all_images_dict["searched"].keys()):
                     for img_id in list(all_images_dict["searched"][key_type].keys()):
                         for tag in tag_list:
                             if not tag in all_images_dict["searched"][key_type][img_id]: # add tag
                                 # get last tag in category
-                                last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], key_type, img_id, tag)  # i.e. the tag before the new one
+                                last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag][0]], key_type, img_id, tag)  # i.e. the tag before the new one
                                 help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                                 # get its index on the global list
@@ -1068,7 +1144,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                 auto_complete_config[key_type][img_id].append(['+', tag, (glob_index)])
 
                                 # create or increment category table AND frequency table for (all) tags
-                                add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
+                                add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag) # add
         else:
             if multi_select_ckbx_state[0]:
                 ##### returns index -> [ext, img_id]
@@ -1079,7 +1155,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                             for tag in tag_list:
                                 if not tag in all_images_dict[ext][img_id]:
                                     # get last tag in category
-                                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], ext, img_id,
+                                    last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag][0]], ext, img_id,
                                                                          tag)  # i.e. the tag before the new one
                                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
@@ -1100,14 +1176,14 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                         all_images_dict["searched"][ext][img_id].insert(glob_index, tag)
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag)  # add
+                                    add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag)  # add
             else:
                 for key_type in apply_to_all_type_select_checkboxgroup:
                     for img_id in list(all_images_dict[key_type].keys()):
                         for tag in tag_list:
                             if not tag in all_images_dict[key_type][img_id]:
                                 # get last tag in category
-                                last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag]], key_type, img_id, tag)  # i.e. the tag before the new one
+                                last_tag = get_insert_last_tags_name(categories_map[all_tags_ever_dict[tag][0]], key_type, img_id, tag)  # i.e. the tag before the new one
                                 help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                                 # get its index on the global list
@@ -1126,7 +1202,7 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
                                     all_images_dict["searched"][key_type][img_id].insert(glob_index, tag)
 
                                 # create or increment category table AND frequency table for (all) tags
-                                add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # add
+                                add_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag) # add
 
     # find type of selected image
     temp_ext = None
@@ -1148,7 +1224,8 @@ def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, 
     img_rating_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['rating'], value=[])
 
     return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
-           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
+           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
+           new_state_of_suggestion_tag, new_state_of_suggestion_textbox
 
 def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_checkboxgroup, img_id, multi_select_ckbx_state, only_selected_state_object, images_selected_state):
     global auto_complete_config
@@ -1185,9 +1262,9 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
     if img_id and len(img_id) > 0 and selected_image_dict and selected_image_dict["type"] in apply_to_all_type_select_checkboxgroup:
         # update info for selected image
         for tag in tag_list:
-            if tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]]:
-                while tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]]:
-                    selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]].remove(tag)
+            if tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag][0]]]:
+                while tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag][0]]]:
+                    selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag][0]]].remove(tag)
         # update info for category components
         img_artist_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['artist'], value=[])
         img_character_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['character'], value=[])
@@ -1200,9 +1277,9 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
     elif img_id and len(img_id) > 0 and selected_image_dict and (not apply_to_all_type_select_checkboxgroup or len(apply_to_all_type_select_checkboxgroup) == 0):
         # update info for selected image
         for tag in tag_list:
-            if tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]]:
-                while tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]]:
-                    selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag]]].remove(tag)
+            if tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag][0]]]:
+                while tag in selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag][0]]]:
+                    selected_image_dict[img_id][categories_map[all_tags_ever_dict[tag][0]]].remove(tag)
         # update info for category components
         img_artist_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['artist'], value=[])
         img_character_tag_checkbox_group = gr.update(choices=selected_image_dict[img_id]['character'], value=[])
@@ -1228,7 +1305,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                         auto_complete_config[selected_image_dict["type"]][img_id].append(['-', tag])
 
                     # create or increment category table AND frequency table for (all) tags
-                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
+                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag) # remove
         elif img_id in list(all_images_dict[selected_image_dict["type"]].keys()):  # find image in ( TYPE ) : id
             for tag in tag_list:
                 if tag in all_images_dict[selected_image_dict["type"]][img_id]:
@@ -1240,7 +1317,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                         auto_complete_config[selected_image_dict["type"]][img_id].append(['-', tag])
 
                     # create or increment category table AND frequency table for (all) tags
-                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
+                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag) # remove
 
     if len(apply_to_all_type_select_checkboxgroup) > 0:
         if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
@@ -1263,7 +1340,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                         auto_complete_config[ext][img_id].append(['-', tag])
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag)  # remove
+                                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag)  # remove
             else:
                 for key_type in list(all_images_dict["searched"].keys()):
                     for img_id in list(all_images_dict["searched"][key_type].keys()):
@@ -1280,7 +1357,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                     auto_complete_config[key_type][img_id].append(['-', tag])
 
                                 # create or increment category table AND frequency table for (all) tags
-                                remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
+                                remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag) # remove
         else:
             if multi_select_ckbx_state[0]:
                 ##### returns index -> [ext, img_id]
@@ -1303,7 +1380,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                             all_images_dict["searched"][ext][img_id].remove(tag)
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag)  # remove
+                                    remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag)  # remove
             else:
                 for key_type in apply_to_all_type_select_checkboxgroup:
                     for img_id in list(all_images_dict[key_type].keys()):
@@ -1321,7 +1398,7 @@ def remove_tag_changes(category_tag_checkbox_group, apply_to_all_type_select_che
                                         all_images_dict["searched"][key_type][img_id].remove(tag)
 
                                 # create or increment category table AND frequency table for (all) tags
-                                remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag]], tag) # remove
+                                remove_to_csv_dictionaries(categories_map[all_tags_ever_dict[tag][0]], tag) # remove
 
     return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
            img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
@@ -1343,7 +1420,7 @@ def remove_all(artist, character, species, general, meta, rating, apply_to_all_t
 def get_category_name(tag):
     global all_tags_ever_dict
     if tag in all_tags_ever_dict:
-        return categories_map[all_tags_ever_dict[tag]]
+        return categories_map[all_tags_ever_dict[tag][0]]
     else:
         return None
 
@@ -2487,6 +2564,282 @@ def gen_tags_diff_list(reference_model_tags_file):
     del first_column_current
     help.verbose_print(f"done")
 
+
+def video_upload_path(video_input_button):
+    return gr.update(value=video_input_button.name)
+
+def convert_video(video_input, video_output_dir):
+    vid2frames.video_to_frames(video_input.name, video_output_dir)
+    video_gallery = gr.update(
+        value=glob.glob(os.path.join(video_output_dir, f"*.png")))  # unless the file was a SWF file
+    return video_gallery
+
+
+# Function to color code categories
+def category_color(category):
+    colors = {
+        "artist": "yellow",
+        "character": "green",
+        "species": "red",
+        "general": "white",
+        "rating": "blue",
+        "meta": "purple",
+        "invalid": "black",
+        "lore": "black",
+        "copyright": "black",
+    }
+    return colors.get(categories_map[category])
+
+
+# Function to format the count
+def format_count(count):
+    if count >= 1000:
+        return f"{round(count / 1000, 1)}k"
+    else:
+        return str(count)
+
+
+def get_tag_options(input_string, num_suggestions):
+    global all_tags_ever_dict, trie
+    # Get a list of all tags that start with the edited part
+    suggested_tags = trie.keys(input_string)
+
+    # Sort the tags by count and take the top num_suggestions
+    suggested_tags = sorted(suggested_tags, key=lambda tag: -trie[tag])[:num_suggestions]
+
+    # Color code the tags by their categories and add the count
+    color_coded_tags = []
+    tag_categories = []
+    for tag in suggested_tags:
+        category = categories_map[all_tags_ever_dict[tag][0]]  # gets category of already existing tag
+        tag_categories.append(category)
+        count = all_tags_ever_dict[tag][1]  # gets count of already existing tag
+        count_str = format_count(count)
+        color_coded_tag = f"{tag} → {count_str}"
+        color_coded_tags.append(color_coded_tag)
+
+    tag_textbox = gr.update(value=input_string)
+    tag_suggestion_dropdown = gr.update(choices=color_coded_tags, value=None)
+    state = input_string  # retain the tag name until it is time
+    state_tag = ""
+
+    # print(f"color_coded_tags:\t{color_coded_tags}")
+    return tag_textbox, tag_suggestion_dropdown, state, state_tag, tag_categories
+
+
+# get the suggestions and populate the dropdown menu
+def suggest_tags(input_string, state, num_suggestions, state_tag):
+    # print(f"input_string:\t{(input_string)}")
+    # print(f"state:\t{(state)}")
+    # print(f"num_suggestions:\t{(num_suggestions)}")
+    # print(f"state_tag:\t{(state_tag)}")
+
+    global all_tags_ever_dict, trie
+    # tags_csv_dict          ####### tag -> count
+    # all_tags_ever_dict     ####### tag -> category
+
+    ###### prior string check, b4 updating new state
+
+    if input_string is None or len(input_string) == 0:  ### string is null or empty
+        # generic_textbox = gr.update(value="")
+        generic_dropdown = gr.update(choices=[], value=None)
+        tag_categories = []
+        state = ""  # set the new state of the input_string
+        state_tag = ""
+        return generic_dropdown, state, state_tag, tag_categories
+    elif " " in input_string:  ## string contains space
+        string_arr = input_string.split(" ")
+        tag_count = 0
+        text_arr = [] # tracks length of tag string fragments
+        for text in string_arr:
+            text_arr.append(len(text))
+            if text_arr[-1] > 0:
+                tag_count += 1
+
+        if tag_count == 2: # there are two valid tag strings
+            state_tag = string_arr[0] # choose the first tag
+            state = string_arr[-1]  # the remainder string
+            # generic_textbox = gr.update(value=state)
+
+            # get suggestions for remainder tag
+            _, generic_dropdown, _, _, tag_categories = get_tag_options(string_arr[-1], num_suggestions) # state is 3rd output
+            # help.verbose_print(f"===============\ttag_categories\t{tag_categories}")
+            # help.verbose_print(f"===============\tstate\t{state}")
+            return generic_dropdown, state, state_tag, tag_categories
+        else:  # one valid tag string
+            state_tag = string_arr[0] if text_arr[0] > 0 else string_arr[-1]
+            state = ""  # the remainder string
+            # generic_textbox = gr.update(value=state)
+
+            generic_dropdown = gr.update(choices=[], value=None)
+            tag_categories = []
+
+            # help.verbose_print(f"------------------\tstring_arr\t{string_arr}")
+            # help.verbose_print(f"------------------\tstate_tag\t{state_tag}")
+            # help.verbose_print(f"------------------\tstate\t{state}")
+
+            return generic_dropdown, state, state_tag, tag_categories
+    else:  ### string contains ONLY text
+        tag_textbox, tag_suggestion_dropdown, state, state_tag, tag_categories = get_tag_options(input_string, num_suggestions)
+        # help.verbose_print(f"===============\ttag_categories\t{tag_categories}")
+        # help.verbose_print(f"===============\ttag_textbox\t{tag_textbox}")
+        # help.verbose_print(f"===============\tstate\t{state}")
+        # help.verbose_print(f"===============\tstate_tag\t{state_tag}")
+
+        return tag_suggestion_dropdown, state, state_tag, tag_categories
+
+def dropdown_handler_required(tag: gr.SelectData):
+    tag = tag.value
+    sep = " → "
+    if sep in tag:
+        tag = tag.split(sep)[0]
+
+    if not tag in required_tags_list:
+        required_tags_list.append(tag)
+
+    tag_textbox = gr.update(value="")
+    tag_suggestion_dropdown = gr.update(choices=[], value=[])
+    initial_state = ""
+    initial_state_tag = ""
+    required_tags_group_var = gr.update(choices=required_tags_list, value=[])
+    return tag_textbox, tag_suggestion_dropdown, initial_state, initial_state_tag, required_tags_group_var
+
+
+def dropdown_handler_blacklist(tag: gr.SelectData):
+    tag = tag.value
+    sep = " → "
+    if sep in tag:
+        tag = tag.split(sep)[0]
+
+    if not tag in blacklist_tags:
+        blacklist_tags.append(tag)
+
+    tag_textbox = gr.update(value="")
+    tag_suggestion_dropdown = gr.update(choices=[], value=[])
+    initial_state = ""
+    initial_state_tag = ""
+    blacklist_group_var = gr.update(choices=blacklist_tags, value=[])
+    return tag_textbox, tag_suggestion_dropdown, initial_state, initial_state_tag, blacklist_group_var
+
+
+def dropdown_handler_add_tags(tag: gr.SelectData, apply_to_all_type_select_checkboxgroup, img_id,
+                              multi_select_ckbx_state,
+                              only_selected_state_object, images_selected_state, state_of_suggestion):
+    tag = tag.value
+    sep = " → "
+    if sep in tag:
+        tag = tag.split(sep)[0]
+
+    img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
+    img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
+    state_tag, tag_textbox = add_tag_changes(tag, apply_to_all_type_select_checkboxgroup, img_id,
+                                            multi_select_ckbx_state, only_selected_state_object, images_selected_state, state_of_suggestion, False)
+
+    tag_textbox = gr.update(value="")
+    state_of_suggestion = ""
+    tag_suggestion_dropdown = gr.update(choices=[], value=[])
+    return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
+           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
+           tag_textbox, tag_suggestion_dropdown, state_of_suggestion, state_tag
+
+
+def dropdown_search_handler(tag: gr.SelectData, input_string, previous_text, current_placement_tuple):
+    tag = tag.value
+    sep = " → "
+    if sep in tag:
+        tag = tag.split(sep)[0]
+
+    if current_placement_tuple[-1][0] == "-":
+        tag = f"-{tag}"
+    # help.verbose_print(f"tag:\t{tag}")
+    # help.verbose_print(f"input_string:\t{input_string}")
+    # help.verbose_print(f"previous_text:\t{previous_text}")
+    # help.verbose_print(f"current_placement_tuple:\t{current_placement_tuple}")
+    # change the textbox
+    start_index = current_placement_tuple[0]
+    end_index = current_placement_tuple[0] + len(current_placement_tuple[-1])
+    new_string = input_string[:start_index] + tag + input_string[end_index:]
+    # update the previous state
+    previous_text = new_string
+    # reset the placement tuple
+    current_search_state_placement_tuple = (0, "")
+    return gr.update(value=new_string), previous_text, current_search_state_placement_tuple, gr.update(choices=[],
+                                                                                                       value=None)
+
+
+def get_search_tag_options(partial_tag, num_suggestions):
+    tag_categories = []
+    if (partial_tag[0] == "-" and len(partial_tag) == 1):
+        return gr.update(choices=[], value=None), tag_categories
+    # check for leading "-" with additional text afterwards i.e. length exceeding 1 :: remove "-" if condition is true
+    partial_tag = partial_tag[1:] if (partial_tag[0] == "-" and len(partial_tag) > 1) else partial_tag
+
+    global all_tags_ever_dict, trie
+    # Get a list of all tags that start with the edited part
+    suggested_tags = trie.keys(partial_tag)
+
+    # Sort the tags by count and take the top num_suggestions
+    suggested_tags = sorted(suggested_tags, key=lambda tag: -trie[tag])[:num_suggestions]
+
+    # Color code the tags by their categories and add the count
+    color_coded_tags = []
+    for tag in suggested_tags:
+        category = categories_map[all_tags_ever_dict[tag][0]]  # gets category of already existing tag
+        tag_categories.append(category)
+        count = all_tags_ever_dict[tag][1]  # gets count of already existing tag
+        count_str = format_count(count)
+        color_coded_tag = f"{tag} → {count_str}"
+        color_coded_tags.append(color_coded_tag)
+
+    tag_suggestion_dropdown = gr.update(choices=color_coded_tags, value=None)
+
+    # print(f"color_coded_tags:\t{color_coded_tags}")
+    return tag_suggestion_dropdown, tag_categories
+
+
+def identify_changing_tag(past_string, current_string):
+    # Split the strings into tags
+    past_tags = past_string.split()
+    current_tags = current_string.split()
+    # Compare the tags and find the one that is being changed
+    for i in range(min(len(past_tags), len(current_tags))):
+        if past_tags[i] != current_tags[i]:
+            return (current_string.index(current_tags[i]), current_tags[i])
+    # If we're here, it means one of the strings has more tags than the other
+    if len(past_tags) < len(current_tags):
+        # A tag was added
+        return (current_string.index(current_tags[-1]), current_tags[-1])
+    elif len(past_tags) > len(current_tags):
+        # A tag was removed
+        return (0, "")
+    # If we're here, it means there was no change
+    return (0, "")
+
+
+def suggest_search_tags(input_string, num_suggestions, previous_text):
+    # obtain the current information
+    current_placement_tuple = identify_changing_tag(previous_text, input_string)
+
+    # print(f"previous_text:\t{(previous_text)}")
+    # print(f"CURRENT TEXT:\t{(input_string)}")
+    # print(f"num_suggestions:\t{(num_suggestions)}")
+    # print(f"current_placement_tuple:\t{(current_placement_tuple)}")
+    global all_tags_ever_dict, trie
+
+    if current_placement_tuple[-1] is None or len(
+            current_placement_tuple[-1]) == 0:  # ignore if the changes nothing of importance
+        generic_dropdown = gr.update(choices=[], value=None)
+        previous_text = input_string  # update previous state
+        tag_categories = []
+        return generic_dropdown, previous_text, current_placement_tuple, tag_categories
+
+    generic_dropdown, tag_categories = get_search_tag_options(current_placement_tuple[-1], num_suggestions)
+    # print(f"generic_dropdown:\t{(generic_dropdown)}")
+    # print(f"tag_categories:\t{(tag_categories)}")
+
+    return generic_dropdown, previous_text, current_placement_tuple, tag_categories
+
+
 '''
 ##################################################################################################################################
 #######################################################     GUI BLOCKS     #######################################################
@@ -2497,165 +2850,165 @@ def build_ui():
     with gr.Blocks(css=f"{css_.preview_hide_rule} {css_.refresh_aspect_btn_rule} {css_.trim_row_length} {css_.trim_markdown_length} "
                        f"{css_.thumbnail_colored_border_css} {css_.refresh_models_btn_rule}"
                        f"{css_.green_button_css} {css_.red_button_css}") as demo:# {css_.gallery_fix_height}
-        with gr.Tab("General Config"):
-            with gr.Row():
-                config_save_var0 = gr.Button(value="Apply & Save Settings", variant='primary')
-            gr.Markdown(md_.general_config)
-            with gr.Row():
-                with gr.Column():
-                    batch_folder = gr.Textbox(lines=1, label='Path to Batch Directory', value=settings_json["batch_folder"])
-                with gr.Column():
-                    resized_img_folder = gr.Textbox(lines=1, label='Path to Resized Images', value=settings_json["resized_img_folder"])
-                with gr.Column():
-                    proxy_value = ""
-                    if not "proxy_url" in settings_json:
-                        settings_json["proxy_url"] = proxy_value
-                    proxy_url_textbox = gr.Textbox(lines=1, label='(Optional Proxy URL)', value=settings_json["proxy_url"])
-            with gr.Row():
-                tag_sep = gr.Textbox(lines=1, label='Tag Seperator/Delimeter', value=settings_json["tag_sep"])
-                tag_order_format = gr.Textbox(lines=1, label='Tag ORDER', value=settings_json["tag_order_format"])
-                prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=settings_json["prepend_tags"])
-                append_tags = gr.Textbox(lines=1, label='Append Tags', value=settings_json["append_tags"])
-            with gr.Row():
-                with gr.Column():
-                    img_ext = gr.Dropdown(choices=img_extensions, label='Image Extension', value=settings_json["img_ext"])
-                with gr.Column():
-                    method_tag_files = gr.Radio(choices=method_tag_files_opts, label='Resized Img Tag Handler', value=settings_json["method_tag_files"])
-                with gr.Column():
-                    settings_path = gr.Textbox(lines=1, label='Path/Name to \"NEW\" JSON (REQUIRED)', value=config_name)
-                create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
-                temp = '\\' if help.is_windows() else '/'
-                quick_json_select = gr.Dropdown(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), label='JSON Select',
-                                      value=config_name)
-                load_json_file_button = gr.Button(value="Load from JSON", variant='secondary')
-        with gr.Tab("Stats Config"):
-            with gr.Row():
-                config_save_var1 = gr.Button(value="Apply & Save Settings", variant='primary')
-            gr.Markdown(md_.stats_config)
-            with gr.Row():
-                min_score = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Min Score', value=settings_json["min_score"])
-            with gr.Row():
-                min_fav_count = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Min Fav Count', value=settings_json["min_fav_count"])
-            with gr.Row():
-                with gr.Column():
-                    min_year = gr.Slider(minimum=2000, maximum=2050, step=1, label='Filter: Min Year', value=int(settings_json["min_year"]))
-                    min_month = gr.Slider(minimum=1, maximum=12, step=1, label='Filter: Min Month',
-                                     value=int(settings_json["min_month"]))
-                    min_day = gr.Slider(minimum=1, maximum=31, step=1, label='Filter: Min Day',
-                                     value=int(settings_json["min_day"]))
-            with gr.Row():
-                min_area = gr.Slider(minimum=1, maximum=1000000, step=1, label='Filter: Min Area', value=settings_json["min_area"], info='ONLY images with LxW > this value will be downloaded')
-            with gr.Row():
-                top_n = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Top N', value=settings_json["top_n"], info='ONLY the top N images will be downloaded')
-            with gr.Row():
-                min_short_side = gr.Slider(minimum=1, maximum=100000, step=1, label='Resize Param: Min Short Side', value=settings_json["min_short_side"], info='ANY image\'s length or width that falls (ABOVE) this number will be resized')
-        with gr.Tab("Checkbox Config"):
-            with gr.Row():
-                config_save_var2 = gr.Button(value="Apply & Save Settings", variant='primary')
-            with gr.Row():
-                with gr.Column():
-                    gr.Markdown(md_.collect)
-                    collect_checkbox_group_var = gr.CheckboxGroup(choices=collect_checkboxes, label='Collect Checkboxes', value=help.grab_pre_selected(settings_json, collect_checkboxes))
-                with gr.Column():
-                    gr.Markdown(md_.download)
-                    download_checkbox_group_var = gr.CheckboxGroup(choices=download_checkboxes, label='Download Checkboxes', value=help.grab_pre_selected(settings_json, download_checkboxes))
-                with gr.Column():
-                    gr.Markdown(md_.resize)
-                    resize_checkbox_group_var = gr.CheckboxGroup(choices=resize_checkboxes, label='Resize Checkboxes', value=help.grab_pre_selected(settings_json, resize_checkboxes))
-        with gr.Tab("Required Tags Config"):
-            with gr.Row():
-                config_save_var3 = gr.Button(value="Apply & Save Settings", variant='primary')
-            with gr.Row():
-                with gr.Column():
-                    required_tags = gr.Textbox(lines=1, label='Press Enter to ADD tag/s (E.g. tag1    or    tag1, tag2, ..., etc.)', value="")
+        with gr.Tab("Downloading Image/s"):
+            config_save_var = gr.Button(value="Apply & Save Settings", variant='primary')
+            with gr.Accordion("Edit Requirements for General Download INFO", visible=True, open=True):
+                gr.Markdown(md_.general_config)
+                with gr.Row():
+                    with gr.Column():
+                        batch_folder = gr.Textbox(lines=1, label='Path to Batch Directory', value=settings_json["batch_folder"])
+                    with gr.Column():
+                        resized_img_folder = gr.Textbox(lines=1, label='Path to Resized Images', value=settings_json["resized_img_folder"])
+                    with gr.Column():
+                        proxy_value = ""
+                        if not "proxy_url" in settings_json:
+                            settings_json["proxy_url"] = proxy_value
+                        proxy_url_textbox = gr.Textbox(lines=1, label='(Optional Proxy URL)', value=settings_json["proxy_url"])
+                with gr.Row():
+                    tag_sep = gr.Textbox(lines=1, label='Tag Seperator/Delimeter', value=settings_json["tag_sep"])
+                    tag_order_format = gr.Textbox(lines=1, label='Tag ORDER', value=settings_json["tag_order_format"])
+                    prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=settings_json["prepend_tags"])
+                    append_tags = gr.Textbox(lines=1, label='Append Tags', value=settings_json["append_tags"])
+                with gr.Row():
+                    with gr.Column():
+                        img_ext = gr.Dropdown(choices=img_extensions, label='Image Extension', value=settings_json["img_ext"])
+                    with gr.Column():
+                        method_tag_files = gr.Radio(choices=method_tag_files_opts, label='Resized Img Tag Handler', value=settings_json["method_tag_files"])
+                    with gr.Column():
+                        settings_path = gr.Textbox(lines=1, label='Path/Name to \"NEW\" JSON (REQUIRED)', value=config_name)
+                    create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
+                    temp = '\\' if help.is_windows() else '/'
+                    quick_json_select = gr.Dropdown(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), label='JSON Select',
+                                          value=config_name, interactive=True)
+            with gr.Accordion("Edit Requirements for Image Stat/s", visible=True, open=False):
+                gr.Markdown(md_.stats_config)
+                with gr.Row():
+                    min_score = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Min Score', value=settings_json["min_score"])
+                with gr.Row():
+                    min_fav_count = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Min Fav Count', value=settings_json["min_fav_count"])
+                with gr.Row():
+                    with gr.Column():
+                        min_year = gr.Slider(minimum=2000, maximum=2050, step=1, label='Filter: Min Year', value=int(settings_json["min_year"]))
+                        min_month = gr.Slider(minimum=1, maximum=12, step=1, label='Filter: Min Month',
+                                         value=int(settings_json["min_month"]))
+                        min_day = gr.Slider(minimum=1, maximum=31, step=1, label='Filter: Min Day',
+                                         value=int(settings_json["min_day"]))
+                with gr.Row():
+                    min_area = gr.Slider(minimum=1, maximum=1000000, step=1, label='Filter: Min Area', value=settings_json["min_area"], info='ONLY images with LxW > this value will be downloaded')
+                with gr.Row():
+                    top_n = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Top N', value=settings_json["top_n"], info='ONLY the top N images will be downloaded')
+                with gr.Row():
+                    min_short_side = gr.Slider(minimum=1, maximum=100000, step=1, label='Resize Param: Min Short Side', value=settings_json["min_short_side"], info='ANY image\'s length or width that falls (ABOVE) this number will be resized')
+            with gr.Accordion("Edit Requirements for Image Collection & Downloading Pre/Post-Processing", visible=True, open=False):
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown(md_.collect)
+                        collect_checkbox_group_var = gr.CheckboxGroup(choices=collect_checkboxes, label='Collect Checkboxes', value=help.grab_pre_selected(settings_json, collect_checkboxes))
+                    with gr.Column():
+                        gr.Markdown(md_.download)
+                        download_checkbox_group_var = gr.CheckboxGroup(choices=download_checkboxes, label='Download Checkboxes', value=help.grab_pre_selected(settings_json, download_checkboxes))
+                    with gr.Column():
+                        gr.Markdown(md_.resize)
+                        resize_checkbox_group_var = gr.CheckboxGroup(choices=resize_checkboxes, label='Resize Checkboxes', value=help.grab_pre_selected(settings_json, resize_checkboxes))
+            with gr.Accordion("Edit Requirements for Required Tags", visible=True, open=False):
+                with gr.Row():
+                    with gr.Column():
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=3):
+                                required_tags_textbox = gr.Textbox(lines=1, label='Press Enter/Space to ADD tag/s', value="")
+                            with gr.Column(min_width=50, scale=2):
+                                tag_required_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, elem_id="required_dropdown")
+                        required_tags_group_var = gr.CheckboxGroup(choices=required_tags_list, label='ALL Required Tags',
+                                                                   value=[])
+                    with gr.Column():
+                        file_all_tags_list_required = gr.File(file_count="multiple", file_types=["file"], label="Select ALL files with Tags to be parsed and Added")
+                with gr.Row():
                     remove_button_required = gr.Button(value="Remove Checked Tags", variant='secondary')
-                with gr.Column():
-                    file_all_tags_list_required = gr.File(file_count="multiple", file_types=["file"], label="Select ALL files with Tags to be parsed and Added")
                     parse_button_required = gr.Button(value="Parse/Add Tags", variant='secondary')
-            with gr.Row():
-                required_tags_group_var = gr.CheckboxGroup(choices=required_tags_list, label='ALL Required Tags', value=[])
-        with gr.Tab("Blacklist Tags Config"):
-            with gr.Row():
-                config_save_var4 = gr.Button(value="Apply & Save Settings", variant='primary')
-            with gr.Row():
-                with gr.Column():
-                    blacklist = gr.Textbox(lines=1, label='Press Enter to ADD tag/s (E.g. tag1    or    tag1, tag2, ..., etc.)', value="")
+            with gr.Accordion("Edit Requirements for Blacklist Tags", visible=True, open=False):
+                with gr.Row():
+                    with gr.Column():
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=3):
+                                blacklist_tags_textbox = gr.Textbox(lines=1, label='Press Enter/Space to ADD tag/s', value="")
+                            with gr.Column(min_width=50, scale=2):
+                                tag_blacklist_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, elem_id="blacklist_dropdown")
+                        blacklist_group_var = gr.CheckboxGroup(choices=blacklist_tags, label='ALL Blacklisted Tags',
+                                                               value=[])
+                    with gr.Column():
+                        file_all_tags_list_blacklist = gr.File(file_count="multiple", file_types=["file"], label="Select ALL files with Tags to be parsed and Added")
+                with gr.Row():
                     remove_button_blacklist = gr.Button(value="Remove Checked Tags", variant='secondary')
-                with gr.Column():
-                    file_all_tags_list_blacklist = gr.File(file_count="multiple", file_types=["file"], label="Select ALL files with Tags to be parsed and Added")
                     parse_button_blacklist = gr.Button(value="Parse/Add Tags", variant='secondary')
-            with gr.Row():
-                blacklist_group_var = gr.CheckboxGroup(choices=blacklist_tags, label='ALL Blacklisted Tags', value=[])
-        with gr.Tab("Additional Components Config"):
-            gr.Markdown(md_.add_comps_config)
-            with gr.Row():
-                config_save_var5 = gr.Button(value="Apply & Save Settings", variant='primary')
-            with gr.Row():
-                with gr.Column():
-                    skip_posts_file = gr.Textbox(lines=1, label='Path to file w/ multiple id/md5 to skip',
-                                             value=settings_json["skip_posts_file"])
-                    skip_posts_type = gr.Radio(choices=["id","md5"], label='id/md5 skip', value=settings_json["skip_posts_type"])
-                with gr.Column():
-                    save_searched_list_path = gr.Textbox(lines=1, label='id/md5 list to file path', value=settings_json["save_searched_list_path"])
-                    save_searched_list_type = gr.Radio(choices=["id", "md5", "None"], label='Save id/md5 list to file', value=settings_json["save_searched_list_type"])
-            with gr.Row():
-                with gr.Column():
-                    apply_filter_to_listed_posts = gr.Checkbox(label='Apply Filters to Collected Posts',
-                                                   value=settings_json["apply_filter_to_listed_posts"])
-                    collect_from_listed_posts_type = gr.Radio(choices=["id", "md5"], label='id/md5 collect',
-                                                          value=settings_json["collect_from_listed_posts_type"])
-                    collect_from_listed_posts_file = gr.Textbox(lines=1, label='Path to file w/ multiple id/md5 to collect',
-                                                            value=settings_json["collect_from_listed_posts_file"])
-            with gr.Row():
-                downloaded_posts_folder = gr.Textbox(lines=1, label='Path for downloaded posts',
-                                                 value=settings_json["downloaded_posts_folder"])
-                png_folder = gr.Textbox(lines=1, label='Path for png data', value=settings_json["png_folder"])
-                jpg_folder = gr.Textbox(lines=1, label='Path for jpg data', value=settings_json["jpg_folder"])
-                webm_folder = gr.Textbox(lines=1, label='Path for webm data', value=settings_json["webm_folder"])
-                gif_folder = gr.Textbox(lines=1, label='Path for gif data', value=settings_json["gif_folder"])
-                swf_folder = gr.Textbox(lines=1, label='Path for swf data', value=settings_json["swf_folder"])
-            with gr.Row():
-                download_remove_tag_file_button = gr.Button(value="(Optional) Download Negative Tags File", variant='secondary')
-            with gr.Row():
-                reference_model_tags_file = gr.Textbox(lines=1, label='Path to model tags file')
-                gen_tags_list_button = gr.Button(value="Generate Tag/s List", variant='secondary')
-                gen_tags_diff_list_button = gr.Button(value="Generate Tag/s Diff List", variant='secondary')
-            with gr.Row():
-                save_filename_type = gr.Radio(choices=["id","md5"], label='Select Filename Type', value=settings_json["save_filename_type"])
-                remove_tags_list = gr.Textbox(lines=1, label='Path to remove tags file', value=settings_json["remove_tags_list"])
-                replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value=settings_json["replace_tags_list"])
-                tag_count_list_folder = gr.Textbox(lines=1, label='Path to tag count file', value=settings_json["tag_count_list_folder"])
-            with gr.Row():
-                remove_now_button = gr.Button(value="Remove Now", variant='primary')
-                replace_now_button = gr.Button(value="Replace Now", variant='primary')
-            with gr.Row():
-                keyword_search_text = gr.Textbox(lines=1, label='Keyword/Tag to Search (Optional)')
-                prepend_text = gr.Textbox(lines=1, label='Text to Prepend')
-                prepend_option = gr.Radio(choices=["Start", "End"], label='Prepend/Append Text To:', value="Start")
-            with gr.Row():
-                prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
-        with gr.Tab("Run Tab"):
-            gr.Markdown(md_.run)
-            with gr.Row():
-                with gr.Column():
-                    basefolder = gr.Textbox(lines=1, label='Root Output Dir Path', value=cwd)
-                    numcpu = gr.Slider(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads', value=int(mp.cpu_count()/2))
-            with gr.Row():
-                with gr.Column():
-                   phaseperbatch = gr.Checkbox(label='Completes all phases per batch', value=True)
-                with gr.Column():
-                   keepdb = gr.Checkbox(label='Keep e6 db data', value=False)
-                with gr.Column():
-                    cachepostsdb = gr.Checkbox(label='cache e6 posts file when multiple batches', value=False)
-            with gr.Row():
-                postscsv = gr.Textbox(lines=1, label='Path to e6 posts csv', value="")
-                tagscsv = gr.Textbox(lines=1, label='Path to e6 tags csv', value="")
-                postsparquet = gr.Textbox(lines=1, label='Path to e6 posts parquet', value="")
-                tagsparquet = gr.Textbox(lines=1, label='Path to e6 tags parquet', value="")
-            with gr.Row():
-                images_full_change_dict_textbox = gr.Textbox(lines=1, label='Path to Image Full Change Log JSON (Optional)',
-                                                         value=os.path.join(auto_config_path, f"auto_complete_{settings_json['batch_folder']}.json"))
-                images_full_change_dict_run_button = gr.Button(value="(POST-PROCESSING only) Apply Auto-Config Update Changes", variant='secondary')
+            with gr.Accordion("Edit Requirements for Advanced Configuration", visible=True, open=False):
+                gr.Markdown(md_.add_comps_config)
+                with gr.Row():
+                    with gr.Column():
+                        skip_posts_file = gr.Textbox(lines=1, label='Path to file w/ multiple id/md5 to skip',
+                                                 value=settings_json["skip_posts_file"])
+                        skip_posts_type = gr.Radio(choices=["id","md5"], label='id/md5 skip', value=settings_json["skip_posts_type"])
+                    with gr.Column():
+                        save_searched_list_path = gr.Textbox(lines=1, label='id/md5 list to file path', value=settings_json["save_searched_list_path"])
+                        save_searched_list_type = gr.Radio(choices=["id", "md5", "None"], label='Save id/md5 list to file', value=settings_json["save_searched_list_type"])
+                with gr.Row():
+                    with gr.Column():
+                        apply_filter_to_listed_posts = gr.Checkbox(label='Apply Filters to Collected Posts',
+                                                       value=settings_json["apply_filter_to_listed_posts"])
+                        collect_from_listed_posts_type = gr.Radio(choices=["id", "md5"], label='id/md5 collect',
+                                                              value=settings_json["collect_from_listed_posts_type"])
+                        collect_from_listed_posts_file = gr.Textbox(lines=1, label='Path to file w/ multiple id/md5 to collect',
+                                                                value=settings_json["collect_from_listed_posts_file"])
+                with gr.Row():
+                    downloaded_posts_folder = gr.Textbox(lines=1, label='Path for downloaded posts',
+                                                     value=settings_json["downloaded_posts_folder"])
+                    png_folder = gr.Textbox(lines=1, label='Path for png data', value=settings_json["png_folder"])
+                    jpg_folder = gr.Textbox(lines=1, label='Path for jpg data', value=settings_json["jpg_folder"])
+                    webm_folder = gr.Textbox(lines=1, label='Path for webm data', value=settings_json["webm_folder"])
+                    gif_folder = gr.Textbox(lines=1, label='Path for gif data', value=settings_json["gif_folder"])
+                    swf_folder = gr.Textbox(lines=1, label='Path for swf data', value=settings_json["swf_folder"])
+                with gr.Row():
+                    download_remove_tag_file_button = gr.Button(value="(Optional) Download Negative Tags File", variant='secondary')
+                with gr.Row():
+                    reference_model_tags_file = gr.Textbox(lines=1, label='Path to model tags file')
+                    gen_tags_list_button = gr.Button(value="Generate Tag/s List", variant='secondary')
+                    gen_tags_diff_list_button = gr.Button(value="Generate Tag/s Diff List", variant='secondary')
+                with gr.Row():
+                    save_filename_type = gr.Radio(choices=["id","md5"], label='Select Filename Type', value=settings_json["save_filename_type"])
+                    remove_tags_list = gr.Textbox(lines=1, label='Path to remove tags file', value=settings_json["remove_tags_list"])
+                    replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value=settings_json["replace_tags_list"])
+                    tag_count_list_folder = gr.Textbox(lines=1, label='Path to tag count file', value=settings_json["tag_count_list_folder"])
+                with gr.Row():
+                    remove_now_button = gr.Button(value="Remove Now", variant='primary')
+                    replace_now_button = gr.Button(value="Replace Now", variant='primary')
+                with gr.Row():
+                    keyword_search_text = gr.Textbox(lines=1, label='Keyword/Tag to Search (Optional)')
+                    prepend_text = gr.Textbox(lines=1, label='Text to Prepend')
+                    prepend_option = gr.Radio(choices=["Start", "End"], label='Prepend/Append Text To:', value="Start")
+                with gr.Row():
+                    prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
+            with gr.Accordion("Edit Requirements for Run Configuration", visible=True, open=False):
+                gr.Markdown(md_.run)
+                with gr.Row():
+                    with gr.Column():
+                        basefolder = gr.Textbox(lines=1, label='Root Output Dir Path', value=cwd)
+                        numcpu = gr.Slider(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads', value=int(mp.cpu_count()/2))
+                with gr.Row():
+                    with gr.Column():
+                       phaseperbatch = gr.Checkbox(label='Completes all phases per batch', value=True)
+                    with gr.Column():
+                       keepdb = gr.Checkbox(label='Keep e6 db data', value=False)
+                    with gr.Column():
+                        cachepostsdb = gr.Checkbox(label='cache e6 posts file when multiple batches', value=False)
+                with gr.Row():
+                    postscsv = gr.Textbox(lines=1, label='Path to e6 posts csv', value="")
+                    tagscsv = gr.Textbox(lines=1, label='Path to e6 tags csv', value="")
+                    postsparquet = gr.Textbox(lines=1, label='Path to e6 posts parquet', value="")
+                    tagsparquet = gr.Textbox(lines=1, label='Path to e6 tags parquet', value="")
+                with gr.Row():
+                    images_full_change_dict_textbox = gr.Textbox(lines=1, label='Path to Image Full Change Log JSON (Optional)',
+                                                             value=os.path.join(auto_config_path, f"auto_complete_{settings_json['batch_folder']}.json"))
+                    images_full_change_dict_run_button = gr.Button(value="(POST-PROCESSING only) Apply Auto-Config Update Changes", variant='secondary')
+
             with gr.Row():
                 run_button = gr.Button(value="Run", variant='primary')
             with gr.Row():
@@ -2664,7 +3017,7 @@ def build_ui():
                 progress_bar_textbox_download = gr.Textbox(interactive=False, visible=False)
             with gr.Row():
                 progress_bar_textbox_resize = gr.Textbox(interactive=False, visible=False)
-            with gr.Accordion("Batch Run"):
+            with gr.Accordion("Batch Run", visible=True, open=False):
                 with gr.Row():
                     temp = '\\' if help.is_windows() else '/'
                     all_json_files_checkboxgroup = gr.CheckboxGroup(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]),
@@ -2673,7 +3026,8 @@ def build_ui():
                     run_button_batch = gr.Button(value="Batch Run", variant='primary')
                 with gr.Row():
                     progress_run_batch = gr.Textbox(interactive=False, visible=False)
-        with gr.Tab("Image Preview Gallery"):
+
+        with gr.Tab("Tag Editor & Image Gallery"):
             gr.Markdown(md_.preview)
             with gr.Row():
                 with gr.Column():
@@ -2685,7 +3039,10 @@ def build_ui():
                         download_folder_type = gr.Radio(choices=file_extn_list, label='Select Filename Type')# webm, swf not yet supported
                         img_id_textbox = gr.Textbox(label="Image ID", interactive=False, lines=1, value="")
                     with gr.Row():
-                        tag_search_textbox = gr.Textbox(label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)", lines=1, value="")
+                        with gr.Column(min_width=50, scale=3):
+                            tag_search_textbox = gr.Textbox(label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)", lines=1, value="")
+                        with gr.Column(min_width=50, scale=2):
+                            tag_search_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True, choices=[], interactive=True, elem_id="searchbar_dropdown")
                     with gr.Row():
                         with gr.Column(min_width=50, scale=3):
                             apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
@@ -2703,14 +3060,16 @@ def build_ui():
                         image_remove_button = gr.Button(value="Remove Selected Image/s", variant='primary')
                         image_save_ids_button = gr.Button(value="Save Image Changes", variant='primary')
                     with gr.Row():
-                        tag_add_textbox = gr.Textbox(label="Enter Tag/s here", lines=1, value="", info="Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)")
+                        tag_add_textbox = gr.Textbox(label="Enter Tag/s here", lines=1, value="", info="Press Enter/Space to ADD tag/s")
+                        tag_add_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True, choices=[], interactive=True, elem_id="add_tag_dropdown")
+
                     img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[])
                     img_character_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Character Tag/s', value=[])
                     img_species_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Species Tag/s', value=[])
                     img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                     img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                     img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
-                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id").style(columns=[3], object_fit="contain", height="auto")
+                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", columns=3, object_fit="contain", height=1032)
         with gr.Tab("Data Stats"):
             with gr.Row():
                 stats_run_options = gr.Dropdown(label="Run Method", choices=["frequency table", "inverse freq table"])
@@ -2782,7 +3141,7 @@ def build_ui():
                     with gr.Row():
                         interrogate_button = gr.Button(value="Interrogate", variant='primary')
                     with gr.Row():
-                        image_with_tag_path_textbox = gr.Textbox(label="Path to Image Folder", info="Folder should contain both tag & image files", interactive=True)
+                        image_with_tag_path_textbox = gr.Textbox(label="Path to Image/Video Folder", info="Folder should contain both (tag/s & image/s) if no video", interactive=True)
                     with gr.Row():
                         with gr.Column(min_width=50, scale=1):
                             copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
@@ -2793,14 +3152,62 @@ def build_ui():
                     with gr.Row():
                         write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
                         use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
-                with gr.Tab("Tag/s Preview"):
-                    with gr.Column():
-                        image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
-                        image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True, interactive=True)
-                        image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="", visible=True, interactive=False)
-                with gr.Tab("Image Preview"):
-                    with gr.Column():
-                        image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil")
+                with gr.Column():
+                    with gr.Tab("Tag/s Preview"):
+                        with gr.Column():
+                            image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
+                            image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True, interactive=True)
+                            image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="", visible=True, interactive=False)
+                    with gr.Tab("Image Preview"):
+                        with gr.Column():
+                            image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=840)
+                    #         gr.Accordion(label="SAM-HQ Bounding Box Crop", visible=True, open=False)
+                    #         gr.Accordion(label="SAM-HQ Segmentation Crop", visible=True, open=False)
+                    #         gr.Accordion(label="Upscale", visible=True, open=False)
+                    #         gr.Accordion(label="Denoise/Unglaze", visible=True, open=False)
+                    with gr.Tab("Video to Frames Splitter"):
+                        with gr.Accordion("Video to Frames Splitter", visible=True, open=False):
+                            gr.Markdown("""
+                                It is also partially possible to extract \"SOME\" video fragments from swf files with this tool, 
+                                but it will require (FFMPEG) AND it likely \"NOT\" work in the majority of cases unless the contained video 
+                                in the swf file is encoded within a specific set of formats. (for usage with SWF files, proceed at your own risk!)
+                                
+                                Most other video formats (not swf associated) should work. (It is \"NOT\" recommended to attempt converting with corrupted video files either!)
+                            """)
+                            with gr.Column():
+                                video_input = gr.File()
+                                video_input_button = gr.UploadButton(label="Click to Upload a Video",
+                                                                     file_types=["file"], file_count="single")
+                                video_clear_button = gr.ClearButton(label="Clear")
+                                with gr.Row():
+                                    video_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
+                                                                  value=os.getcwd())
+                                    convert_video_button = gr.Button(value="Convert Video", variant='primary')
+                        with gr.Column():
+                            video_frames_gallery = gr.Gallery(label=f"Video Frame/s Gallery", interactive=False, visible=True, columns=3, object_fit="contain", height=780)
+                    # with gr.Tab("Grad Cam Viewer"):
+                    #     with gr.Column():
+                    #         gr.Textbox(label="Testing", value="")
+                    #         gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=730)
+                        # use same base path info as single and batch mode and using the path to image folder
+                        # use an optional destination folder path or USE copy to image folder option
+                            # needs additional logic incase swf is made and is saved to the video folder instead
+                        # and optional destination file name {prefix}frame_number.jpg/png/mp4
+        with gr.Tab("Image Editor"):
+            with gr.Tab("Image Editor Tool"):
+                image_editor = gr.Image(label=f"Image Preview/Editor", interactive=True, visible=True, tool="editor",
+                                        source="upload", type="pil", height=1028)
+            with gr.Tab("Image Crop Tool"):
+                image_editor_crop = gr.Image(label=f"Image Preview/Editor", interactive=True, visible=True,
+                                             tool="select", source="upload", type="pil", height=1028)
+            with gr.Tab("Image Sketch Tool"):
+                image_editor_sketch = gr.Image(label=f"Image Preview/Editor", interactive=True, visible=True,
+                                               tool="sketch", source="upload", type="pil", height=1028)
+            with gr.Tab("Image Color Sketch Tool"):
+                image_editor_color_sketch = gr.Image(label=f"Image Preview/Editor", interactive=True, visible=True,
+                                                     tool="color-sketch", source="upload", type="pil", height=1028)
+        with gr.Tab("Advanced Settings"):
+            total_suggestions_slider = gr.Slider(minimum=0, maximum=100, step=1, value=10)
 
         '''
         ##################################################################################################################################
@@ -2813,7 +3220,142 @@ def build_ui():
         multi_select_ckbx_state = gr.JSON([False], visible=False) # JSON boolean component wrapped in a list
         only_selected_state_object = gr.State(dict()) # state of image mappings represented by index -> [ext, img_id]
         images_tuple_points = gr.JSON([], visible=False) # JSON list of all images selected given by two points: a-b|b-a
+        initial_add_state = gr.State("")
+        initial_add_state_tag = gr.State("")
+        initial_required_state = gr.State("")
+        initial_required_state_tag = gr.State("")
+        initial_blacklist_state = gr.State("")
+        initial_blacklist_state_tag = gr.State("")
+        previous_search_state_text = gr.State("") # contains the previous full text of string
+        current_search_state_placement_tuple = gr.State((0, "")) # contains the index of the word being edited & the word
+        relevant_search_categories = gr.State([])
+        relevant_add_categories = gr.State([])
+        relevant_required_categories = gr.State([])
+        relevant_blacklist_categories = gr.State([])
 
+        tag_search_textbox.change(
+            fn=suggest_search_tags,
+            inputs=[tag_search_textbox, total_suggestions_slider, previous_search_state_text],
+            outputs=[tag_search_suggestion_dropdown, previous_search_state_text,
+                    current_search_state_placement_tuple, relevant_search_categories]
+        ).then(
+            None,
+            inputs=[tag_search_suggestion_dropdown, relevant_search_categories],
+            outputs=None,
+            _js=js_.js_set_colors_on_list_searchbar
+        )
+
+        tag_search_suggestion_dropdown.select(
+            fn=dropdown_search_handler,
+            inputs=[tag_search_textbox, previous_search_state_text, current_search_state_placement_tuple],
+            outputs=[tag_search_textbox, previous_search_state_text, current_search_state_placement_tuple,
+                     tag_search_suggestion_dropdown]
+        )
+
+        tag_search_textbox.submit(
+            fn=search_tags,
+            inputs=[tag_search_textbox, apply_to_all_type_select_checkboxgroup, apply_datetime_sort_ckbx,
+                    apply_datetime_choice_menu],
+            outputs=[gallery_comp]).then(
+            fn=reset_selected_img,
+            inputs=[img_id_textbox],
+            outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
+                     img_species_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group,
+                     img_rating_tag_checkbox_group])
+
+        tag_add_textbox.change(
+            fn=suggest_tags,
+            inputs=[tag_add_textbox, initial_add_state, total_suggestions_slider,
+                    initial_add_state_tag],
+            outputs=[tag_add_suggestion_dropdown, initial_add_state, initial_add_state_tag, relevant_add_categories]).then(
+            fn=add_tag_changes,
+            inputs=[initial_add_state_tag, apply_to_all_type_select_checkboxgroup, img_id_textbox,
+                    multi_select_ckbx_state, only_selected_state_object, images_selected_state,
+                    initial_add_state, gr.State(False)],
+            outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
+                     img_species_tag_checkbox_group, img_general_tag_checkbox_group,
+                     img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, initial_add_state_tag,
+                     tag_add_textbox]).then(
+            None,
+            inputs=[tag_add_suggestion_dropdown, relevant_add_categories],
+            outputs=None,
+            _js=js_.js_set_colors_on_list_add_tag
+        )
+
+        tag_add_textbox.submit(
+                             fn=add_tag_changes,
+                             inputs=[tag_add_textbox, apply_to_all_type_select_checkboxgroup, img_id_textbox,
+                                     multi_select_ckbx_state, only_selected_state_object, images_selected_state,
+                                     initial_add_state, gr.State(True)],
+                             outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
+                                      img_species_tag_checkbox_group, img_general_tag_checkbox_group,
+                                      img_meta_tag_checkbox_group, img_rating_tag_checkbox_group,
+                                      initial_add_state_tag, tag_add_textbox])
+
+        tag_add_suggestion_dropdown.select(
+                             fn=dropdown_handler_add_tags,
+                             inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox, multi_select_ckbx_state,
+                                     only_selected_state_object, images_selected_state, initial_add_state],
+                             outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
+                                      img_species_tag_checkbox_group, img_general_tag_checkbox_group,
+                                      img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, tag_add_textbox,
+                                      tag_add_suggestion_dropdown, initial_add_state, initial_add_state_tag])
+
+        required_tags_textbox.change(
+            fn=suggest_tags,
+            inputs=[required_tags_textbox, initial_required_state, total_suggestions_slider, initial_required_state_tag],
+            outputs=[tag_required_suggestion_dropdown, initial_required_state, initial_required_state_tag,
+                     relevant_required_categories]).then(
+            fn=textbox_handler_required,
+            inputs=[initial_required_state_tag, initial_required_state, gr.State(False)],
+            outputs=[initial_required_state_tag,required_tags_group_var, required_tags_textbox]).then(
+            None,
+            inputs=[tag_required_suggestion_dropdown, relevant_required_categories],
+            outputs=None,
+            _js=js_.js_set_colors_on_list_required
+        )
+
+        required_tags_textbox.submit(
+             fn=textbox_handler_required,
+             inputs=[required_tags_textbox, initial_required_state, gr.State(True)],
+             outputs=[initial_required_state_tag,required_tags_group_var, required_tags_textbox]
+        )
+        tag_required_suggestion_dropdown.select(
+            fn=dropdown_handler_required,
+            inputs=[],
+            outputs=[required_tags_textbox, tag_required_suggestion_dropdown, initial_required_state,
+                     initial_required_state_tag, required_tags_group_var]
+        )
+
+        blacklist_tags_textbox.change(
+            fn=suggest_tags,
+            inputs=[blacklist_tags_textbox, initial_blacklist_state, total_suggestions_slider, initial_blacklist_state_tag],
+            outputs=[tag_blacklist_suggestion_dropdown, initial_blacklist_state, initial_blacklist_state_tag,
+                     relevant_blacklist_categories]).then(
+            fn=textbox_handler_blacklist,
+            inputs=[initial_blacklist_state_tag, initial_blacklist_state, gr.State(False)],
+            outputs=[initial_blacklist_state_tag,blacklist_group_var, blacklist_tags_textbox]).then(
+            None,
+            inputs=[tag_blacklist_suggestion_dropdown, relevant_blacklist_categories],
+            outputs=None,
+            _js=js_.js_set_colors_on_list_blacklist
+        )
+
+        blacklist_tags_textbox.submit(
+            fn=textbox_handler_blacklist,
+            inputs=[blacklist_tags_textbox, initial_blacklist_state, gr.State(True)],
+            outputs=[initial_blacklist_state_tag, blacklist_group_var, blacklist_tags_textbox]
+        )
+        tag_blacklist_suggestion_dropdown.select(
+            fn=dropdown_handler_blacklist,
+            inputs=[],
+            outputs=[blacklist_tags_textbox, tag_blacklist_suggestion_dropdown, initial_blacklist_state,
+                     initial_blacklist_state_tag, blacklist_group_var]
+        )
+
+        video_input_button.upload(video_upload_path, video_input_button, video_input)
+        convert_video_button.click(fn=convert_video, inputs=[video_input, video_output_dir], outputs=[video_frames_gallery])
+        video_clear_button.add(components=[video_frames_gallery, video_input])
 
         gen_tags_list_button.click(fn=gen_tags_list, inputs=[reference_model_tags_file], outputs=[])
         gen_tags_diff_list_button.click(fn=gen_tags_diff_list, inputs=[reference_model_tags_file], outputs=[])
@@ -2931,21 +3473,10 @@ def build_ui():
             ]
         )
 
-        tag_add_textbox.submit(fn=add_tag_changes, inputs=[tag_add_textbox, apply_to_all_type_select_checkboxgroup,
-                                img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
-                                  outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
-                                           img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
-
         tag_save_button.click(fn=save_tag_changes,inputs=[], outputs=[]).then(fn=reset_gallery, inputs=[], outputs=[gallery_comp]).then(fn=show_searched_gallery,
                             inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu], outputs=[gallery_comp]).then(fn=clear_categories, inputs=[],
                             outputs=[img_artist_tag_checkbox_group,img_character_tag_checkbox_group,img_species_tag_checkbox_group,
                                      img_general_tag_checkbox_group,img_meta_tag_checkbox_group,img_rating_tag_checkbox_group,img_id_textbox])
-
-        tag_search_textbox.submit(fn=search_tags, inputs=[tag_search_textbox, apply_to_all_type_select_checkboxgroup, apply_datetime_sort_ckbx,
-                                                      apply_datetime_choice_menu],
-                        outputs=[gallery_comp]).then(fn=reset_selected_img, inputs=[img_id_textbox],
-                        outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_general_tag_checkbox_group,
-                                img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
 
         select_multiple_images_checkbox.change(fn=set_ckbx_state,
                                            inputs=[select_multiple_images_checkbox, multi_select_ckbx_state],
@@ -2962,7 +3493,7 @@ def build_ui():
                  only_selected_state_object, images_tuple_points]).then(None,
         inputs=[images_selected_state, multi_select_ckbx_state], outputs=None, _js=js_.js_do_everything)
 
-        load_json_file_button.click(fn=change_config, inputs=[quick_json_select,settings_path], outputs=[batch_folder,resized_img_folder,
+        quick_json_select.select(fn=change_config, inputs=[settings_path], outputs=[batch_folder,resized_img_folder,
                 tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,method_tag_files,min_score,min_fav_count,
                 min_year,min_month,min_day,min_area,top_n,min_short_side,collect_checkbox_group_var,
                 download_checkbox_group_var,resize_checkbox_group_var,required_tags_group_var,blacklist_group_var,skip_posts_file,
@@ -2971,7 +3502,7 @@ def build_ui():
                 png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,
                 replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox, settings_path]).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
 
-        config_save_var0.click(fn=config_save_button,
+        config_save_var.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
                                   img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
                                   min_short_side,skip_posts_file,
@@ -2982,66 +3513,6 @@ def build_ui():
                                   min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
                                   ],
                           outputs=[all_json_files_checkboxgroup, quick_json_select]
-                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
-        config_save_var1.click(fn=config_save_button,
-                          inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
-                                  img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
-                                  min_short_side,skip_posts_file,
-                                  skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
-                                  apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
-                                  downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
-                                  save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
-                                  ],
-                          outputs=[]
-                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
-        config_save_var2.click(fn=config_save_button,
-                          inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
-                                  img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
-                                  min_short_side,skip_posts_file,
-                                  skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
-                                  apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
-                                  downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
-                                  save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
-                                  ],
-                          outputs=[]
-                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
-        config_save_var3.click(fn=config_save_button,
-                          inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
-                                  img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
-                                  min_short_side,skip_posts_file,
-                                  skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
-                                  apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
-                                  downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
-                                  save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
-                                  ],
-                          outputs=[]
-                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
-        config_save_var4.click(fn=config_save_button,
-                          inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
-                                  img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
-                                  min_short_side,skip_posts_file,
-                                  skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
-                                  apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
-                                  downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
-                                  save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
-                                  ],
-                          outputs=[]
-                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
-        config_save_var5.click(fn=config_save_button,
-                          inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
-                                  img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
-                                  min_short_side,skip_posts_file,
-                                  skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
-                                  apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
-                                  downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
-                                  save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
-                                  ],
-                          outputs=[]
                           ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
 
         run_button.click(fn=run_script,inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet],
@@ -3054,9 +3525,6 @@ def build_ui():
                      inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,all_json_files_checkboxgroup,images_full_change_dict_textbox],
                      outputs=[progress_run_batch])
 
-        required_tags.submit(fn=textbox_handler_required, inputs=[required_tags], outputs=[required_tags,required_tags_group_var])
-        blacklist.submit(fn=textbox_handler_blacklist, inputs=[blacklist], outputs=[blacklist,blacklist_group_var])
-
         remove_button_required.click(fn=check_box_group_handler_required, inputs=[required_tags_group_var], outputs=[required_tags_group_var])
         remove_button_blacklist.click(fn=check_box_group_handler_blacklist, inputs=[blacklist_group_var], outputs=[blacklist_group_var])
 
@@ -3064,17 +3532,34 @@ def build_ui():
         parse_button_blacklist.click(fn=parse_file_blacklist, inputs=[file_all_tags_list_blacklist], outputs=[blacklist_group_var])
     return demo
 
+def load_trie():
+    # Add data to the trie
+    global trie, all_tags_ever_dict
+    for tag in all_tags_ever_dict.keys():
+        trie[tag] = all_tags_ever_dict[tag][1]
+    help.verbose_print(f"Done constructing Trie tree!")
+
 def load_tags_csv(proxy_url=None):
     # check to update the tags csv
     help.check_to_update_csv(proxy_url=proxy_url)
     # get newest
     current_list_of_csvs = help.sort_csv_files_by_date(os.getcwd())
     # load
-    data = pd.read_csv(current_list_of_csvs[0], index_col='name')
-    data_columns_dict = data.to_dict()
-    all_tags_ever_dict = data_columns_dict['category']
+    data = pd.read_csv(current_list_of_csvs[0], usecols=['name','category','post_count'])
+    # Convert 'name' column to string type
+    data['name'] = data['name'].astype(str)
+    # Remove rows where post_count equals 0
+    data = data[data['post_count'] != 0]
+
+    # Convert the DataFrame into a dictionary
+    # where the key is 'name' and the values are lists of [category, post_count]
+    global all_tags_ever_dict
+    all_tags_ever_dict = data.set_index('name')[['category', 'post_count']].T.to_dict('list')
+
+    # all_tags_ever_dict = copy.deepcopy(data_dict) # this is the part that takes the most time
     del data
-    return all_tags_ever_dict
+    # del data_dict
+    # return all_tags_ever_dict
 
 def UI(**kwargs):
     # Show the interface
@@ -3243,7 +3728,10 @@ if __name__ == "__main__":
 
     help.verbose_print(f"EVERYTHING INITIALIZING")
     help.verbose_print(f"Initial check to download & load tags CSV")
-    all_tags_ever_dict = load_tags_csv(proxy_url=args.proxy_url)
+    load_tags_csv(proxy_url=args.proxy_url)
+    global trie
+    trie = datrie.Trie(string.printable)
+    load_trie()
 
     demo = build_ui()
 

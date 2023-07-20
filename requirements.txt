@@ -10,3 +10,4 @@ pandas
 onnxruntime
 torch
 onnxruntime-gpu
+datrie
