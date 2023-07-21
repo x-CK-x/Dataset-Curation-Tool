@@ -2840,6 +2840,40 @@ def suggest_search_tags(input_string, num_suggestions, previous_text):
     return generic_dropdown, previous_text, current_placement_tuple, tag_categories
 
 
+def update_generated_tag_selection(tag_effects_radio, image_generated_tags, threshold):
+    global all_predicted_confidences, all_predicted_tags
+    temp_confids = None
+    available_tags = None
+    if len(all_predicted_tags) > 0:
+        temp_confids = copy.deepcopy(all_predicted_confidences)
+        available_tags = copy.deepcopy(all_predicted_tags)
+        keys = list(temp_confids.keys())
+        for key in keys:
+            if temp_confids[key] <= (float(threshold) / 100.0):
+                del temp_confids[key]
+                available_tags.remove(key)
+
+    selected_tags = image_generated_tags
+
+    if tag_effects_radio is None or len(tag_effects_radio) == 0:
+        return gr.update(choices=available_tags, value=selected_tags)
+    else:
+        if "Select All" in tag_effects_radio:
+            selected_tags = available_tags
+            return gr.update(choices=available_tags, value=selected_tags)
+        elif "Clear All" in tag_effects_radio:
+            selected_tags = []
+            return gr.update(choices=available_tags, value=selected_tags)
+        elif "Invert All" in tag_effects_radio:
+            selected_tags = [tag for tag in available_tags if not tag in image_generated_tags]
+            return gr.update(choices=available_tags, value=selected_tags)
+
+def reset_tag_effects(reset_tag_effects_checkbox, tag_effects_radio):
+    if reset_tag_effects_checkbox:
+        return gr.update(value=None)
+    else:
+        return gr.update(value=tag_effects_radio)
+
 '''
 ##################################################################################################################################
 #######################################################     GUI BLOCKS     #######################################################
@@ -3115,56 +3149,67 @@ def build_ui():
             use_tag_opts = ['Use All', 'Use All above Threshold', 'Manually Select']
             with gr.Row():
                 with gr.Column():
-                    with gr.Row():
-                        with gr.Tab("Single"):
-                            file_upload_button_single = gr.File(label=f"{image_modes[0]} Image Mode", file_count="single",
-                                                            interactive=True, file_types=["image"], visible=True, type="file")
-                        with gr.Tab("Batch"):
-                            file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
-                                                           interactive=True, visible=True, type="file")
-                    with gr.Row():
-                        with gr.Column(elem_id="trim_row_length"):
-                            cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True)
-                        with gr.Column(elem_id="trim_row_length"):
-                            gr.Markdown("""Refresh""", elem_id="trim_markdown_length")
-                            refresh_symbol = '\U0001f504'  # 🔄
-                            refresh_models_btn = gr.Button(value=refresh_symbol, variant="variant", elem_id="refresh_models_btn")
-                        model_choice_dropdown = gr.Dropdown(choices=auto_tag_models, label="Model Selection")
-                        crop_or_resize_radio = gr.Radio(label="Preprocess Options", choices=['Crop','Resize'], value='Resize')
-                    with gr.Row():
-                        landscape_crop_dropdown = gr.Dropdown(choices=['left', 'mid', 'right'], label="Landscape Crop", info="Mandatory", visible=False)
-                        portrait_crop_dropdown = gr.Dropdown(choices=['top', 'mid', 'bottom'], label="Portrait Crop", info="Mandatory", visible=False)
-                    # with gr.Row():
-                    #     square_image_edit_slider = gr.Slider(minimum=0, maximum=3000, step=1, label='Crop/Resize Square Image Size', info='Length or Width', value=448, visible=True, interactive=True)
-                    with gr.Row():
-                        confidence_threshold_slider = gr.Slider(minimum=0, maximum=100, step=1, label='Confidence Threshold', value=75, visible=True, interactive=True)
-                    with gr.Row():
-                        interrogate_button = gr.Button(value="Interrogate", variant='primary')
-                    with gr.Row():
-                        image_with_tag_path_textbox = gr.Textbox(label="Path to Image/Video Folder", info="Folder should contain both (tag/s & image/s) if no video", interactive=True)
-                    with gr.Row():
-                        with gr.Column(min_width=50, scale=1):
-                            copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
-                        with gr.Column(min_width=50, scale=2):
-                            save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
-                        with gr.Column(min_width=50, scale=2):
-                            save_custom_tags_button = gr.Button(value="Save/Add Tags", variant='primary')
-                    with gr.Row():
-                        write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
-                        use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
+                    with gr.Accordion(label="Image Settings", visible=True, open=True):
+                        with gr.Row():
+                            with gr.Tab("Single"):
+                                file_upload_button_single = gr.File(label=f"{image_modes[0]} Image Mode", file_count="single",
+                                                                interactive=True, file_types=["image"], visible=True, type="file")
+                            with gr.Tab("Batch"):
+                                file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
+                                                               interactive=True, visible=True, type="file")
+                            with gr.Tab("Image Preview"):
+                                with gr.Column():
+                                    image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=840)
+                    with gr.Accordion(label="Model Settings", visible=True, open=True):
+                        with gr.Row():
+                            with gr.Column(elem_id="trim_row_length"):
+                                cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True)
+                            with gr.Column(elem_id="trim_row_length"):
+                                gr.Markdown("""Refresh""", elem_id="trim_markdown_length")
+                                refresh_symbol = '\U0001f504'  # 🔄
+                                refresh_models_btn = gr.Button(value=refresh_symbol, variant="variant", elem_id="refresh_models_btn")
+                            model_choice_dropdown = gr.Dropdown(choices=auto_tag_models, label="Model Selection")
+                            crop_or_resize_radio = gr.Radio(label="Preprocess Options", choices=['Crop','Resize'], value='Resize')
+                        with gr.Row():
+                            landscape_crop_dropdown = gr.Dropdown(choices=['left', 'mid', 'right'], label="Landscape Crop", info="Mandatory", visible=False)
+                            portrait_crop_dropdown = gr.Dropdown(choices=['top', 'mid', 'bottom'], label="Portrait Crop", info="Mandatory", visible=False)
+                        # with gr.Row():
+                        #     square_image_edit_slider = gr.Slider(minimum=0, maximum=3000, step=1, label='Crop/Resize Square Image Size', info='Length or Width', value=448, visible=True, interactive=True)
+                        with gr.Row():
+                            confidence_threshold_slider = gr.Slider(minimum=0, maximum=100, step=1, label='Confidence Threshold', value=75, visible=True, interactive=True)
+                        with gr.Row():
+                            interrogate_button = gr.Button(value="Interrogate", variant='primary')
+                        with gr.Row():
+                            image_with_tag_path_textbox = gr.Textbox(label="Path to Image/Video Folder", info="Folder should contain both (tag/s & image/s) if no video", interactive=True)
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=1):
+                                copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
+                            with gr.Column(min_width=50, scale=2):
+                                save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
+                            with gr.Column(min_width=50, scale=2):
+                                save_custom_tags_button = gr.Button(value="Save/Add Tags", variant='primary')
+                        with gr.Row():
+                            write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
+                            use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
+                    with gr.Accordion(label="Tag/s Options", visible=True, open=True):
+                        image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True,
+                                                                interactive=True)
+                        image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="",
+                                                                                 visible=True, interactive=False)
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=3):
+                                tag_effects_radio = gr.Radio(label="Tag Selector Effect/s", choices=["Select All", "Clear All", "Invert All"])
+                            with gr.Column(min_width=50, scale=1):
+                                reset_tag_effects_checkbox = gr.Checkbox(label="Reset Effect/s")
                 with gr.Column():
                     with gr.Tab("Tag/s Preview"):
-                        with gr.Column():
-                            image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
-                            image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True, interactive=True)
-                            image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="", visible=True, interactive=False)
-                    with gr.Tab("Image Preview"):
-                        with gr.Column():
-                            image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=840)
-                    #         gr.Accordion(label="SAM-HQ Bounding Box Crop", visible=True, open=False)
-                    #         gr.Accordion(label="SAM-HQ Segmentation Crop", visible=True, open=False)
-                    #         gr.Accordion(label="Upscale", visible=True, open=False)
-                    #         gr.Accordion(label="Denoise/Unglaze", visible=True, open=False)
+                        with gr.Accordion(label="Tag/s Probabilities", visible=True, open=True):
+                            with gr.Column():
+                                image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
+                        #         gr.Accordion(label="SAM-HQ Bounding Box Crop", visible=True, open=False)
+                        #         gr.Accordion(label="SAM-HQ Segmentation Crop", visible=True, open=False)
+                        #         gr.Accordion(label="Upscale", visible=True, open=False)
+                        #         gr.Accordion(label="Denoise/Unglaze", visible=True, open=False)
                     with gr.Tab("Video to Frames Splitter"):
                         with gr.Accordion("Video to Frames Splitter", visible=True, open=False):
                             gr.Markdown("""
@@ -3183,8 +3228,9 @@ def build_ui():
                                     video_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
                                                                   value=os.getcwd())
                                     convert_video_button = gr.Button(value="Convert Video", variant='primary')
-                        with gr.Column():
-                            video_frames_gallery = gr.Gallery(label=f"Video Frame/s Gallery", interactive=False, visible=True, columns=3, object_fit="contain", height=780)
+                        with gr.Accordion(label="Gallery Preview", visible=True, open=False):
+                            with gr.Column():
+                                video_frames_gallery = gr.Gallery(label=f"Video Frame/s Gallery", interactive=False, visible=True, columns=3, object_fit="contain", height=780)
                     # with gr.Tab("Grad Cam Viewer"):
                     #     with gr.Column():
                     #         gr.Textbox(label="Testing", value="")
@@ -3232,6 +3278,18 @@ def build_ui():
         relevant_add_categories = gr.State([])
         relevant_required_categories = gr.State([])
         relevant_blacklist_categories = gr.State([])
+
+        reset_tag_effects_checkbox.change(
+            fn=reset_tag_effects,
+            inputs=[reset_tag_effects_checkbox, tag_effects_radio],
+            outputs=[tag_effects_radio]
+        )
+
+        tag_effects_radio.change(
+            fn=update_generated_tag_selection,
+            inputs=[tag_effects_radio, image_generated_tags, confidence_threshold_slider],
+            outputs=[image_generated_tags]
+        )
 
         tag_search_textbox.change(
             fn=suggest_search_tags,
