@@ -140,9 +140,12 @@ class AutoTag:
             if single_image:
                 found_tags = self.label_names[self.label_names["probs"] > float(0)][["name", "probs"]]
                 found_tags = found_tags.values.tolist()
+
+                # help.verbose_print(f"found_tags:\t{found_tags}")
+
                 # remove tags not in csv or not a valid category type
-                found_tags = [tag for tag in found_tags if
-                              (self.categories_map[all_tags_ever_dict[tag[0]]] in self.valid_categories) and (tag[0] in all_tags_ever_dict)]
+                found_tags = [tag for tag in found_tags if (tag[0] in all_tags_ever_dict) and
+                              (self.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
 
                 # set predictions for the UI
                 for element in found_tags:
@@ -158,15 +161,15 @@ class AutoTag:
                 # convert to list
                 found_tags = found_tags.values.tolist()
                 # remove tags not in csv or not a valid category type
-                found_tags = [tag for tag in found_tags if
-                              (self.categories_map[all_tags_ever_dict[tag[0]]] in self.valid_categories) and (tag[0] in all_tags_ever_dict)]
+                found_tags = [tag for tag in found_tags if (tag[0] in all_tags_ever_dict) and
+                              (self.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
 
                 # set predictions for the UI
                 for element in found_tags:
                     self.combined_tags[element[0]] = [element[1], f"{image_name}.{image_ext}"]  # tag -> [probability, name w/ extension]
 
                 # sort by category
-                sorted_list = sorted(found_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x[0]]]])
+                sorted_list = sorted(found_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x[0]][0]]])
                 sorted_list = [pair[0] for pair in sorted_list] # get just the tags
 
                 # Load image tags from file and sort them into the same kind of this sorted by category
@@ -178,17 +181,17 @@ class AutoTag:
                     f = open(temp_src_tags_path, 'w')
                     f.close()
                 # sort by category
-                sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x]]])
+                sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
 
                 # remove duplicate tag/s in generated tag list
                 sorted_list1_set = set(sorted_existing_tags_list)
                 filtered_sorted_list2 = [tag for tag in sorted_list if tag not in sorted_list1_set]
-                filtered_sorted_list2 = sorted(filtered_sorted_list2, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x]]])
+                filtered_sorted_list2 = sorted(filtered_sorted_list2, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
 
                 merged_list = []
                 if self.write_tag_opts_dropdown == 'Merge':
                     # merge the two sorted lists by category
-                    merged_list = list(heapq.merge(sorted_existing_tags_list, filtered_sorted_list2, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x]]]))
+                    merged_list = list(heapq.merge(sorted_existing_tags_list, filtered_sorted_list2, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]]))
                 elif self.write_tag_opts_dropdown == 'Pre-pend':
                     # pre-pend the generated list to the existing one
                     merged_list = filtered_sorted_list2 + sorted_existing_tags_list
@@ -239,7 +242,7 @@ class AutoTag:
                                                                      copy.deepcopy(meta_csv_dict),
                                                                      copy.deepcopy(rating_csv_dict),
                                                                      copy.deepcopy(tags_csv_dict),
-                                                                     self.categories_map[all_tags_ever_dict[tag]], tag, "+", 1)
+                                                                     self.categories_map[all_tags_ever_dict[tag][0]], tag, "+", 1)
                 # persist changes to csv dictionary files
                 help.write_tags_to_csv(artist_csv_dict, os.path.join(self.tag_folder, "artist.csv"))
                 help.write_tags_to_csv(character_csv_dict, os.path.join(self.tag_folder, "character.csv"))
@@ -382,10 +385,11 @@ class AutoTag:
                 raise ValueError("batch use tag operation NOT set")
 
             # remove tags not in csv or not a valid category type
-            any_selected_tags = [tag for tag in any_selected_tags if (self.categories_map[all_tags_ever_dict[tag]] in self.valid_categories) and (tag in all_tags_ever_dict)]
+            any_selected_tags = [tag for tag in any_selected_tags if (tag in all_tags_ever_dict) and
+                                 (self.categories_map[all_tags_ever_dict[tag][0]] in self.valid_categories)]
 
             # sort by category
-            sorted_list = sorted(any_selected_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x]]])
+            sorted_list = sorted(any_selected_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
 
             # Load image tags from file and sort them into the same kind of this sorted by category
             existing_tags = []
@@ -396,20 +400,20 @@ class AutoTag:
                 f = open(temp_src_tags_path, 'w')
                 f.close()
             # sort by category
-            sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x]]])
+            sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
 
             # remove duplicate tag/s in generated tag list
             sorted_list1_set = set(sorted_existing_tags_list)
             filtered_sorted_list2 = [tag for tag in sorted_list if tag not in sorted_list1_set]
 
             filtered_sorted_list2 = sorted(filtered_sorted_list2,
-                                           key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x]]])
+                                           key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
 
             merged_list = []
             if self.write_tag_opts_dropdown == 'Merge':
                 # merge the two sorted lists by category
                 merged_list = list(heapq.merge(sorted_existing_tags_list, filtered_sorted_list2,
-                                                   key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x]]]))
+                                                   key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]]))
             elif self.write_tag_opts_dropdown == 'Pre-pend':
                 # pre-pend the generated list to the existing one
                 merged_list = filtered_sorted_list2 + sorted_existing_tags_list
@@ -461,7 +465,7 @@ class AutoTag:
                                                                  copy.deepcopy(meta_csv_dict),
                                                                  copy.deepcopy(rating_csv_dict),
                                                                  copy.deepcopy(tags_csv_dict),
-                                                                 self.categories_map[all_tags_ever_dict[tag]], tag, "+", 1)
+                                                                 self.categories_map[all_tags_ever_dict[tag][0]], tag, "+", 1)
             # persist changes to csv dictionary files
             help.write_tags_to_csv(artist_csv_dict, os.path.join(self.tag_folder, "artist.csv"))
             help.write_tags_to_csv(character_csv_dict, os.path.join(self.tag_folder, "character.csv"))
