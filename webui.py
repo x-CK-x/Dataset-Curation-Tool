@@ -87,7 +87,8 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
                        save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,
                        webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,replace_tags_list,
                        tag_count_list_folder,min_month,min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,
-                       resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox):
+                       resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox,
+                       custom_csv_path_textbox, use_csv_custom_checkbox):
 
     global settings_json
     settings_json["batch_folder"] = str(batch_folder)
@@ -112,6 +113,9 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
     settings_json["min_short_side"] = int(min_short_side)
 
     settings_json["proxy_url"] = str(min_short_side)
+
+    settings_json["use_csv_custom"] = str(custom_csv_path_textbox)
+    settings_json["csv_custom_path"] = bool(use_csv_custom_checkbox)
 
     # COLLECT CheckBox Group
     for key in collect_checkboxes:
@@ -618,6 +622,9 @@ def change_config(selected: gr.SelectData, file_path):
     tag_count_list_folder = gr.update(value=settings_json["tag_count_list_folder"])
     proxy_url_textbox = gr.update(value=settings_json["proxy_url"])
 
+    custom_csv_path_textbox = gr.update(value=settings_json["use_csv_custom"])
+    use_csv_custom_checkbox = gr.update(value=settings_json["csv_custom_path"])
+
     help.verbose_print(f"{settings_json}")
     help.verbose_print(f"json key count: {len(settings_json)}")
 
@@ -631,7 +638,8 @@ def change_config(selected: gr.SelectData, file_path):
            min_day,min_area,top_n,min_short_side,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,required_tags_group_var, \
            blacklist_group_var,skip_posts_file,skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,apply_filter_to_listed_posts, \
            save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type, \
-           remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox,settings_path
+           remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox,settings_path, \
+           custom_csv_path_textbox, use_csv_custom_checkbox
 
 def reload_selected_image_dict(ext, img_name):
     global selected_image_dict  # id -> {categories: tag/s}, type -> string
@@ -3102,20 +3110,32 @@ def build_ui():
             with gr.Accordion("Edit Requirements for General Download INFO", visible=True, open=True):
                 gr.Markdown(md_.general_config)
                 with gr.Row():
-                    with gr.Column():
+                    with gr.Column(min_width=50, scale=2):
                         batch_folder = gr.Textbox(lines=1, label='Path to Batch Directory', value=settings_json["batch_folder"])
-                    with gr.Column():
+                    with gr.Column(min_width=50, scale=2):
                         resized_img_folder = gr.Textbox(lines=1, label='Path to Resized Images', value=settings_json["resized_img_folder"])
-                    with gr.Column():
+                    with gr.Column(min_width=50, scale=2):
+                        custom_csv_path_textbox = gr.Textbox(lines=1, label='Path to Custom CSV',
+                                                            value=settings_json["csv_custom_path"]
+                                                            if "csv_custom_path" in settings_json else "")
+                    with gr.Column(min_width=50, scale=1):
+                        use_csv_custom_checkbox = gr.Checkbox(label='Use Custom CSV (Applies at start)',
+                                                              value=bool(settings_json["use_csv_custom"])
+                                                              if "use_csv_custom" in settings_json else False)
+                with gr.Row():
+                    with gr.Column(min_width=50, scale=1):
                         proxy_value = ""
                         if not "proxy_url" in settings_json:
                             settings_json["proxy_url"] = proxy_value
                         proxy_url_textbox = gr.Textbox(lines=1, label='(Optional Proxy URL)', value=settings_json["proxy_url"])
-                with gr.Row():
-                    tag_sep = gr.Textbox(lines=1, label='Tag Seperator/Delimeter', value=settings_json["tag_sep"])
-                    tag_order_format = gr.Textbox(lines=1, label='Tag ORDER', value=settings_json["tag_order_format"])
-                    prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=settings_json["prepend_tags"])
-                    append_tags = gr.Textbox(lines=1, label='Append Tags', value=settings_json["append_tags"])
+                    with gr.Column(min_width=50, scale=1):
+                        tag_sep = gr.Textbox(lines=1, label='Tag Separator/Delimeter', value=settings_json["tag_sep"])
+                    with gr.Column(min_width=50, scale=2):
+                        tag_order_format = gr.Textbox(lines=1, label='Tag ORDER', value=settings_json["tag_order_format"])
+                    with gr.Column(min_width=50, scale=2):
+                        prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=settings_json["prepend_tags"])
+                    with gr.Column(min_width=50, scale=2):
+                        append_tags = gr.Textbox(lines=1, label='Append Tags', value=settings_json["append_tags"])
                 with gr.Row():
                     with gr.Column():
                         img_ext = gr.Dropdown(choices=img_extensions, label='Image Extension', value=settings_json["img_ext"])
@@ -3964,7 +3984,7 @@ def build_ui():
                      save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,
                      webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,replace_tags_list,
                      tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox,
-                     settings_path]).then(
+                     settings_path, custom_csv_path_textbox, use_csv_custom_checkbox]).then(
             fn=check_to_reload_auto_complete_config,
             inputs=[],
             outputs=[])
@@ -3978,7 +3998,8 @@ def build_ui():
                     downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type,
                     remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,min_day,min_year,
                     collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,
-                    create_new_config_checkbox,settings_path,proxy_url_textbox],
+                    create_new_config_checkbox,settings_path,proxy_url_textbox,
+                    custom_csv_path_textbox, use_csv_custom_checkbox],
             outputs=[all_json_files_checkboxgroup, quick_json_select]).then(
             fn=check_to_reload_auto_complete_config,
             inputs=[],
@@ -4047,12 +4068,31 @@ def load_trie():
     help.verbose_print(f"Done constructing Trie tree!")
 
 def load_tags_csv(proxy_url=None):
-    # check to update the tags csv
-    help.check_to_update_csv(proxy_url=proxy_url)
-    # get newest
-    current_list_of_csvs = help.sort_csv_files_by_date(os.getcwd())
-    # load
-    data = pd.read_csv(current_list_of_csvs[0], usecols=['name','category','post_count'])
+    global settings_json
+    data = None
+    if "use_csv_custom" in settings_json and settings_json["use_csv_custom"] and "csv_custom_path" in settings_json:
+        try:
+            data = pd.read_csv(settings_json["csv_custom_path"])
+            # Check if there is a header
+            if data.columns.str.contains('Unnamed').any():
+                data = pd.read_csv(settings_json["csv_custom_path"], header=None, skiprows=1)
+        except pd.errors.ParserError:
+            print("File not found or is not a CSV")
+
+        # take first three columns and name them
+        data = data.iloc[:, :3]
+        data.columns = ['name', 'category', 'post_count']
+    else:
+        # check to update the tags csv
+        help.check_to_update_csv(proxy_url=proxy_url)
+        # get newest
+        current_list_of_csvs = help.sort_csv_files_by_date(os.getcwd())
+        try:
+            # load
+            data = pd.read_csv(current_list_of_csvs[0], usecols=['name', 'category', 'post_count'])
+        except pd.errors.ParserError:
+            print("File not found or is not a CSV")
+
     # Convert 'name' column to string type
     data['name'] = data['name'].astype(str)
     # Remove rows where post_count equals 0
