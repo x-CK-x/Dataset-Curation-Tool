@@ -961,8 +961,8 @@ def textbox_handler_blacklist(tag_string_comp, state, is_textbox):
 # selected_image_dict has the form:
 #     id -> {categories: [tags]}
 #     type -> ext
-def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id,
-                    multi_select_ckbx_state, only_selected_state_object, images_selected_state, state_of_suggestion, is_textbox):
+def add_tag_changes(tag_string, apply_to_all_type_select_checkboxgroup, img_id, multi_select_ckbx_state,
+                    only_selected_state_object, images_selected_state, state_of_suggestion, is_textbox):
     global auto_complete_config
     global all_images_dict
     global selected_image_dict
@@ -2234,9 +2234,10 @@ def load_images(images_path, image_mode_choice_state):
         autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
         help.check_requirements()
     image_mode_choice_state = ""
-    if images_path:
-        help.verbose_print(f"images_path:\t{images_path}")
 
+    help.verbose_print(f"images_path:\t{images_path}")
+
+    if images_path:
         if isinstance(images_path, list) and len(images_path) > 1:
             names = []
             for path in images_path:
@@ -2381,7 +2382,7 @@ def set_copy_mode_ckbx(copy_mode_ckbx):
     autotagmodel.set_copy_mode_ckbx(copy_mode_ckbx)
     help.verbose_print(f"set copy")
 
-def interrogate_images(image_mode_choice_state, confidence_threshold_slider):
+def interrogate_images(image_mode_choice_state, confidence_threshold_slider, category_filter_dropdown, category_filter_batch_checkbox):
     global all_tags_ever_dict
     global autotagmodel, all_predicted_confidences, all_predicted_tags
     generate_all_dirs()
@@ -2401,10 +2402,12 @@ def interrogate_images(image_mode_choice_state, confidence_threshold_slider):
     help.verbose_print(f"image_mode_choice_state:\t{image_mode_choice_state}")
 
     if 'single' == image_mode_choice_state.lower():
-        autotagmodel.interrogate(single_image=True, all_tags_ever_dict=all_tags_ever_dict)
+        autotagmodel.interrogate(single_image=True, all_tags_ever_dict=all_tags_ever_dict,
+                                 filter_in_categories=category_filter_dropdown, filter_in_checkbox=category_filter_batch_checkbox)
         image_confidence_values, image_generated_tags, image_preview_pil = autotagmodel.get_predictions(True)
     else:
-        autotagmodel.interrogate(single_image=False, all_tags_ever_dict=all_tags_ever_dict)
+        autotagmodel.interrogate(single_image=False, all_tags_ever_dict=all_tags_ever_dict,
+                                 filter_in_categories=category_filter_dropdown, filter_in_checkbox=category_filter_batch_checkbox)
         _, _, _ = autotagmodel.get_predictions(False)
 
     if image_confidence_values is None and image_generated_tags is None and image_preview_pil is None:
@@ -2840,7 +2843,8 @@ def suggest_search_tags(input_string, num_suggestions, previous_text):
     return generic_dropdown, previous_text, current_placement_tuple, tag_categories
 
 
-def update_generated_tag_selection(tag_effects_radio, image_generated_tags, threshold):
+def update_generated_tag_selection(tag_effects_dropdown: gr.SelectData, image_generated_tags, threshold, category_filter_dropdown):
+    tag_effects_dropdown = tag_effects_dropdown.value
     global all_predicted_confidences, all_predicted_tags
     temp_confids = None
     available_tags = None
@@ -2855,24 +2859,233 @@ def update_generated_tag_selection(tag_effects_radio, image_generated_tags, thre
 
     selected_tags = image_generated_tags
 
-    if tag_effects_radio is None or len(tag_effects_radio) == 0:
+    if tag_effects_dropdown is None or len(tag_effects_dropdown) == 0:
         return gr.update(choices=available_tags, value=selected_tags)
     else:
-        if "Select All" in tag_effects_radio:
-            selected_tags = available_tags
+        if "(Category) Select Any" in tag_effects_dropdown:
+            selected_tags = [tag for tag in available_tags if get_category_name(tag) in category_filter_dropdown]
             return gr.update(choices=available_tags, value=selected_tags)
-        elif "Clear All" in tag_effects_radio:
+        elif "(Category) Clear Any" in tag_effects_dropdown:
+            selected_tags = [tag for tag in image_generated_tags if not get_category_name(tag) in category_filter_dropdown]
+            return gr.update(choices=available_tags, value=selected_tags)
+        elif "(Category) Invert Any" in tag_effects_dropdown:
+            selected_tags = [tag for tag in available_tags if
+                             (not tag in image_generated_tags and get_category_name(tag) in category_filter_dropdown) or
+                             (tag in image_generated_tags and not get_category_name(tag) in category_filter_dropdown)]
+            return gr.update(choices=available_tags, value=selected_tags)
+        elif "Select All" in tag_effects_dropdown:
+            selected_tags = [tag for tag in available_tags]
+            return gr.update(choices=available_tags, value=selected_tags)
+        elif "Clear All" in tag_effects_dropdown:
             selected_tags = []
             return gr.update(choices=available_tags, value=selected_tags)
-        elif "Invert All" in tag_effects_radio:
+        elif "Invert All" in tag_effects_dropdown:
             selected_tags = [tag for tag in available_tags if not tag in image_generated_tags]
             return gr.update(choices=available_tags, value=selected_tags)
 
-def reset_tag_effects(reset_tag_effects_checkbox, tag_effects_radio):
-    if reset_tag_effects_checkbox:
-        return gr.update(value=None)
+
+
+
+
+
+
+def update_generated_gallery_tag_selection(tag_effects_dropdown: gr.SelectData, category_filter_dropdown, img_name,
+           artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup,
+           general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup):
+    tag_effects_dropdown = tag_effects_dropdown.value # tag selection effect
+    global selected_image_dict, all_images_dict
+    download_folder_type = None
+    if img_name in all_images_dict["png"]:
+        download_folder_type = "png"
+    elif img_name in all_images_dict["jpg"]:
+        download_folder_type = "jpg"
     else:
-        return gr.update(value=tag_effects_radio)
+        download_folder_type = "gif"
+
+    # load/re-load selected image
+    reload_selected_image_dict(download_folder_type, img_name)
+
+    all_available_tags = [[],[],[],[],[],[]]
+    all_available_tags[0] = selected_image_dict[img_name]["artist"]
+    all_available_tags[1] = selected_image_dict[img_name]["character"]
+    all_available_tags[2] = selected_image_dict[img_name]["species"]
+    all_available_tags[3] = selected_image_dict[img_name]["general"]
+    all_available_tags[4] = selected_image_dict[img_name]["meta"]
+    all_available_tags[5] = selected_image_dict[img_name]["rating"]
+
+    all_selected_tags = [[],[],[],[],[],[]]
+    all_selected_tags[0] = artist_comp_checkboxgroup
+    all_selected_tags[1] = character_comp_checkboxgroup
+    all_selected_tags[2] = species_comp_checkboxgroup
+    all_selected_tags[3] = general_comp_checkboxgroup
+    all_selected_tags[4] = meta_comp_checkboxgroup
+    all_selected_tags[5] = rating_comp_checkboxgroup
+
+    if tag_effects_dropdown is None or len(tag_effects_dropdown) == 0:
+        return gr.update(choices=all_available_tags[0], value=all_selected_tags[0]), \
+               gr.update(choices=all_available_tags[1], value=all_selected_tags[1]), \
+               gr.update(choices=all_available_tags[2], value=all_selected_tags[2]), \
+               gr.update(choices=all_available_tags[3], value=all_selected_tags[3]), \
+               gr.update(choices=all_available_tags[4], value=all_selected_tags[4]), \
+               gr.update(choices=all_available_tags[5], value=all_selected_tags[5])
+    else:
+        for i in range(0, len(all_available_tags)):
+            if "(Category) Select Any" in tag_effects_dropdown:
+                all_selected_tags[i] = [tag for tag in all_available_tags[i] if get_category_name(tag) in category_filter_dropdown]
+            elif "(Category) Clear Any" in tag_effects_dropdown:
+                all_selected_tags[i] = [tag for tag in all_selected_tags[i] if not get_category_name(tag) in category_filter_dropdown]
+            elif "(Category) Invert Any" in tag_effects_dropdown:
+                all_selected_tags[i] = [tag for tag in all_available_tags[i] if
+                                 (not tag in all_selected_tags[i] and get_category_name(tag) in category_filter_dropdown) or
+                                 (tag in all_selected_tags[i] and not get_category_name(tag) in category_filter_dropdown)]
+            elif "Select All" in tag_effects_dropdown:
+                all_selected_tags[i] = [tag for tag in all_available_tags[i]]
+            elif "Clear All" in tag_effects_dropdown:
+                all_selected_tags[i] = []
+            elif "Invert All" in tag_effects_dropdown:
+                all_selected_tags[i] = [tag for tag in all_available_tags[i] if not tag in all_selected_tags[i]]
+        return gr.update(choices=all_available_tags[0], value=all_selected_tags[0]), \
+               gr.update(choices=all_available_tags[1], value=all_selected_tags[1]), \
+               gr.update(choices=all_available_tags[2], value=all_selected_tags[2]), \
+               gr.update(choices=all_available_tags[3], value=all_selected_tags[3]), \
+               gr.update(choices=all_available_tags[4], value=all_selected_tags[4]), \
+               gr.update(choices=all_available_tags[5], value=all_selected_tags[5])
+
+
+
+def send_images_from_feature(new_feature, data, no_update_index, image_id, is_batch,
+                             apply_type_select, use_highlight, highlight_select_data, highlight_select):
+    global all_images_dict, selected_image_dict, all_tags_ever_dict, settings_json
+    if image_id is not None and len(image_id) > 0:
+        image_id = str(image_id)
+
+    if data is None:
+        # help.verbose_print(f"NONE!!!")
+        file_upload_button_single = gr.update()
+        image_editor = gr.update()
+        image_editor_crop = gr.update()
+        image_editor_sketch = gr.update()
+        image_editor_color_sketch = gr.update()
+        gallery_images_batch = gr.update()
+        return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
+               image_editor_color_sketch, gallery_images_batch
+
+    # batch run check
+    if is_batch:
+        if (len(apply_type_select) > 0 or use_highlight[0]):
+            # find type of selected image
+            temp_ext = None
+            temp_all_images_dict_keys = list(all_images_dict.keys())
+            if "searched" in temp_all_images_dict_keys:
+                temp_all_images_dict_keys.remove("searched")
+            for each_key in temp_all_images_dict_keys:
+                if image_id in list(all_images_dict[each_key]):
+                    temp_ext = each_key
+                    break
+            # reload the categories for the selected_image_dict
+            if len(highlight_select) == 0 and not use_highlight[0]:
+                reload_selected_image_dict(temp_ext, image_id)
+
+            image_id_list = []
+            if "searched" in apply_type_select and (("png" in apply_type_select) or
+                                            ("jpg" in apply_type_select) or ("gif" in apply_type_select)):
+                key_types = copy.copy(apply_type_select)
+                key_types.remove("searched")
+                for key_type in key_types:
+                    image_id_list += all_images_dict["searched"][key_type]
+            elif ("png" in apply_type_select) or ("jpg" in apply_type_select) or ("gif" in apply_type_select):
+                key_types = copy.copy(apply_type_select)
+                for key_type in key_types:
+                    image_id_list += all_images_dict[key_type]
+            # help.verbose_print(f"==============================================image_id_list:\t{image_id_list}")
+            if use_highlight[0]:
+                temp_id_list = []
+                for index in highlight_select:
+                    ext, img_id = highlight_select_data[index]
+                    temp_id_list.append(img_id)
+                image_id_list = temp_id_list
+            # help.verbose_print(f"==============================================image_id_list:\t{image_id_list}")
+            # get the generic paths
+            full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                               settings_json["downloaded_posts_folder"])
+            # get the type of each image & collect full paths
+            full_paths_all = []
+            for ext in ["png", "jpg", "gif"]:
+                full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
+                for img_id in image_id_list:
+                    if img_id in all_images_dict[ext]:
+                        full_path = os.path.join(full_path_gallery_type, f"{img_id}.{ext}")
+                        full_paths_all.append(full_path)
+            # help.verbose_print(f"++++++++++++++++++++++++++++++++++++++++++++full_paths_all:\t{full_paths_all}")
+            file_upload_button_single = gr.update()
+            image_editor = gr.update()
+            image_editor_crop = gr.update()
+            image_editor_sketch = gr.update()
+            image_editor_color_sketch = gr.update()
+            gallery_images_batch = gr.update(value=full_paths_all)
+            return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
+                   image_editor_color_sketch, gallery_images_batch
+
+    # get image id path and set data equal to it
+    temp_data = None
+    for image_data in data:
+        if image_id in image_data["name"]:
+            temp_data = image_data["name"]
+            break
+    data = temp_data
+
+    tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor",
+                     "Image Color Sketch Editor"]
+
+    # help.verbose_print(f"image:\t{image}")
+
+    updates = [[None],[None],[None],[None],[None]]
+    if no_update_index > -1:
+        updates[no_update_index] = data
+
+    if new_feature is None or len(new_feature) == 0:
+        help.verbose_print(f"updates:\t{updates}")
+        file_upload_button_single = gr.update(value=updates[0]) if updates[0][0] else gr.update()
+        image_editor = gr.update(value=updates[1]) if updates[1][0] else gr.update()
+        image_editor_crop = gr.update(value=updates[2]) if updates[2][0] else gr.update()
+        image_editor_sketch = gr.update(value=updates[3]) if updates[3][0] else gr.update()
+        image_editor_color_sketch = gr.update(value=updates[4]) if updates[4][0] else gr.update()
+        gallery_images_batch = gr.update()
+        return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
+               image_editor_color_sketch, gallery_images_batch
+
+    if new_feature == tab_selection[0]: # auto tag
+        updates[0] = data # new state
+        # help.verbose_print(f"0000000000000000000000updates:\t{updates}")
+    elif new_feature == tab_selection[1]: # default editor
+        updates[1] = data # new state
+        # help.verbose_print(f"11111111111111111111111updates:\t{updates}")
+    elif new_feature == tab_selection[2]: # crop
+        updates[2] = data # new state
+        # help.verbose_print(f"22222222222222222222222updates:\t{updates}")
+    elif new_feature == tab_selection[3]: # sketch
+        updates[3] = data # new state
+        # help.verbose_print(f"3333333333333333333updates:\t{updates}")
+    else: # color
+        updates[4] = data # new state
+        # help.verbose_print(f"44444444444444444444updates:\t{updates}")
+
+    file_upload_button_single = gr.update(value=updates[0]) if updates[0][0] is not None else gr.update()
+    image_editor = gr.update(value=updates[1]) if updates[1][0] is not None else gr.update()
+    image_editor_crop = gr.update(value=updates[2]) if updates[2][0] is not None else gr.update()
+    image_editor_sketch = gr.update(value=updates[3]) if updates[3][0] is not None else gr.update()
+    image_editor_color_sketch = gr.update(value=updates[4]) if updates[4][0] is not None else gr.update()
+    gallery_images_batch = gr.update()
+    # help.verbose_print(f"updates:\t{updates}")
+    # help.verbose_print(f"file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, image_editor_color_sketch:\t{[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, image_editor_color_sketch]}")
+    return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
+           image_editor_color_sketch, gallery_images_batch
+
+def load_images_handler(single_path, multiple_paths, image_mode_choice_state, is_batch):
+    if is_batch:
+        return load_images(multiple_paths, image_mode_choice_state)
+    else:
+        return load_images(single_path, image_mode_choice_state)
 
 '''
 ##################################################################################################################################
@@ -3062,6 +3275,10 @@ def build_ui():
                     progress_run_batch = gr.Textbox(interactive=False, visible=False)
 
         with gr.Tab("Tag Editor & Image Gallery"):
+            tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
+            tag_selection_list = ["(Category) Select Any", "(Category) Clear Any", "(Category) Invert Any",
+                                  "Select All", "Clear All", "Invert All"]
+            
             gr.Markdown(md_.preview)
             with gr.Row():
                 with gr.Column():
@@ -3070,39 +3287,56 @@ def build_ui():
                             gr.Markdown("""Reload Gallery""", elem_id="trim_markdown_length")
                             refresh_symbol = '\U0001f504'  # 🔄
                             refresh_aspect_btn = gr.Button(value=refresh_symbol, variant="variant", elem_id="refresh_aspect_btn")
-                        download_folder_type = gr.Radio(choices=file_extn_list, label='Select Filename Type')# webm, swf not yet supported
+                        download_folder_type = gr.Radio(choices=file_extn_list, label='Select Filename Type')
                         img_id_textbox = gr.Textbox(label="Image ID", interactive=False, lines=1, value="")
-                    with gr.Row():
-                        with gr.Column(min_width=50, scale=3):
-                            tag_search_textbox = gr.Textbox(label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)", lines=1, value="")
-                        with gr.Column(min_width=50, scale=2):
-                            tag_search_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True, choices=[], interactive=True, elem_id="searchbar_dropdown")
-                    with gr.Row():
-                        with gr.Column(min_width=50, scale=3):
-                            apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
-                        with gr.Column(min_width=50, scale=1):
-                            select_multiple_images_checkbox = gr.Checkbox(label="Multi-Select", value=False, info="Click Image/s")
-                        with gr.Column(min_width=50, scale=1):
-                            select_between_images_checkbox = gr.Checkbox(label="Shift-Select", value=False, info="Selects All Between Two Images")
-                    with gr.Row():
-                        apply_datetime_sort_ckbx = gr.Checkbox(label="Sort", value=False, info="Image/s by date")
-                        apply_datetime_choice_menu = gr.Dropdown(label="Sort Order", choices=["new-to-old", "old-to-new"], value="", info="Image/s by date")
-                    with gr.Row():
-                        tag_remove_button = gr.Button(value="Remove Selected Tag/s", variant='primary')
-                        tag_save_button = gr.Button(value="Save Tag Changes", variant='primary')
-                    with gr.Row():
-                        image_remove_button = gr.Button(value="Remove Selected Image/s", variant='primary')
-                        image_save_ids_button = gr.Button(value="Save Image Changes", variant='primary')
-                    with gr.Row():
-                        tag_add_textbox = gr.Textbox(label="Enter Tag/s here", lines=1, value="", info="Press Enter/Space to ADD tag/s")
-                        tag_add_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True, choices=[], interactive=True, elem_id="add_tag_dropdown")
+                    with gr.Accordion("Image Sort & Selection Options"):
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=3):
+                                tag_search_textbox = gr.Textbox(label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)", lines=1, value="")
+                            with gr.Column(min_width=50, scale=2):
+                                tag_search_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True, choices=[], interactive=True, elem_id="searchbar_dropdown")
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=3):
+                                apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
+                            with gr.Column(min_width=50, scale=1):
+                                select_multiple_images_checkbox = gr.Checkbox(label="Multi-Select", value=False, info="Click Image/s")
+                            with gr.Column(min_width=50, scale=1):
+                                select_between_images_checkbox = gr.Checkbox(label="Shift-Select", value=False, info="Selects All Between Two Images")
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=1):
+                                apply_datetime_sort_ckbx = gr.Checkbox(label="Sort", value=False, info="Image/s by date")
+                            with gr.Column(min_width=50, scale=4):
+                                apply_datetime_choice_menu = gr.Dropdown(label="Sort Order", choices=["new-to-old", "old-to-new"], value="", info="Image/s by date")
+                        with gr.Row():
+                            image_remove_button = gr.Button(value="Remove Selected Image/s", variant='primary')
+                            image_save_ids_button = gr.Button(value="Save Image Changes", variant='primary')
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=2):
+                                send_img_from_gallery_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                            with gr.Column(min_width=50, scale=1):
+                                batch_send_from_gallery_checkbox = gr.Checkbox(label="Send as Batch")
+                            with gr.Column(min_width=50, scale=3):
+                                send_img_from_gallery_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
 
-                    img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[])
-                    img_character_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Character Tag/s', value=[])
-                    img_species_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Species Tag/s', value=[])
-                    img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
-                    img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
-                    img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
+                    with gr.Accordion("Tag Edit & Selection Options"):
+                        with gr.Row():
+                            tag_remove_button = gr.Button(value="Remove Selected Tag/s", variant='primary')
+                            tag_save_button = gr.Button(value="Save Tag Changes", variant='primary')
+                        with gr.Row():
+                            tag_add_textbox = gr.Textbox(label="Enter Tag/s here", lines=1, value="", info="Press Enter/Space to ADD tag/s")
+                            tag_add_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True, choices=[], interactive=True, elem_id="add_tag_dropdown")
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=3):
+                                category_filter_gallery_dropdown = gr.Dropdown(label="Filter by Category (Multi-Select Enabled)", choices=list(categories_map.values()), multiselect=True)
+                            with gr.Column(min_width=50, scale=1):
+                                tag_effects_gallery_dropdown = gr.Dropdown(label="Tag Selector Effect/s", choices=tag_selection_list)
+
+                        img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[])
+                        img_character_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Character Tag/s', value=[])
+                        img_species_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Species Tag/s', value=[])
+                        img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
+                        img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
+                        img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", columns=3, object_fit="contain", height=1032)
         with gr.Tab("Data Stats"):
             with gr.Row():
@@ -3147,6 +3381,8 @@ def build_ui():
 
             write_tag_opts = ['Overwrite', 'Merge', 'Pre-pend', 'Append']
             use_tag_opts = ['Use All', 'Use All above Threshold', 'Manually Select']
+            tag_selection_list = ["(Category) Select Any", "(Category) Clear Any", "(Category) Invert Any", "Select All", "Clear All", "Invert All"]
+            tab_selection = ["Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
             with gr.Row():
                 with gr.Column():
                     with gr.Accordion(label="Image Settings", visible=True, open=True):
@@ -3157,9 +3393,16 @@ def build_ui():
                             with gr.Tab("Batch"):
                                 file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
                                                                interactive=True, visible=True, type="file")
+                            with gr.Tab("Non-Interact Batch"):
+                                gallery_images_batch = gr.File(label=f"(Non-Interact) {image_modes[1]} Image Mode", file_count="multiple",
+                                                               interactive=False, visible=True, type="file")
                             with gr.Tab("Image Preview"):
                                 with gr.Column():
                                     image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=840)
+
+                        send_img_from_autotag_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                        send_img_from_autotag_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
+
                     with gr.Accordion(label="Model Settings", visible=True, open=True):
                         with gr.Row():
                             with gr.Column(elem_id="trim_row_length"):
@@ -3192,15 +3435,17 @@ def build_ui():
                             write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
                             use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
                     with gr.Accordion(label="Tag/s Options", visible=True, open=True):
-                        image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True,
-                                                                interactive=True)
                         image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="",
                                                                                  visible=True, interactive=False)
+                        image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True,
+                                                                interactive=True)
                         with gr.Row():
                             with gr.Column(min_width=50, scale=3):
-                                tag_effects_radio = gr.Radio(label="Tag Selector Effect/s", choices=["Select All", "Clear All", "Invert All"])
+                                tag_effects_dropdown = gr.Dropdown(label="Tag Selector Effect/s", choices=tag_selection_list)
                             with gr.Column(min_width=50, scale=1):
-                                reset_tag_effects_checkbox = gr.Checkbox(label="Reset Effect/s")
+                                category_filter_batch_checkbox = gr.Checkbox(label="Enable Filter on Batch Mode")
+                        with gr.Row():
+                            category_filter_dropdown = gr.Dropdown(label="Filter by Category (Multi-Select Enabled)", choices=list(categories_map.values()), multiselect=True)
                 with gr.Column():
                     with gr.Tab("Tag/s Preview"):
                         with gr.Accordion(label="Tag/s Probabilities", visible=True, open=True):
@@ -3231,29 +3476,39 @@ def build_ui():
                         with gr.Accordion(label="Gallery Preview", visible=True, open=False):
                             with gr.Column():
                                 video_frames_gallery = gr.Gallery(label=f"Video Frame/s Gallery", interactive=False, visible=True, columns=3, object_fit="contain", height=780)
+                    # with gr.Tab("UMAP Viewer"):
+                    #     with gr.Column():
+                    #         gr.Textbox(label="Testing", value="")
+                    #         gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=730)
                     # with gr.Tab("Grad Cam Viewer"):
                     #     with gr.Column():
                     #         gr.Textbox(label="Testing", value="")
                     #         gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=730)
-                        # use same base path info as single and batch mode and using the path to image folder
-                        # use an optional destination folder path or USE copy to image folder option
-                            # needs additional logic incase swf is made and is saved to the video folder instead
-                        # and optional destination file name {prefix}frame_number.jpg/png/mp4
         with gr.Tab("Image Editor"):
+            tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
             with gr.Tab("Image Editor Tool"):
-                image_editor = gr.Image(label=f"Image Preview/Editor", interactive=True, visible=True, tool="editor",
-                                        source="upload", type="pil", height=1028)
+                image_editor = gr.Image(label=f"Image Default Editor", interactive=True, visible=True, tool="editor",
+                                        source="upload", type="filepath", height=1028)
+                send_img_from_default_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                send_img_from_default_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Crop Tool"):
-                image_editor_crop = gr.Image(label=f"Image Preview/Editor", interactive=True, visible=True,
-                                             tool="select", source="upload", type="pil", height=1028)
+                image_editor_crop = gr.Image(label=f"Image Crop Editor", interactive=True, visible=True,
+                                             tool="select", source="upload", type="filepath", height=1028)
+                send_img_from_crop_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                send_img_from_crop_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Sketch Tool"):
-                image_editor_sketch = gr.Image(label=f"Image Preview/Editor", interactive=True, visible=True,
-                                               tool="sketch", source="upload", type="pil", height=1028)
+                image_editor_sketch = gr.Image(label=f"Image Sketch Editor", interactive=True, visible=True,
+                                               tool="sketch", source="upload", type="filepath", height=1028)
+                send_img_from_sketch_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                send_img_from_sketch_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Color Sketch Tool"):
-                image_editor_color_sketch = gr.Image(label=f"Image Preview/Editor", interactive=True, visible=True,
-                                                     tool="color-sketch", source="upload", type="pil", height=1028)
+                image_editor_color_sketch = gr.Image(label=f"Image Color Sketch Editor", interactive=True, visible=True,
+                                                     tool="color-sketch", source="upload", type="filepath", height=1028)
+                send_img_from_color_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                send_img_from_color_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
+
         with gr.Tab("Advanced Settings"):
-            total_suggestions_slider = gr.Slider(minimum=0, maximum=100, step=1, value=10)
+            total_suggestions_slider = gr.Slider(info="Limit Number of Tag Suggestions", minimum=0, maximum=100, step=1, value=10, show_label=False)
 
         '''
         ##################################################################################################################################
@@ -3279,15 +3534,68 @@ def build_ui():
         relevant_required_categories = gr.State([])
         relevant_blacklist_categories = gr.State([])
 
-        reset_tag_effects_checkbox.change(
-            fn=reset_tag_effects,
-            inputs=[reset_tag_effects_checkbox, tag_effects_radio],
-            outputs=[tag_effects_radio]
+        send_img_from_gallery_button.click(
+            fn=send_images_from_feature,
+            inputs=[send_img_from_gallery_dropdown, gallery_comp, gr.State(-1), img_id_textbox,
+                    batch_send_from_gallery_checkbox, apply_to_all_type_select_checkboxgroup,
+                    multi_select_ckbx_state, only_selected_state_object, images_selected_state],
+            outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
+                     image_editor_color_sketch, gallery_images_batch]
+        ).then(
+            fn=load_images_handler,
+            inputs=[file_upload_button_single, gallery_images_batch, image_mode_choice_state,
+                    batch_send_from_gallery_checkbox],
+            outputs=[image_mode_choice_state]
         )
 
-        tag_effects_radio.change(
+        send_img_from_autotag_button.click(
+            fn=send_images_from_feature,
+            inputs=[send_img_from_autotag_dropdown, file_upload_button_single, gr.State(0), gr.State(None),
+                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
+                     image_editor_color_sketch, gallery_images_batch]
+        )
+        send_img_from_default_editor_button.click(
+            fn=send_images_from_feature,
+            inputs=[send_img_from_default_editor_dropdown, image_editor, gr.State(1), gr.State(None),
+                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
+                     image_editor_color_sketch, gallery_images_batch]
+        )
+        send_img_from_crop_editor_button.click(
+            fn=send_images_from_feature,
+            inputs=[send_img_from_crop_editor_dropdown, image_editor_crop, gr.State(2), gr.State(None),
+                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
+                     image_editor_color_sketch, gallery_images_batch]
+        )
+        send_img_from_sketch_editor_button.click(
+            fn=send_images_from_feature,
+            inputs=[send_img_from_sketch_editor_dropdown, image_editor_sketch, gr.State(3), gr.State(None),
+                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
+                     image_editor_color_sketch, gallery_images_batch]
+        )
+        send_img_from_color_editor_button.click(
+            fn=send_images_from_feature,
+            inputs=[send_img_from_color_editor_dropdown, image_editor_color_sketch, gr.State(4), gr.State(None),
+                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
+                     image_editor_color_sketch, gallery_images_batch]
+        )
+
+        tag_effects_gallery_dropdown.select(
+            fn=update_generated_gallery_tag_selection,
+            inputs=[category_filter_gallery_dropdown, img_id_textbox,
+                   img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
+                   img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group],
+            outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
+                   img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group]
+        )
+
+        tag_effects_dropdown.select(
             fn=update_generated_tag_selection,
-            inputs=[tag_effects_radio, image_generated_tags, confidence_threshold_slider],
+            inputs=[image_generated_tags, confidence_threshold_slider, category_filter_dropdown],
             outputs=[image_generated_tags]
         )
 
@@ -3341,23 +3649,20 @@ def build_ui():
         )
 
         tag_add_textbox.submit(
-                             fn=add_tag_changes,
-                             inputs=[tag_add_textbox, apply_to_all_type_select_checkboxgroup, img_id_textbox,
-                                     multi_select_ckbx_state, only_selected_state_object, images_selected_state,
-                                     initial_add_state, gr.State(True)],
-                             outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
-                                      img_species_tag_checkbox_group, img_general_tag_checkbox_group,
-                                      img_meta_tag_checkbox_group, img_rating_tag_checkbox_group,
-                                      initial_add_state_tag, tag_add_textbox])
+             fn=add_tag_changes,
+             inputs=[tag_add_textbox, apply_to_all_type_select_checkboxgroup, img_id_textbox, multi_select_ckbx_state,
+                     only_selected_state_object, images_selected_state, initial_add_state, gr.State(True)],
+             outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
+                      img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group,
+                      initial_add_state_tag, tag_add_textbox])
 
         tag_add_suggestion_dropdown.select(
-                             fn=dropdown_handler_add_tags,
-                             inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox, multi_select_ckbx_state,
-                                     only_selected_state_object, images_selected_state, initial_add_state],
-                             outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
-                                      img_species_tag_checkbox_group, img_general_tag_checkbox_group,
-                                      img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, tag_add_textbox,
-                                      tag_add_suggestion_dropdown, initial_add_state, initial_add_state_tag])
+             fn=dropdown_handler_add_tags,
+             inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox, multi_select_ckbx_state,
+                     only_selected_state_object, images_selected_state, initial_add_state],
+             outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
+                      img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group,
+                      tag_add_textbox, tag_add_suggestion_dropdown, initial_add_state, initial_add_state_tag])
 
         required_tags_textbox.change(
             fn=suggest_tags,
@@ -3435,72 +3740,144 @@ def build_ui():
         save_custom_images_button.click(fn=save_custom_images,
                                     inputs=[image_mode_choice_state, image_with_tag_path_textbox, copy_mode_ckbx],
                                     outputs=[image_confidence_values, image_generated_tags, image_preview_pil, image_generated_tags_prompt_builder_textbox])
-        interrogate_button.click(unload_component, None, image_preview_pil)\
-            .then(unload_component, gr.State([]), image_generated_tags)\
-            .then(unload_component, gr.State(""), image_generated_tags_prompt_builder_textbox).then(fn=interrogate_images,
-                                                                             inputs=[image_mode_choice_state,
-                                                                                     confidence_threshold_slider],
-                                                                             outputs=[image_confidence_values,
-                                                                                      image_generated_tags,
-                                                                                      image_preview_pil],
-                                                                             show_progress=True).then(fn=prompt_string_builder,
-                                                                              inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
-                                                                              outputs=[image_generated_tags_prompt_builder_textbox])
-        crop_or_resize_radio.change(fn=make_menus_visible, inputs=[crop_or_resize_radio], outputs=[landscape_crop_dropdown, portrait_crop_dropdown])
+
+        interrogate_button.click(unload_component, None, image_preview_pil).then(
+            fn=unload_component,
+            inputs=gr.State([]),
+            outputs=image_generated_tags).then(
+            fn=unload_component,
+            inputs=gr.State(""),
+            outputs=image_generated_tags_prompt_builder_textbox).then(
+            fn=interrogate_images,
+            inputs=[image_mode_choice_state, confidence_threshold_slider, category_filter_dropdown,
+                    category_filter_batch_checkbox],
+            outputs=[image_confidence_values, image_generated_tags, image_preview_pil],
+            show_progress=True).then(
+            fn=prompt_string_builder,
+            inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
+            outputs=[image_generated_tags_prompt_builder_textbox])
+
+        crop_or_resize_radio.change(
+            fn=make_menus_visible,
+            inputs=[crop_or_resize_radio],
+            outputs=[landscape_crop_dropdown, portrait_crop_dropdown])
         model_choice_dropdown.select(fn=load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
         # cpu_only_ckbx.change(fn=re_load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
-        confidence_threshold_slider.change(fn=set_threshold,
-                                       inputs=[confidence_threshold_slider],
-                                       outputs=[image_confidence_values, image_generated_tags]).then(fn=prompt_string_builder,
-                                                                             inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
-                                                                             outputs=[image_generated_tags_prompt_builder_textbox])
-        file_upload_button_single.upload(fn=load_images, inputs=[file_upload_button_single, image_mode_choice_state], outputs=[image_mode_choice_state])
-        file_upload_button_batch.upload(fn=load_images, inputs=[file_upload_button_batch, image_mode_choice_state], outputs=[image_mode_choice_state])
+        confidence_threshold_slider.change(
+            fn=set_threshold,
+            inputs=[confidence_threshold_slider],
+            outputs=[image_confidence_values, image_generated_tags]).then(
+            fn=prompt_string_builder,
+            inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
+            outputs=[image_generated_tags_prompt_builder_textbox])
+
+        file_upload_button_single.upload(
+            fn=load_images,
+            inputs=[file_upload_button_single, image_mode_choice_state],
+            outputs=[image_mode_choice_state]
+        )
+        file_upload_button_batch.upload(
+            fn=load_images,
+            inputs=[file_upload_button_batch, image_mode_choice_state],
+            outputs=[image_mode_choice_state]
+        )
+
         crop_or_resize_radio.change(fn=set_crop_or_resize, inputs=[crop_or_resize_radio], outputs=[])
         landscape_crop_dropdown.select(fn=set_landscape_square_crop, inputs=[landscape_crop_dropdown], outputs=[])
         portrait_crop_dropdown.select(fn=set_portrait_square_crop, inputs=[portrait_crop_dropdown], outputs=[])
         # square_image_edit_slider.change(fn=set_square_size, inputs=[square_image_edit_slider], outputs=[])
         write_tag_opts_dropdown.select(fn=set_write_tag_opts, inputs=[], outputs=[])
-        use_tag_opts_radio.select(fn=set_use_tag_opts_radio, inputs=[], outputs=[]).then(fn=prompt_string_builder,
-                                                                              inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
-                                                                              outputs=[image_generated_tags_prompt_builder_textbox])
-        image_with_tag_path_textbox.change(fn=set_image_with_tag_path_textbox, inputs=[image_with_tag_path_textbox], outputs=[])
+        use_tag_opts_radio.select(
+            fn=set_use_tag_opts_radio,
+            inputs=[],
+            outputs=[]).then(
+            fn=prompt_string_builder,
+            inputs=[use_tag_opts_radio, image_generated_tags, confidence_threshold_slider],
+            outputs=[image_generated_tags_prompt_builder_textbox])
+
+        image_with_tag_path_textbox.change(
+            fn=set_image_with_tag_path_textbox,
+            inputs=[image_with_tag_path_textbox],
+            outputs=[])
+
         copy_mode_ckbx.change(fn=set_copy_mode_ckbx, inputs=[copy_mode_ckbx], outputs=[])
 
         download_remove_tag_file_button.click(help.download_negative_tags_file, None, None)
         tagging_model_download_types.select(fn=make_visible, inputs=[], outputs=[model_download_button])
 
-        release_options_radio.select(fn=get_repo_assets, inputs=[release_options_radio], outputs=[repo_download_button, release_assets_checkbox_group])
-        repo_download_radio.select(fn=get_repo_releases, inputs=[repo_download_radio], outputs=[release_options_radio])
-        repo_download_releases_only.change(fn=reload_release_options, inputs=[repo_download_releases_only],
-                                       outputs=[repo_download_checkbox_group, repo_download_radio, release_options_radio, repo_download_button, release_assets_checkbox_group])
+        release_options_radio.select(
+            fn=get_repo_assets,
+            inputs=[release_options_radio],
+            outputs=[repo_download_button, release_assets_checkbox_group])
 
-        repo_download_button.click(fn=download_repos, inputs=[repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group, repo_download_radio], outputs=[])
+        repo_download_radio.select(
+            fn=get_repo_releases,
+            inputs=[repo_download_radio],
+            outputs=[release_options_radio])
 
-        model_download_types.select(fn=show_model_downloads_options, inputs=[model_download_types],
-                                outputs=[model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group])
+        repo_download_releases_only.change(
+            fn=reload_release_options,
+            inputs=[repo_download_releases_only],
+            outputs=[repo_download_checkbox_group, repo_download_radio, release_options_radio, repo_download_button,
+                     release_assets_checkbox_group])
 
-        model_download_checkbox_group.change(fn=show_nested_fluffyrock_models, inputs=[model_download_checkbox_group],
-                                outputs=[model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group])
+        repo_download_button.click(
+            fn=download_repos,
+            inputs=[repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group,
+                    repo_download_radio],
+            outputs=[])
 
-        model_download_button.click(fn=download_models, inputs=[model_download_types, model_download_checkbox_group, tagging_model_download_types, nested_model_links_checkbox_group],
-                                outputs=[model_download_types, tagging_model_download_types, nested_model_links_checkbox_group])
+        model_download_types.select(
+            fn=show_model_downloads_options,
+            inputs=[model_download_types],
+            outputs=[model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group])
 
-        images_full_change_dict_run_button.click(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_collect]).then(fn=auto_config_apply,
-            inputs=[images_full_change_dict_textbox], outputs=[progress_bar_textbox_collect])
+        model_download_checkbox_group.change(
+            fn=show_nested_fluffyrock_models,
+            inputs=[model_download_checkbox_group],
+            outputs=[model_download_checkbox_group, model_download_button, nested_model_links_checkbox_group])
 
-        remove_now_button.click(fn=remove_from_all, inputs=[remove_tags_list, apply_to_all_type_select_checkboxgroup], outputs=[])
-        replace_now_button.click(fn=replace_from_all, inputs=[replace_tags_list, apply_to_all_type_select_checkboxgroup], outputs=[])
-        prepend_now_button.click(fn=prepend_with_keyword, inputs=[keyword_search_text, prepend_text, prepend_option, apply_to_all_type_select_checkboxgroup], outputs=[])
+        model_download_button.click(
+            fn=download_models,
+            inputs=[model_download_types, model_download_checkbox_group, tagging_model_download_types,
+                    nested_model_links_checkbox_group],
+            outputs=[model_download_types, tagging_model_download_types, nested_model_links_checkbox_group])
 
-        image_remove_button.click(fn=remove_images, inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox, apply_datetime_sort_ckbx,
-                            apply_datetime_choice_menu, multi_select_ckbx_state, only_selected_state_object, images_selected_state],
-                              outputs=[img_artist_tag_checkbox_group,img_character_tag_checkbox_group,
-                                       img_species_tag_checkbox_group,img_general_tag_checkbox_group,
-                                       img_meta_tag_checkbox_group,img_rating_tag_checkbox_group,gallery_comp,
-                                       img_id_textbox, only_selected_state_object, images_selected_state]).then(fn=reset_gallery, inputs=[],
-                              outputs=[gallery_comp]).then(fn=show_searched_gallery, inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
-                              outputs=[gallery_comp])
+        images_full_change_dict_run_button.click(
+            fn=make_run_visible,
+            inputs=[],
+            outputs=[progress_bar_textbox_collect]).then(
+            fn=auto_config_apply,
+            inputs=[images_full_change_dict_textbox],
+            outputs=[progress_bar_textbox_collect])
+
+        remove_now_button.click(
+            fn=remove_from_all,
+            inputs=[remove_tags_list, apply_to_all_type_select_checkboxgroup],
+            outputs=[])
+        replace_now_button.click(
+            fn=replace_from_all,
+            inputs=[replace_tags_list, apply_to_all_type_select_checkboxgroup],
+            outputs=[])
+        prepend_now_button.click(
+            fn=prepend_with_keyword,
+            inputs=[keyword_search_text, prepend_text, prepend_option, apply_to_all_type_select_checkboxgroup],
+            outputs=[])
+
+        image_remove_button.click(
+            fn=remove_images,
+            inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox, apply_datetime_sort_ckbx,
+                    apply_datetime_choice_menu, multi_select_ckbx_state, only_selected_state_object,
+                    images_selected_state],
+            outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
+                     img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group,
+                     gallery_comp, img_id_textbox, only_selected_state_object, images_selected_state]).then(
+            fn=reset_gallery,
+            inputs=[],
+            outputs=[gallery_comp]).then(
+            fn=show_searched_gallery,
+            inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
+            outputs=[gallery_comp])
 
         image_save_ids_button.click(fn=save_image_changes, inputs=[], outputs=[])
 
@@ -3531,63 +3908,135 @@ def build_ui():
             ]
         )
 
-        tag_save_button.click(fn=save_tag_changes,inputs=[], outputs=[]).then(fn=reset_gallery, inputs=[], outputs=[gallery_comp]).then(fn=show_searched_gallery,
-                            inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu], outputs=[gallery_comp]).then(fn=clear_categories, inputs=[],
-                            outputs=[img_artist_tag_checkbox_group,img_character_tag_checkbox_group,img_species_tag_checkbox_group,
-                                     img_general_tag_checkbox_group,img_meta_tag_checkbox_group,img_rating_tag_checkbox_group,img_id_textbox])
+        tag_save_button.click(
+            fn=save_tag_changes,
+            inputs=[],
+            outputs=[]).then(
+            fn=reset_gallery,
+            inputs=[],
+            outputs=[gallery_comp]).then(
+            fn=show_searched_gallery,
+            inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
+            outputs=[gallery_comp]).then(
+            fn=clear_categories,
+            inputs=[],
+            outputs=[img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
+                     img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group,
+                     img_id_textbox])
 
-        select_multiple_images_checkbox.change(fn=set_ckbx_state,
-                                           inputs=[select_multiple_images_checkbox, multi_select_ckbx_state],
-                                           outputs=[multi_select_ckbx_state])
-        download_folder_type.change(fn=show_gallery, inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu], outputs=[gallery_comp]).then(fn=reset_selected_img, inputs=[img_id_textbox],
-                        outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_general_tag_checkbox_group,
-                                img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
+        select_multiple_images_checkbox.change(
+            fn=set_ckbx_state,
+            inputs=[select_multiple_images_checkbox, multi_select_ckbx_state],
+            outputs=[multi_select_ckbx_state])
+
+        download_folder_type.change(
+            fn=show_gallery,
+            inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
+            outputs=[gallery_comp]).then(
+            fn=reset_selected_img,
+            inputs=[img_id_textbox],
+            outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
+                     img_species_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group,
+                     img_rating_tag_checkbox_group])
 
         # there is a networking "delay" bug for the below feature to work (do NOT click on the same image after selected) i.e. click on a different image before going back to that one
-        gallery_comp.select(fn=get_img_tags,
-        inputs=[gallery_comp, select_multiple_images_checkbox, images_selected_state, select_between_images_checkbox, images_tuple_points],
-        outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group,
-                 img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, images_selected_state,
-                 only_selected_state_object, images_tuple_points]).then(None,
-        inputs=[images_selected_state, multi_select_ckbx_state], outputs=None, _js=js_.js_do_everything)
+        gallery_comp.select(
+            fn=get_img_tags,
+            inputs=[gallery_comp, select_multiple_images_checkbox, images_selected_state,
+                    select_between_images_checkbox, images_tuple_points],
+            outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
+                     img_species_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group,
+                     img_rating_tag_checkbox_group, images_selected_state, only_selected_state_object,
+                     images_tuple_points]).then(
+            None,
+            inputs=[images_selected_state, multi_select_ckbx_state],
+            outputs=None,
+            _js=js_.js_do_everything)
 
-        quick_json_select.select(fn=change_config, inputs=[settings_path], outputs=[batch_folder,resized_img_folder,
-                tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,method_tag_files,min_score,min_fav_count,
-                min_year,min_month,min_day,min_area,top_n,min_short_side,collect_checkbox_group_var,
-                download_checkbox_group_var,resize_checkbox_group_var,required_tags_group_var,blacklist_group_var,skip_posts_file,
-                skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
-                apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,downloaded_posts_folder,
-                png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,
-                replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox, settings_path]).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
+        quick_json_select.select(
+            fn=change_config,
+            inputs=[settings_path],
+            outputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,
+                     method_tag_files,min_score,min_fav_count,min_year,min_month,min_day,min_area,top_n,min_short_side,
+                     collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,
+                     required_tags_group_var,blacklist_group_var,skip_posts_file,skip_posts_type,
+                     collect_from_listed_posts_file,collect_from_listed_posts_type,apply_filter_to_listed_posts,
+                     save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,
+                     webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,replace_tags_list,
+                     tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select,proxy_url_textbox,
+                     settings_path]).then(
+            fn=check_to_reload_auto_complete_config,
+            inputs=[],
+            outputs=[])
 
-        config_save_var.click(fn=config_save_button,
-                          inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
-                                  img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
-                                  min_short_side,skip_posts_file,
-                                  skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
-                                  apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
-                                  downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,
-                                  save_filename_type,remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,
-                                  min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path,proxy_url_textbox
-                                  ],
-                          outputs=[all_json_files_checkboxgroup, quick_json_select]
-                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
+        config_save_var.click(
+            fn=config_save_button,
+            inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,
+                    method_tag_files,min_score,min_fav_count,min_area,top_n,min_short_side,skip_posts_file,
+                    skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
+                    apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,
+                    downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type,
+                    remove_tags_list,replace_tags_list,tag_count_list_folder,min_month,min_day,min_year,
+                    collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,
+                    create_new_config_checkbox,settings_path,proxy_url_textbox],
+            outputs=[all_json_files_checkboxgroup, quick_json_select]).then(
+            fn=check_to_reload_auto_complete_config,
+            inputs=[],
+            outputs=[])
 
-        run_button.click(fn=run_script,inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet],
-                     outputs=[]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_collect]).then(fn=data_collect, inputs=[],
-                     outputs=[progress_bar_textbox_collect]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_download]).then(fn=data_download, inputs=[],
-                     outputs=[progress_bar_textbox_download]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_resize]).then(fn=data_resize, inputs=[resize_checkbox_group_var],
-                     outputs=[progress_bar_textbox_resize]).then(fn=end_connection,inputs=[],outputs=[])
+        run_button.click(
+            fn=run_script,
+            inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,
+                    tagsparquet],
+            outputs=[]).then(
+            fn=make_run_visible,
+            inputs=[],
+            outputs=[progress_bar_textbox_collect]).then(
+            fn=data_collect,
+            inputs=[],
+            outputs=[progress_bar_textbox_collect]).then(
+            fn=make_run_visible,
+            inputs=[],
+            outputs=[progress_bar_textbox_download]).then(
+            fn=data_download,
+            inputs=[],
+            outputs=[progress_bar_textbox_download]).then(
+            fn=make_run_visible,
+            inputs=[],
+            outputs=[progress_bar_textbox_resize]).then(
+            fn=data_resize,
+            inputs=[resize_checkbox_group_var],
+            outputs=[progress_bar_textbox_resize]).then(
+            fn=end_connection,
+            inputs=[],
+            outputs=[])
 
-        run_button_batch.click(fn=make_run_visible,inputs=[],outputs=[progress_run_batch]).then(fn=run_script_batch,
-                     inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,all_json_files_checkboxgroup,images_full_change_dict_textbox],
-                     outputs=[progress_run_batch])
+        run_button_batch.click(
+            fn=make_run_visible,
+            inputs=[],
+            outputs=[progress_run_batch]).then(
+            fn=run_script_batch,
+            inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,
+                    tagsparquet,all_json_files_checkboxgroup,images_full_change_dict_textbox],
+            outputs=[progress_run_batch])
 
-        remove_button_required.click(fn=check_box_group_handler_required, inputs=[required_tags_group_var], outputs=[required_tags_group_var])
-        remove_button_blacklist.click(fn=check_box_group_handler_blacklist, inputs=[blacklist_group_var], outputs=[blacklist_group_var])
+        remove_button_required.click(
+            fn=check_box_group_handler_required,
+            inputs=[required_tags_group_var],
+            outputs=[required_tags_group_var])
+        remove_button_blacklist.click(
+            fn=check_box_group_handler_blacklist,
+            inputs=[blacklist_group_var],
+            outputs=[blacklist_group_var])
 
-        parse_button_required.click(fn=parse_file_required, inputs=[file_all_tags_list_required], outputs=[required_tags_group_var])
-        parse_button_blacklist.click(fn=parse_file_blacklist, inputs=[file_all_tags_list_blacklist], outputs=[blacklist_group_var])
+        parse_button_required.click(
+            fn=parse_file_required,
+            inputs=[file_all_tags_list_required],
+            outputs=[required_tags_group_var])
+        parse_button_blacklist.click(
+            fn=parse_file_blacklist,
+            inputs=[file_all_tags_list_blacklist],
+            outputs=[blacklist_group_var])
     return demo
 
 def load_trie():
@@ -3799,4 +4248,3 @@ if __name__ == "__main__":
         server_port=args.server_port,
         share=args.share,
     )
-

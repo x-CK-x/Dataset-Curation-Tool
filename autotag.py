@@ -40,6 +40,8 @@ class AutoTag:
         self.dest_folder = dest_folder
         self.tag_folder = tag_folder
         self.crop_image_size = 448
+        self.filter_in_categories = None
+        self.filter_in_checkbox = None
 
     def set_crop_image_size(self, crop_image_size):
         if '.onnx' in self.model_name:
@@ -164,6 +166,10 @@ class AutoTag:
                 found_tags = [tag for tag in found_tags if (tag[0] in all_tags_ever_dict) and
                               (self.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
 
+                # user selected categories filter (optional)
+                if self.filter_in_checkbox:
+                    found_tags = [tag for tag in found_tags if (self.categories_map[all_tags_ever_dict[tag[0]][0]]) in self.filter_in_categories]
+
                 # set predictions for the UI
                 for element in found_tags:
                     self.combined_tags[element[0]] = [element[1], f"{image_name}.{image_ext}"]  # tag -> [probability, name w/ extension]
@@ -255,8 +261,11 @@ class AutoTag:
             self.global_image_predictions_predictions = [copy.deepcopy(self.combined_tags)] # only keeps most recent prediction
             del self.combined_tags
 
-    def interrogate(self, single_image, all_tags_ever_dict):
+    def interrogate(self, single_image, all_tags_ever_dict, filter_in_categories, filter_in_checkbox):
         data = None
+
+        self.filter_in_categories = filter_in_categories
+        self.filter_in_checkbox = filter_in_checkbox
 
         if self.global_image_predictions_predictions is not None:
             del self.global_image_predictions_predictions
