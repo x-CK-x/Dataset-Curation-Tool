@@ -2891,12 +2891,6 @@ def update_generated_tag_selection(tag_effects_dropdown: gr.SelectData, image_ge
             selected_tags = [tag for tag in available_tags if not tag in image_generated_tags]
             return gr.update(choices=available_tags, value=selected_tags)
 
-
-
-
-
-
-
 def update_generated_gallery_tag_selection(tag_effects_dropdown: gr.SelectData, category_filter_dropdown, img_name,
            artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup,
            general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup):
@@ -2967,6 +2961,8 @@ def send_images_from_feature(new_feature, data, no_update_index, image_id, is_ba
     if image_id is not None and len(image_id) > 0:
         image_id = str(image_id)
 
+    # help.verbose_print(f"new_feature:\t{new_feature}")
+
     if data is None:
         # help.verbose_print(f"NONE!!!")
         file_upload_button_single = gr.update()
@@ -3034,13 +3030,25 @@ def send_images_from_feature(new_feature, data, no_update_index, image_id, is_ba
             return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
                    image_editor_color_sketch, gallery_images_batch
 
-    # get image id path and set data equal to it
-    temp_data = None
-    for image_data in data:
-        if image_id in image_data["name"]:
-            temp_data = image_data["name"]
-            break
-    data = temp_data
+    help.verbose_print(f"data:\t{data}")
+    if isinstance(data, list):
+        # get image id path and set data equal to it
+        temp_data = None
+        for image_data in data:
+            help.verbose_print(f"image_data:\t{image_data}")
+            if image_id in image_data["name"]:
+                help.verbose_print(f"image_id:\t{image_id}")
+                help.verbose_print(f"image_data['name']:\t{image_data['name']}")
+                temp_data = image_data["name"]
+                break
+        data = temp_data
+    elif isinstance(data, str):
+        data = data
+    elif isinstance(data, dict):
+        data = data["image"]
+    else:
+        print(f"type:\t{type(data)}")
+        data = data.name
 
     tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor",
                      "Image Color Sketch Editor"]
@@ -3053,6 +3061,7 @@ def send_images_from_feature(new_feature, data, no_update_index, image_id, is_ba
 
     if new_feature is None or len(new_feature) == 0:
         help.verbose_print(f"updates:\t{updates}")
+        help.verbose_print(f"new_feature:\t{new_feature}")
         file_upload_button_single = gr.update(value=updates[0]) if updates[0][0] else gr.update()
         image_editor = gr.update(value=updates[1]) if updates[1][0] else gr.update()
         image_editor_crop = gr.update(value=updates[2]) if updates[2][0] else gr.update()
@@ -3062,22 +3071,19 @@ def send_images_from_feature(new_feature, data, no_update_index, image_id, is_ba
         return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
                image_editor_color_sketch, gallery_images_batch
 
-    if new_feature == tab_selection[0]: # auto tag
-        updates[0] = data # new state
-        # help.verbose_print(f"0000000000000000000000updates:\t{updates}")
-    elif new_feature == tab_selection[1]: # default editor
-        updates[1] = data # new state
-        # help.verbose_print(f"11111111111111111111111updates:\t{updates}")
-    elif new_feature == tab_selection[2]: # crop
-        updates[2] = data # new state
-        # help.verbose_print(f"22222222222222222222222updates:\t{updates}")
-    elif new_feature == tab_selection[3]: # sketch
-        updates[3] = data # new state
-        # help.verbose_print(f"3333333333333333333updates:\t{updates}")
-    else: # color
-        updates[4] = data # new state
-        # help.verbose_print(f"44444444444444444444updates:\t{updates}")
+    # 0: auto tag
+    # 1: default editor
+    # 2: crop
+    # 3: sketch
+    # 4: color
+    for i, tab_opt in enumerate(tab_selection):
+        if new_feature in tab_opt:
+            updates[i] = data
+            break
 
+    help.verbose_print(f"updates:\t{updates}")
+    help.verbose_print(f"new_feature:\t{new_feature}")
+    help.verbose_print(f"data:\t{data}")
     file_upload_button_single = gr.update(value=updates[0]) if updates[0][0] is not None else gr.update()
     image_editor = gr.update(value=updates[1]) if updates[1][0] is not None else gr.update()
     image_editor_crop = gr.update(value=updates[2]) if updates[2][0] is not None else gr.update()
@@ -3574,6 +3580,10 @@ def build_ui():
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
             outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
                      image_editor_color_sketch, gallery_images_batch]
+        ).then(
+            fn=load_images,
+            inputs=[file_upload_button_single, image_mode_choice_state],
+            outputs=[image_mode_choice_state]
         )
         send_img_from_default_editor_button.click(
             fn=send_images_from_feature,
@@ -3581,6 +3591,10 @@ def build_ui():
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
             outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
                      image_editor_color_sketch, gallery_images_batch]
+        ).then(
+            fn=load_images,
+            inputs=[file_upload_button_single, image_mode_choice_state],
+            outputs=[image_mode_choice_state]
         )
         send_img_from_crop_editor_button.click(
             fn=send_images_from_feature,
@@ -3588,6 +3602,10 @@ def build_ui():
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
             outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
                      image_editor_color_sketch, gallery_images_batch]
+        ).then(
+            fn=load_images,
+            inputs=[file_upload_button_single, image_mode_choice_state],
+            outputs=[image_mode_choice_state]
         )
         send_img_from_sketch_editor_button.click(
             fn=send_images_from_feature,
@@ -3595,6 +3613,10 @@ def build_ui():
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
             outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
                      image_editor_color_sketch, gallery_images_batch]
+        ).then(
+            fn=load_images,
+            inputs=[file_upload_button_single, image_mode_choice_state],
+            outputs=[image_mode_choice_state]
         )
         send_img_from_color_editor_button.click(
             fn=send_images_from_feature,
@@ -3602,6 +3624,10 @@ def build_ui():
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
             outputs=[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch,
                      image_editor_color_sketch, gallery_images_batch]
+        ).then(
+            fn=load_images,
+            inputs=[file_upload_button_single, image_mode_choice_state],
+            outputs=[image_mode_choice_state]
         )
 
         tag_effects_gallery_dropdown.select(

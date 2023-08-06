@@ -42,6 +42,7 @@ class AutoTag:
         self.crop_image_size = 448
         self.filter_in_categories = None
         self.filter_in_checkbox = None
+        self.image_paths = None
 
     def set_crop_image_size(self, crop_image_size):
         if '.onnx' in self.model_name:
@@ -61,6 +62,15 @@ class AutoTag:
 
     def get_dataset(self):
         return self.dataset
+
+    def get_model_name(self):
+        return self.model_name
+
+    def get_model_dir(self):
+        return self.model_dir
+
+    def get_image_paths(self):
+        return self.image_paths
 
     def set_threshold(self, thresh):
         self.thresh = thresh
