@@ -3108,433 +3108,80 @@ def load_images_handler(single_path, multiple_paths, image_mode_choice_state, is
 '''
 
 def build_ui():
+    from download_tab import Download_tab
+    from gallery_tab import Gallery_tab
+    from stats_tab import Stats_tab
+    from extras_tab import Extras_tab
+    from custom_dataset_tab import Custom_dataset_tab
+    from image_editor_tab import Image_editor_tab
+    from advanced_settings_tab import Advanced_settings_tab
+
+    global settings_json
     with gr.Blocks(css=f"{css_.preview_hide_rule} {css_.refresh_aspect_btn_rule} {css_.trim_row_length} {css_.trim_markdown_length} "
                        f"{css_.thumbnail_colored_border_css} {css_.refresh_models_btn_rule}"
                        f"{css_.green_button_css} {css_.red_button_css}") as demo:# {css_.gallery_fix_height}
-        with gr.Tab("Downloading Image/s"):
-            config_save_var = gr.Button(value="Apply & Save Settings", variant='primary')
-            with gr.Accordion("Edit Requirements for General Download INFO", visible=True, open=True):
-                gr.Markdown(md_.general_config)
-                with gr.Row():
-                    with gr.Column(min_width=50, scale=2):
-                        batch_folder = gr.Textbox(lines=1, label='Path to Batch Directory', value=settings_json["batch_folder"])
-                    with gr.Column(min_width=50, scale=2):
-                        resized_img_folder = gr.Textbox(lines=1, label='Path to Resized Images', value=settings_json["resized_img_folder"])
-                    with gr.Column(min_width=50, scale=2):
-                        custom_csv_path_textbox = gr.Textbox(lines=1, label='Path to Custom CSV',
-                                                            value=settings_json["csv_custom_path"]
-                                                            if "csv_custom_path" in settings_json else "")
-                    with gr.Column(min_width=50, scale=1):
-                        use_csv_custom_checkbox = gr.Checkbox(label='Use Custom CSV (Applies at start)',
-                                                              value=bool(settings_json["use_csv_custom"])
-                                                              if "use_csv_custom" in settings_json else False)
-                with gr.Row():
-                    with gr.Column(min_width=50, scale=1):
-                        proxy_value = ""
-                        if not "proxy_url" in settings_json:
-                            settings_json["proxy_url"] = proxy_value
-                        proxy_url_textbox = gr.Textbox(lines=1, label='(Optional Proxy URL)', value=settings_json["proxy_url"])
-                    with gr.Column(min_width=50, scale=1):
-                        tag_sep = gr.Textbox(lines=1, label='Tag Separator/Delimeter', value=settings_json["tag_sep"])
-                    with gr.Column(min_width=50, scale=2):
-                        tag_order_format = gr.Textbox(lines=1, label='Tag ORDER', value=settings_json["tag_order_format"])
-                    with gr.Column(min_width=50, scale=2):
-                        prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=settings_json["prepend_tags"])
-                    with gr.Column(min_width=50, scale=2):
-                        append_tags = gr.Textbox(lines=1, label='Append Tags', value=settings_json["append_tags"])
-                with gr.Row():
-                    with gr.Column():
-                        img_ext = gr.Dropdown(choices=img_extensions, label='Image Extension', value=settings_json["img_ext"])
-                    with gr.Column():
-                        method_tag_files = gr.Radio(choices=method_tag_files_opts, label='Resized Img Tag Handler', value=settings_json["method_tag_files"])
-                    with gr.Column():
-                        settings_path = gr.Textbox(lines=1, label='Path/Name to \"NEW\" JSON (REQUIRED)', value=config_name)
-                    create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
-                    temp = '\\' if help.is_windows() else '/'
-                    quick_json_select = gr.Dropdown(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), label='JSON Select',
-                                          value=config_name, interactive=True)
-            with gr.Accordion("Edit Requirements for Image Stat/s", visible=True, open=False):
-                gr.Markdown(md_.stats_config)
-                with gr.Row():
-                    min_score = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Min Score', value=settings_json["min_score"])
-                with gr.Row():
-                    min_fav_count = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Min Fav Count', value=settings_json["min_fav_count"])
-                with gr.Row():
-                    with gr.Column():
-                        min_year = gr.Slider(minimum=2000, maximum=2050, step=1, label='Filter: Min Year', value=int(settings_json["min_year"]))
-                        min_month = gr.Slider(minimum=1, maximum=12, step=1, label='Filter: Min Month',
-                                         value=int(settings_json["min_month"]))
-                        min_day = gr.Slider(minimum=1, maximum=31, step=1, label='Filter: Min Day',
-                                         value=int(settings_json["min_day"]))
-                with gr.Row():
-                    min_area = gr.Slider(minimum=1, maximum=1000000, step=1, label='Filter: Min Area', value=settings_json["min_area"], info='ONLY images with LxW > this value will be downloaded')
-                with gr.Row():
-                    top_n = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Top N', value=settings_json["top_n"], info='ONLY the top N images will be downloaded')
-                with gr.Row():
-                    min_short_side = gr.Slider(minimum=1, maximum=100000, step=1, label='Resize Param: Min Short Side', value=settings_json["min_short_side"], info='ANY image\'s length or width that falls (ABOVE) this number will be resized')
-            with gr.Accordion("Edit Requirements for Image Collection & Downloading Pre/Post-Processing", visible=True, open=False):
-                with gr.Row():
-                    with gr.Column():
-                        gr.Markdown(md_.collect)
-                        collect_checkbox_group_var = gr.CheckboxGroup(choices=collect_checkboxes, label='Collect Checkboxes', value=help.grab_pre_selected(settings_json, collect_checkboxes))
-                    with gr.Column():
-                        gr.Markdown(md_.download)
-                        download_checkbox_group_var = gr.CheckboxGroup(choices=download_checkboxes, label='Download Checkboxes', value=help.grab_pre_selected(settings_json, download_checkboxes))
-                    with gr.Column():
-                        gr.Markdown(md_.resize)
-                        resize_checkbox_group_var = gr.CheckboxGroup(choices=resize_checkboxes, label='Resize Checkboxes', value=help.grab_pre_selected(settings_json, resize_checkboxes))
-            with gr.Accordion("Edit Requirements for Required Tags", visible=True, open=False):
-                with gr.Row():
-                    with gr.Column():
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=3):
-                                required_tags_textbox = gr.Textbox(lines=1, label='Press Enter/Space to ADD tag/s', value="")
-                            with gr.Column(min_width=50, scale=2):
-                                tag_required_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, elem_id="required_dropdown")
-                        required_tags_group_var = gr.CheckboxGroup(choices=required_tags_list, label='ALL Required Tags',
-                                                                   value=[])
-                    with gr.Column():
-                        file_all_tags_list_required = gr.File(file_count="multiple", file_types=["file"], label="Select ALL files with Tags to be parsed and Added")
-                with gr.Row():
-                    remove_button_required = gr.Button(value="Remove Checked Tags", variant='secondary')
-                    parse_button_required = gr.Button(value="Parse/Add Tags", variant='secondary')
-            with gr.Accordion("Edit Requirements for Blacklist Tags", visible=True, open=False):
-                with gr.Row():
-                    with gr.Column():
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=3):
-                                blacklist_tags_textbox = gr.Textbox(lines=1, label='Press Enter/Space to ADD tag/s', value="")
-                            with gr.Column(min_width=50, scale=2):
-                                tag_blacklist_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, elem_id="blacklist_dropdown")
-                        blacklist_group_var = gr.CheckboxGroup(choices=blacklist_tags, label='ALL Blacklisted Tags',
-                                                               value=[])
-                    with gr.Column():
-                        file_all_tags_list_blacklist = gr.File(file_count="multiple", file_types=["file"], label="Select ALL files with Tags to be parsed and Added")
-                with gr.Row():
-                    remove_button_blacklist = gr.Button(value="Remove Checked Tags", variant='secondary')
-                    parse_button_blacklist = gr.Button(value="Parse/Add Tags", variant='secondary')
-            with gr.Accordion("Edit Requirements for Advanced Configuration", visible=True, open=False):
-                gr.Markdown(md_.add_comps_config)
-                with gr.Row():
-                    with gr.Column():
-                        skip_posts_file = gr.Textbox(lines=1, label='Path to file w/ multiple id/md5 to skip',
-                                                 value=settings_json["skip_posts_file"])
-                        skip_posts_type = gr.Radio(choices=["id","md5"], label='id/md5 skip', value=settings_json["skip_posts_type"])
-                    with gr.Column():
-                        save_searched_list_path = gr.Textbox(lines=1, label='id/md5 list to file path', value=settings_json["save_searched_list_path"])
-                        save_searched_list_type = gr.Radio(choices=["id", "md5", "None"], label='Save id/md5 list to file', value=settings_json["save_searched_list_type"])
-                with gr.Row():
-                    with gr.Column():
-                        apply_filter_to_listed_posts = gr.Checkbox(label='Apply Filters to Collected Posts',
-                                                       value=settings_json["apply_filter_to_listed_posts"])
-                        collect_from_listed_posts_type = gr.Radio(choices=["id", "md5"], label='id/md5 collect',
-                                                              value=settings_json["collect_from_listed_posts_type"])
-                        collect_from_listed_posts_file = gr.Textbox(lines=1, label='Path to file w/ multiple id/md5 to collect',
-                                                                value=settings_json["collect_from_listed_posts_file"])
-                with gr.Row():
-                    downloaded_posts_folder = gr.Textbox(lines=1, label='Path for downloaded posts',
-                                                     value=settings_json["downloaded_posts_folder"])
-                    png_folder = gr.Textbox(lines=1, label='Path for png data', value=settings_json["png_folder"])
-                    jpg_folder = gr.Textbox(lines=1, label='Path for jpg data', value=settings_json["jpg_folder"])
-                    webm_folder = gr.Textbox(lines=1, label='Path for webm data', value=settings_json["webm_folder"])
-                    gif_folder = gr.Textbox(lines=1, label='Path for gif data', value=settings_json["gif_folder"])
-                    swf_folder = gr.Textbox(lines=1, label='Path for swf data', value=settings_json["swf_folder"])
-                with gr.Row():
-                    download_remove_tag_file_button = gr.Button(value="(Optional) Download Negative Tags File", variant='secondary')
-                with gr.Row():
-                    reference_model_tags_file = gr.Textbox(lines=1, label='Path to model tags file')
-                    gen_tags_list_button = gr.Button(value="Generate Tag/s List", variant='secondary')
-                    gen_tags_diff_list_button = gr.Button(value="Generate Tag/s Diff List", variant='secondary')
-                with gr.Row():
-                    save_filename_type = gr.Radio(choices=["id","md5"], label='Select Filename Type', value=settings_json["save_filename_type"])
-                    remove_tags_list = gr.Textbox(lines=1, label='Path to remove tags file', value=settings_json["remove_tags_list"])
-                    replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value=settings_json["replace_tags_list"])
-                    tag_count_list_folder = gr.Textbox(lines=1, label='Path to tag count file', value=settings_json["tag_count_list_folder"])
-                with gr.Row():
-                    remove_now_button = gr.Button(value="Remove Now", variant='primary')
-                    replace_now_button = gr.Button(value="Replace Now", variant='primary')
-                with gr.Row():
-                    keyword_search_text = gr.Textbox(lines=1, label='Keyword/Tag to Search (Optional)')
-                    prepend_text = gr.Textbox(lines=1, label='Text to Prepend')
-                    prepend_option = gr.Radio(choices=["Start", "End"], label='Prepend/Append Text To:', value="Start")
-                with gr.Row():
-                    prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
-            with gr.Accordion("Edit Requirements for Run Configuration", visible=True, open=False):
-                gr.Markdown(md_.run)
-                with gr.Row():
-                    with gr.Column():
-                        basefolder = gr.Textbox(lines=1, label='Root Output Dir Path', value=cwd)
-                        numcpu = gr.Slider(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads', value=int(mp.cpu_count()/2))
-                with gr.Row():
-                    with gr.Column():
-                       phaseperbatch = gr.Checkbox(label='Completes all phases per batch', value=True)
-                    with gr.Column():
-                       keepdb = gr.Checkbox(label='Keep e6 db data', value=False)
-                    with gr.Column():
-                        cachepostsdb = gr.Checkbox(label='cache e6 posts file when multiple batches', value=False)
-                with gr.Row():
-                    postscsv = gr.Textbox(lines=1, label='Path to e6 posts csv', value="")
-                    tagscsv = gr.Textbox(lines=1, label='Path to e6 tags csv', value="")
-                    postsparquet = gr.Textbox(lines=1, label='Path to e6 posts parquet', value="")
-                    tagsparquet = gr.Textbox(lines=1, label='Path to e6 tags parquet', value="")
-                with gr.Row():
-                    images_full_change_dict_textbox = gr.Textbox(lines=1, label='Path to Image Full Change Log JSON (Optional)',
-                                                             value=os.path.join(auto_config_path, f"auto_complete_{settings_json['batch_folder']}.json"))
-                    images_full_change_dict_run_button = gr.Button(value="(POST-PROCESSING only) Apply Auto-Config Update Changes", variant='secondary')
 
-            with gr.Row():
-                run_button = gr.Button(value="Run", variant='primary')
-            with gr.Row():
-                progress_bar_textbox_collect = gr.Textbox(interactive=False, visible=False)
-            with gr.Row():
-                progress_bar_textbox_download = gr.Textbox(interactive=False, visible=False)
-            with gr.Row():
-                progress_bar_textbox_resize = gr.Textbox(interactive=False, visible=False)
-            with gr.Accordion("Batch Run", visible=True, open=False):
-                with gr.Row():
-                    temp = '\\' if help.is_windows() else '/'
-                    all_json_files_checkboxgroup = gr.CheckboxGroup(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]),
-                                                                label='Select to Run', value=[])
-                with gr.Row():
-                    run_button_batch = gr.Button(value="Batch Run", variant='primary')
-                with gr.Row():
-                    progress_run_batch = gr.Textbox(interactive=False, visible=False)
+        config_save_var, batch_folder, resized_img_folder, custom_csv_path_textbox, use_csv_custom_checkbox,\
+        proxy_url_textbox, tag_sep, tag_order_format, prepend_tags, append_tags, img_ext, method_tag_files,\
+        settings_path, create_new_config_checkbox, quick_json_select, min_score, min_fav_count, min_year,\
+        min_month, min_day, min_area, top_n, min_short_side, collect_checkbox_group_var,\
+        download_checkbox_group_var, resize_checkbox_group_var, required_tags_textbox,\
+        tag_required_suggestion_dropdown, required_tags_group_var, file_all_tags_list_required,\
+        remove_button_required, parse_button_required, blacklist_tags_textbox,\
+        tag_blacklist_suggestion_dropdown, blacklist_group_var, file_all_tags_list_blacklist,\
+        remove_button_blacklist, parse_button_blacklist, skip_posts_file, skip_posts_type,\
+        save_searched_list_path, save_searched_list_type, apply_filter_to_listed_posts,\
+        collect_from_listed_posts_type, collect_from_listed_posts_file, downloaded_posts_folder, png_folder,\
+        jpg_folder, webm_folder, gif_folder, swf_folder, download_remove_tag_file_button,\
+        reference_model_tags_file, gen_tags_list_button, gen_tags_diff_list_button, save_filename_type,\
+        remove_tags_list, replace_tags_list, tag_count_list_folder, remove_now_button, replace_now_button,\
+        keyword_search_text, prepend_text, prepend_option, prepend_now_button, basefolder, numcpu,\
+        phaseperbatch, keepdb, cachepostsdb, postscsv, tagscsv, postsparquet, tagsparquet,\
+        images_full_change_dict_textbox, images_full_change_dict_run_button, run_button,\
+        progress_bar_textbox_collect, progress_bar_textbox_download, progress_bar_textbox_resize,\
+        all_json_files_checkboxgroup, run_button_batch, progress_run_batch = \
+            Download_tab(settings_json, cwd, categories_map, img_extensions, method_tag_files_opts, collect_checkboxes,
+                 download_checkboxes, resize_checkboxes, file_extn_list, config_name, required_tags_list,
+                 blacklist_tags, auto_config_path).get_tab()
 
-        with gr.Tab("Tag Editor & Image Gallery"):
-            tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
-            tag_selection_list = ["(Category) Select Any", "(Category) Clear Any", "(Category) Invert Any",
-                                  "Select All", "Clear All", "Invert All"]
-            
-            gr.Markdown(md_.preview)
-            with gr.Row():
-                with gr.Column():
-                    with gr.Row():
-                        with gr.Column(elem_id="trim_row_length"):
-                            gr.Markdown("""Reload Gallery""", elem_id="trim_markdown_length")
-                            refresh_symbol = '\U0001f504'  # 🔄
-                            refresh_aspect_btn = gr.Button(value=refresh_symbol, variant="variant", elem_id="refresh_aspect_btn")
-                        download_folder_type = gr.Radio(choices=file_extn_list, label='Select Filename Type')
-                        img_id_textbox = gr.Textbox(label="Image ID", interactive=False, lines=1, value="")
-                    with gr.Accordion("Image Sort & Selection Options"):
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=3):
-                                tag_search_textbox = gr.Textbox(label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)", lines=1, value="")
-                            with gr.Column(min_width=50, scale=2):
-                                tag_search_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True, choices=[], interactive=True, elem_id="searchbar_dropdown")
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=3):
-                                apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
-                            with gr.Column(min_width=50, scale=1):
-                                select_multiple_images_checkbox = gr.Checkbox(label="Multi-Select", value=False, info="Click Image/s")
-                            with gr.Column(min_width=50, scale=1):
-                                select_between_images_checkbox = gr.Checkbox(label="Shift-Select", value=False, info="Selects All Between Two Images")
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=1):
-                                apply_datetime_sort_ckbx = gr.Checkbox(label="Sort", value=False, info="Image/s by date")
-                            with gr.Column(min_width=50, scale=4):
-                                apply_datetime_choice_menu = gr.Dropdown(label="Sort Order", choices=["new-to-old", "old-to-new"], value="", info="Image/s by date")
-                        with gr.Row():
-                            image_remove_button = gr.Button(value="Remove Selected Image/s", variant='primary')
-                            image_save_ids_button = gr.Button(value="Save Image Changes", variant='primary')
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=2):
-                                send_img_from_gallery_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
-                            with gr.Column(min_width=50, scale=1):
-                                batch_send_from_gallery_checkbox = gr.Checkbox(label="Send as Batch")
-                            with gr.Column(min_width=50, scale=3):
-                                send_img_from_gallery_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
+        refresh_aspect_btn, download_folder_type, img_id_textbox, tag_search_textbox,\
+        tag_search_suggestion_dropdown, apply_to_all_type_select_checkboxgroup,\
+        select_multiple_images_checkbox, select_between_images_checkbox, apply_datetime_sort_ckbx,\
+        apply_datetime_choice_menu, image_remove_button, image_save_ids_button, send_img_from_gallery_dropdown,\
+        batch_send_from_gallery_checkbox, send_img_from_gallery_button, tag_remove_button, tag_save_button,\
+        tag_add_textbox, tag_add_suggestion_dropdown, category_filter_gallery_dropdown,\
+        tag_effects_gallery_dropdown, img_artist_tag_checkbox_group, img_character_tag_checkbox_group,\
+        img_species_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group,\
+        img_rating_tag_checkbox_group, gallery_comp = \
+            Gallery_tab(file_extn_list, categories_map).get_tab()
 
-                    with gr.Accordion("Tag Edit & Selection Options"):
-                        with gr.Row():
-                            tag_remove_button = gr.Button(value="Remove Selected Tag/s", variant='primary')
-                            tag_save_button = gr.Button(value="Save Tag Changes", variant='primary')
-                        with gr.Row():
-                            tag_add_textbox = gr.Textbox(label="Enter Tag/s here", lines=1, value="", info="Press Enter/Space to ADD tag/s")
-                            tag_add_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True, choices=[], interactive=True, elem_id="add_tag_dropdown")
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=3):
-                                category_filter_gallery_dropdown = gr.Dropdown(label="Filter by Category (Multi-Select Enabled)", choices=list(categories_map.values()), multiselect=True)
-                            with gr.Column(min_width=50, scale=1):
-                                tag_effects_gallery_dropdown = gr.Dropdown(label="Tag Selector Effect/s", choices=tag_selection_list)
+        stats_run_options, stats_load_file, stats_run_button, stats_selected_data = Stats_tab().get_tab()
 
-                        img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[])
-                        img_character_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Character Tag/s', value=[])
-                        img_species_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Species Tag/s', value=[])
-                        img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
-                        img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
-                        img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
-                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", columns=3, object_fit="contain", height=1032)
-        with gr.Tab("Data Stats"):
-            with gr.Row():
-                stats_run_options = gr.Dropdown(label="Run Method", choices=["frequency table", "inverse freq table"])
-                stats_load_file = gr.Dropdown(label="Meta Tag Category", choices=["tags", "artist", "character", "species", "general", "meta", "rating"])
-                stats_run_button = gr.Button(value="Run Stats", variant='primary')
-            with gr.Row():
-                stats_selected_data = gr.Dataframe(interactive=False, label="Dataframe Table", visible=False,
-                                               headers=["Tag Category", "Count"], datatype=["str", "number"], max_cols=2,
-                                               type="array")
-        with gr.Tab("Download Extra/s: Model/s & Code Repos"):
-            gr.Markdown(md_.extra)
-            with gr.Column():
-                repo_download_options = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "AUTO1111 WEBUI", "InvokeAI", "ComfyUI", "comfy-plasma"]
+        repo_download_releases_only, repo_download_checkbox_group, repo_download_radio, release_options_radio,\
+        release_assets_checkbox_group, repo_download_button, model_download_types,\
+        tagging_model_download_types, model_download_checkbox_group, nested_model_links_checkbox_group,\
+        model_download_button = \
+            Extras_tab().get_tab()
 
-                repo_download_releases_only = gr.Checkbox(label='Download ONLY Releases', value=False)
-                repo_download_checkbox_group = gr.CheckboxGroup(choices=repo_download_options, label='Repository Downloads', value=[])
-                repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI", "AUTO1111 WEBUI"]
-                repo_download_radio = gr.Radio(choices=repo_download_options_no_auto1111, label='Repository Downloads', visible=False)
-                release_options_radio = gr.Radio(choices=[], label='Repository Downloads by Release', visible=False)
-                release_assets_checkbox_group = gr.CheckboxGroup(choices=[], label='Repository Release Downloads', value=[], visible=False)
-                repo_download_button = gr.Button(value="Download Repo/s", variant='primary')
-            with gr.Column():
-                model_download_options = ["Fluffusion", "FluffyRock"]
-                tagging_model_download_options = ["Zack3D AutoTagging Model"]
+        global auto_tag_models
+        file_upload_button_single, file_upload_button_batch, gallery_images_batch, image_preview_pil,\
+        send_img_from_autotag_dropdown, send_img_from_autotag_button, cpu_only_ckbx, refresh_models_btn,\
+        model_choice_dropdown, crop_or_resize_radio, landscape_crop_dropdown, portrait_crop_dropdown,\
+        confidence_threshold_slider, interrogate_button, image_with_tag_path_textbox, copy_mode_ckbx,\
+        save_custom_images_button, save_custom_tags_button, write_tag_opts_dropdown, use_tag_opts_radio,\
+        image_generated_tags_prompt_builder_textbox, image_generated_tags, tag_effects_dropdown,\
+        category_filter_batch_checkbox, category_filter_dropdown, image_confidence_values, video_input,\
+        video_input_button, video_clear_button, video_output_dir, convert_video_button, video_frames_gallery,\
+        auto_tag_models = \
+            Custom_dataset_tab(categories_map, copy.deepcopy(auto_tag_models)).get_tab()
 
-                model_download_types = gr.Dropdown(choices=model_download_options, label='Diffusion Model Selection')
-                tagging_model_download_types = gr.Dropdown(choices=tagging_model_download_options, label='AutoTagging Model Selection')
-                model_download_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Code Repositories to Download', value=[], visible=False)
-                nested_model_links_checkbox_group = gr.CheckboxGroup(choices=[], label='Specific Model Versions', value=[],
-                                                                 visible=False)
-                model_download_button = gr.Button(value="Download Model/s", variant='primary', visible=False)
-        with gr.Tab("Add Custom Dataset"):
-            gr.Markdown(md_.custom)
-            image_modes = ['Single', 'Batch']
-            if not "Z3D-E621-Convnext" in auto_tag_models and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
-                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
-                auto_tag_models.append('Z3D-E621-Convnext')
-            if not "Fluffusion-AutoTag" in auto_tag_models and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
-                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
-                auto_tag_models.append('Fluffusion-AutoTag')
+        image_editor, send_img_from_default_editor_dropdown, send_img_from_default_editor_button,\
+        image_editor_crop, send_img_from_crop_editor_dropdown, send_img_from_crop_editor_button,\
+        image_editor_sketch, send_img_from_sketch_editor_dropdown, send_img_from_sketch_editor_button,\
+        image_editor_color_sketch, send_img_from_color_editor_dropdown, send_img_from_color_editor_button = \
+            Image_editor_tab().get_tab()
 
-            write_tag_opts = ['Overwrite', 'Merge', 'Pre-pend', 'Append']
-            use_tag_opts = ['Use All', 'Use All above Threshold', 'Manually Select']
-            tag_selection_list = ["(Category) Select Any", "(Category) Clear Any", "(Category) Invert Any", "Select All", "Clear All", "Invert All"]
-            tab_selection = ["Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
-            with gr.Row():
-                with gr.Column():
-                    with gr.Accordion(label="Image Settings", visible=True, open=True):
-                        with gr.Row():
-                            with gr.Tab("Single"):
-                                file_upload_button_single = gr.File(label=f"{image_modes[0]} Image Mode", file_count="single",
-                                                                interactive=True, file_types=["image"], visible=True, type="file")
-                            with gr.Tab("Batch"):
-                                file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode", file_count="directory",
-                                                               interactive=True, visible=True, type="file")
-                            with gr.Tab("Non-Interact Batch"):
-                                gallery_images_batch = gr.File(label=f"(Non-Interact) {image_modes[1]} Image Mode", file_count="multiple",
-                                                               interactive=False, visible=True, type="file")
-                            with gr.Tab("Image Preview"):
-                                with gr.Column():
-                                    image_preview_pil = gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=840)
-
-                        send_img_from_autotag_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
-                        send_img_from_autotag_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
-
-                    with gr.Accordion(label="Model Settings", visible=True, open=True):
-                        with gr.Row():
-                            with gr.Column(elem_id="trim_row_length"):
-                                cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True)
-                            with gr.Column(elem_id="trim_row_length"):
-                                gr.Markdown("""Refresh""", elem_id="trim_markdown_length")
-                                refresh_symbol = '\U0001f504'  # 🔄
-                                refresh_models_btn = gr.Button(value=refresh_symbol, variant="variant", elem_id="refresh_models_btn")
-                            model_choice_dropdown = gr.Dropdown(choices=auto_tag_models, label="Model Selection")
-                            crop_or_resize_radio = gr.Radio(label="Preprocess Options", choices=['Crop','Resize'], value='Resize')
-                        with gr.Row():
-                            landscape_crop_dropdown = gr.Dropdown(choices=['left', 'mid', 'right'], label="Landscape Crop", info="Mandatory", visible=False)
-                            portrait_crop_dropdown = gr.Dropdown(choices=['top', 'mid', 'bottom'], label="Portrait Crop", info="Mandatory", visible=False)
-                        # with gr.Row():
-                        #     square_image_edit_slider = gr.Slider(minimum=0, maximum=3000, step=1, label='Crop/Resize Square Image Size', info='Length or Width', value=448, visible=True, interactive=True)
-                        with gr.Row():
-                            confidence_threshold_slider = gr.Slider(minimum=0, maximum=100, step=1, label='Confidence Threshold', value=75, visible=True, interactive=True)
-                        with gr.Row():
-                            interrogate_button = gr.Button(value="Interrogate", variant='primary')
-                        with gr.Row():
-                            image_with_tag_path_textbox = gr.Textbox(label="Path to Image/Video Folder", info="Folder should contain both (tag/s & image/s) if no video", interactive=True)
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=1):
-                                copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
-                            with gr.Column(min_width=50, scale=2):
-                                save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
-                            with gr.Column(min_width=50, scale=2):
-                                save_custom_tags_button = gr.Button(value="Save/Add Tags", variant='primary')
-                        with gr.Row():
-                            write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
-                            use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
-                    with gr.Accordion(label="Tag/s Options", visible=True, open=True):
-                        image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="",
-                                                                                 visible=True, interactive=False)
-                        image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True,
-                                                                interactive=True)
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=3):
-                                tag_effects_dropdown = gr.Dropdown(label="Tag Selector Effect/s", choices=tag_selection_list)
-                            with gr.Column(min_width=50, scale=1):
-                                category_filter_batch_checkbox = gr.Checkbox(label="Enable Filter on Batch Mode")
-                        with gr.Row():
-                            category_filter_dropdown = gr.Dropdown(label="Filter by Category (Multi-Select Enabled)", choices=list(categories_map.values()), multiselect=True)
-                with gr.Column():
-                    with gr.Tab("Tag/s Preview"):
-                        with gr.Accordion(label="Tag/s Probabilities", visible=True, open=True):
-                            with gr.Column():
-                                image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
-                        #         gr.Accordion(label="SAM-HQ Bounding Box Crop", visible=True, open=False)
-                        #         gr.Accordion(label="SAM-HQ Segmentation Crop", visible=True, open=False)
-                        #         gr.Accordion(label="Upscale", visible=True, open=False)
-                        #         gr.Accordion(label="Denoise/Unglaze", visible=True, open=False)
-                    with gr.Tab("Video to Frames Splitter"):
-                        with gr.Accordion("Video to Frames Splitter", visible=True, open=False):
-                            gr.Markdown("""
-                                It is also partially possible to extract \"SOME\" video fragments from swf files with this tool, 
-                                but it will require (FFMPEG) AND it likely \"NOT\" work in the majority of cases unless the contained video 
-                                in the swf file is encoded within a specific set of formats. (for usage with SWF files, proceed at your own risk!)
-                                
-                                Most other video formats (not swf associated) should work. (It is \"NOT\" recommended to attempt converting with corrupted video files either!)
-                            """)
-                            with gr.Column():
-                                video_input = gr.File()
-                                video_input_button = gr.UploadButton(label="Click to Upload a Video",
-                                                                     file_types=["file"], file_count="single")
-                                video_clear_button = gr.ClearButton(label="Clear")
-                                with gr.Row():
-                                    video_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
-                                                                  value=os.getcwd())
-                                    convert_video_button = gr.Button(value="Convert Video", variant='primary')
-                        with gr.Accordion(label="Gallery Preview", visible=True, open=False):
-                            with gr.Column():
-                                video_frames_gallery = gr.Gallery(label=f"Video Frame/s Gallery", interactive=False, visible=True, columns=3, object_fit="contain", height=780)
-                    # with gr.Tab("UMAP Viewer"):
-                    #     with gr.Column():
-                    #         gr.Textbox(label="Testing", value="")
-                    #         gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=730)
-                    # with gr.Tab("Grad Cam Viewer"):
-                    #     with gr.Column():
-                    #         gr.Textbox(label="Testing", value="")
-                    #         gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=730)
-        with gr.Tab("Image Editor"):
-            tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
-            with gr.Tab("Image Editor Tool"):
-                image_editor = gr.Image(label=f"Image Default Editor", interactive=True, visible=True, tool="editor",
-                                        source="upload", type="filepath", height=1028)
-                send_img_from_default_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
-                send_img_from_default_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
-            with gr.Tab("Image Crop Tool"):
-                image_editor_crop = gr.Image(label=f"Image Crop Editor", interactive=True, visible=True,
-                                             tool="select", source="upload", type="filepath", height=1028)
-                send_img_from_crop_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
-                send_img_from_crop_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
-            with gr.Tab("Image Sketch Tool"):
-                image_editor_sketch = gr.Image(label=f"Image Sketch Editor", interactive=True, visible=True,
-                                               tool="sketch", source="upload", type="filepath", height=1028)
-                send_img_from_sketch_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
-                send_img_from_sketch_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
-            with gr.Tab("Image Color Sketch Tool"):
-                image_editor_color_sketch = gr.Image(label=f"Image Color Sketch Editor", interactive=True, visible=True,
-                                                     tool="color-sketch", source="upload", type="filepath", height=1028)
-                send_img_from_color_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
-                send_img_from_color_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
-
-        with gr.Tab("Advanced Settings"):
-            total_suggestions_slider = gr.Slider(info="Limit Number of Tag Suggestions", minimum=0, maximum=100, step=1, value=10, show_label=False)
+        total_suggestions_slider = Advanced_settings_tab().get_tab()
 
         '''
         ##################################################################################################################################
@@ -4314,3 +3961,9 @@ if __name__ == "__main__":
         server_port=args.server_port,
         share=args.share,
     )
+
+
+# definitions of the webui can exist on different pages
+# all event listeners however must coexist on the same page
+# which is because while some tabs can be isolated completely
+# there are still some event listeners that REQUIRE being more centralized on the same page
