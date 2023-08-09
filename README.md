@@ -10,13 +10,13 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ## Future Objectives/Features
 
-- [ ] (Include a variation of different public image boards)
-- [ ] (Add Aliases for tags suggestions in the textboxes)
-- [ ] (Add De-Noise & Upscale Models, e.g. ![StableSR](https://github.com/IceClear/StableSR))
-- [ ] (Add Segmentation & Detection Models, e.g. ![SegmentAnything-HQ](https://github.com/continue-revolution/sd-webui-segment-anything))
-- [ ] (Add Cross Attention Visualization ![DAAM](https://github.com/castorini/daam))
-- [ ] (Add Grad-CAM)
-- [ ] (Add UMAP)
+- [ ] Include a variation of different public image boards
+- [ ] Add Aliases for tags suggestions in the textboxes
+- [ ] Add De-Noise & Upscale Models, e.g. ![StableSR](https://github.com/IceClear/StableSR)
+- [ ] Add Segmentation & Detection Models, e.g. ![SegmentAnything-HQ](https://github.com/continue-revolution/sd-webui-segment-anything)
+- [ ] Add Cross Attention Visualization ![DAAM](https://github.com/castorini/daam)
+- [ ] Add Grad-CAM
+- [ ] Add UMAP
 
 ## Requirements
 python 3.8+
