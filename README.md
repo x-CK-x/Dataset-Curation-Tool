@@ -16,34 +16,54 @@ A tool for downloading from public image boards (which allow scraping) / preview
 - [ ] Add Grad-CAM
 - [ ] Add UMAP
 
-## Requirements
-python 3.8+
+## Installation Requirements
+> python 3.8+
 
-clone repository
+> Clone the Repo
 ```
 git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
 ```
+
+> Install Dependencies
 ```
 cd Dataset-Curation-Tool
 pip install -r requirements.txt
 ```
 
-#### other system installs
-- unzip for the (optionally) downloaded zip files
+#### Other System Install Options
+- Unzip for the (optionally) downloaded zip files
+- Navigate to the inside the Dataset-Curation-Tool folder
+- Run the pip install command
 
 (Linux)
 ```
 sudo apt-get install unzip
 ```
 
-## How to use
+## How to Run Program
 
-#### Run the Web-User Interface
+> Run with sharing turned off : Default
 ```
 python webui.py
-python webui.py --server_port 7860 --share
-python webui.py --server_port 7860 --share --username NAME --password PASS
 ```
+
+> Run with sharing turned on : Provides a *live* link that anyone can use
+```
+python webui.py --share
+```
+
+> Run password protected : Requires user to type in a username & password to access the webUI
+```
+python webui.py --server_port 7860 --username NAME --password PASS
+```
+
+> Run on a specified PORT : Displays the webUI relative to a specified PORT
+```
+python webui.py --server_port 7860
+```
+
+> OR CHOOSE ANY COMBINATION OF ^
+
 
 ## Additional Information
 
