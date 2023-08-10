@@ -10,14 +10,16 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ## Future Objectives/Features
 
-- [ ] Include support for a variation of different public image boards
+- [ ] Update the existing **Version_3 WebUI** ![WIKI Page](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki) for the **Version_4 WebUI**
 - [ ] Add Aliases for tags suggestions in the textboxes
+- [ ] Add Support for *brand new* tag & captioning models
 - [ ] Add De-Noise & Upscale Models, e.g. ![StableSR](https://github.com/IceClear/StableSR)
 - [ ] Add Segmentation & Detection Models, e.g. ![SegmentAnything-HQ](https://github.com/continue-revolution/sd-webui-segment-anything)
 - [ ] Add Cross Attention Visualization ![DAAM](https://github.com/castorini/daam)
 - [ ] Add Grad-CAM
 - [ ] Add UMAP
-- [ ] Update the existing **Version_3 WebUI** ![WIKI Page](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki) for the **Version_4 WebUI**
+- [ ] Finish Code Refactor
+- [ ] Include support for a variation of different public image boards
 
 ## Installation Requirements
 > python 3.8+
