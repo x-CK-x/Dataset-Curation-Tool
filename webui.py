@@ -114,8 +114,8 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
 
     settings_json["proxy_url"] = str(min_short_side)
 
-    settings_json["use_csv_custom"] = bool(custom_csv_path_textbox)
-    settings_json["csv_custom_path"] = str(use_csv_custom_checkbox)
+    settings_json["use_csv_custom"] = bool(use_csv_custom_checkbox)
+    settings_json["csv_custom_path"] = str(custom_csv_path_textbox)
 
     # COLLECT CheckBox Group
     for key in collect_checkboxes:
@@ -3743,7 +3743,8 @@ def load_trie():
 def load_tags_csv(proxy_url=None):
     global settings_json
     data = None
-    if "use_csv_custom" in settings_json and settings_json["use_csv_custom"] and "csv_custom_path" in settings_json:
+    if ("use_csv_custom" in settings_json and settings_json["use_csv_custom"]) and \
+            ("csv_custom_path" in settings_json and len(settings_json["csv_custom_path"]) > 0):
         try:
             data = pd.read_csv(settings_json["csv_custom_path"])
             # Check if there is a header
@@ -3961,9 +3962,3 @@ if __name__ == "__main__":
         server_port=args.server_port,
         share=args.share,
     )
-
-
-# definitions of the webui can exist on different pages
-# all event listeners however must coexist on the same page
-# which is because while some tabs can be isolated completely
-# there are still some event listeners that REQUIRE being more centralized on the same page
