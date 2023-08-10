@@ -6,6 +6,8 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ## WIKI-Page / Tutorial for this Repository ![HERE](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki)
 
+![General Config](https://github.com/x-CK-x/Dataset-Curation-Tool/blob/258889b16b7a13541f2ccdc29ae26e62a495e091/wiki_assets/v4WebUI_tab_1.png)
+
 ## Future Objectives/Features
 
 - [ ] Include support for a variation of different public image boards
