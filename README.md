@@ -10,7 +10,7 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ## Future Objectives/Features
 
-- [ ] Update the existing **Version_3 WebUI** ![WIKI Page](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki) for the **Version_4 WebUI**
+- [X] Update the existing **Version_3 WebUI** ![WIKI Page](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki) for the **Version_4 WebUI**
 - [ ] Add Aliases for tags suggestions in the textboxes
 - [ ] Add Support for *brand new* tag & captioning models
 - [ ] Add De-Noise & Upscale Models, e.g. ![StableSR](https://github.com/IceClear/StableSR)
