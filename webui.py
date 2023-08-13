@@ -112,7 +112,7 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
     settings_json["top_n"] = int(top_n)
     settings_json["min_short_side"] = int(min_short_side)
 
-    settings_json["proxy_url"] = str(min_short_side)
+    settings_json["proxy_url"] = str(proxy_url_textbox)
 
     settings_json["use_csv_custom"] = bool(use_csv_custom_checkbox)
     settings_json["csv_custom_path"] = str(custom_csv_path_textbox)
