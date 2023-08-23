@@ -4,6 +4,13 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ![visitor badge](https://visitor-badge.glitch.me/badge?page_id=x-CK-x.Dataset-Curation-Tool)
 
+## Important Information
+
+- the most current **STABLE** build --> ![v4.1.4](https://github.com/x-CK-x/Dataset-Curation-Tool/releases/tag/v4.1.4)
+- for new users, it's highly recommended to use releases instead of pulling from the main branch
+- in addition it is important to avoid using the **alpha** builds in the ![releases](https://github.com/x-CK-x/Dataset-Curation-Tool/releases)
+- if an alpha build is present it will be labeled as a **pre-release** and the **main-branch** of the repo is also likely to contain those changes; as such please use the most recent stable build as denoted above
+
 ## WIKI-Page / Tutorial for this Repository ![HERE](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki)
 
 ![General Config](https://github.com/x-CK-x/Dataset-Curation-Tool/blob/74f6877383bddfd9c0d8e9587ab983e63936f89f/wiki_assets/v4WebUI_page_1_tab_1.png)
