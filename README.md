@@ -38,6 +38,7 @@ A tool for downloading from public image boards (which allow scraping) / preview
 ## Installation Requirements
 
 !["conda" package manager installation process](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
+
 !["conda" install options](https://docs.conda.io/en/latest/miniconda.html)
 
 > Open the terminal/cmd and copy-paste the following:
