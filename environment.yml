@@ -7,7 +7,18 @@ channels:
 dependencies:
   - python==3.10
   - ipython
+  - datrie
   - pip
   - pip:
-    - -r file:requirements.txt
-  - datrie
+    - opencv-python
+    - polars==0.16.18
+    - requests
+    - tqdm
+    - pyarrow
+    - gradio
+    - beautifulsoup4
+    - Pillow
+    - pandas
+    - onnxruntime
+    - torch
+    - onnxruntime-gpu
