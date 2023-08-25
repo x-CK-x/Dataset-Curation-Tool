@@ -13,7 +13,8 @@ class Download_tab:
                  download_checkboxes, resize_checkboxes, file_extn_list, config_name, required_tags_list,
                  blacklist_tags, auto_config_path, initial_required_state,
                  initial_required_state_tag, relevant_required_categories, initial_blacklist_state,
-                 initial_blacklist_state_tag, relevant_blacklist_categories, auto_complete_config):
+                 initial_blacklist_state_tag, relevant_blacklist_categories, auto_complete_config
+                 ):
         self.settings_json = settings_json
         self.cwd = cwd
         self.categories_map = categories_map
@@ -38,7 +39,16 @@ class Download_tab:
         self.advanced_settings_tab_manager = None
 
         self.gallery_tab_manager = None
+        self.tag_ideas = None
+        self.is_csv_loaded = False
 
+
+
+
+
+
+    def set_tag_ideas(self, tag_ideas):
+        self.tag_ideas = tag_ideas
 
     def set_advanced_settings_tab_manager(self, advanced_settings_tab_manager):
         self.advanced_settings_tab_manager = advanced_settings_tab_manager
@@ -308,14 +318,14 @@ class Download_tab:
             help.update_JSON(self.auto_complete_config, temp_config_path)
 
     # load a different config
-    def change_config(self, selected: gr.SelectData, file_path):
+    def change_config_batch_run(self, json_name_list, file_path):
         temp = '\\' if help.is_windows() else '/'
-
+        name = json_name_list[-1]
         settings_path = None
 
-        if selected.value != self.config_name:
-            self.settings_json = help.load_session_config(os.path.join(self.cwd, selected.value))
-            self.config_name = os.path.join(self.cwd, selected.value)
+        if name != self.config_name:
+            self.settings_json = help.load_session_config(os.path.join(self.cwd, name))
+            self.config_name = os.path.join(self.cwd, name)
             settings_path = gr.update(value=self.config_name)
         else:
             if temp in file_path:
@@ -412,6 +422,127 @@ class Download_tab:
 
         self.is_csv_loaded = False
 
+        all_json_files_checkboxgroup = gr.update(
+            choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]),
+            value=[]
+        )
+        quick_json_select = gr.update(
+            choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]),
+            value=name
+        )
+
+        return batch_folder, resized_img_folder, tag_sep, tag_order_format, prepend_tags, append_tags, img_ext, method_tag_files, min_score, min_fav_count, min_year, min_month, \
+               min_day, min_area, top_n, min_short_side, collect_checkbox_group_var, download_checkbox_group_var, resize_checkbox_group_var, required_tags_group_var, \
+               blacklist_group_var, skip_posts_file, skip_posts_type, collect_from_listed_posts_file, collect_from_listed_posts_type, apply_filter_to_listed_posts, \
+               save_searched_list_type, save_searched_list_path, downloaded_posts_folder, png_folder, jpg_folder, webm_folder, gif_folder, swf_folder, save_filename_type, \
+               remove_tags_list, replace_tags_list, tag_count_list_folder, all_json_files_checkboxgroup, quick_json_select, proxy_url_textbox, settings_path, \
+               custom_csv_path_textbox, use_csv_custom_checkbox
+
+    # load a different config
+    def change_config(self, selected: gr.SelectData, file_path):
+        temp = '\\' if help.is_windows() else '/'
+
+        settings_path = None
+
+        if selected.value != self.config_name:
+            self.settings_json = help.load_session_config(os.path.join(self.cwd, selected.value))
+            self.config_name = os.path.join(self.cwd, selected.value)
+            settings_path = gr.update(value=self.config_name)
+        else:
+            if temp in file_path:
+                self.settings_json = help.load_session_config(file_path)
+                self.config_name = file_path
+                settings_path = gr.update(value=self.config_name)
+            else:
+                self.settings_json = help.load_session_config(os.path.join(self.cwd, file_path))
+                self.config_name = os.path.join(self.cwd, file_path)
+                settings_path = gr.update(value=self.config_name)
+
+        self.required_tags_list = help.get_list(self.settings_json["required_tags"], self.settings_json["tag_sep"])
+        for tag in self.required_tags_list:
+            if len(tag) == 0:
+                self.required_tags_list.remove(tag)
+
+        self.blacklist_tags = help.get_list(self.settings_json["blacklist"], " | ")
+        for tag in self.blacklist_tags:
+            if len(tag) == 0:
+                self.blacklist_tags.remove(tag)
+
+        help.verbose_print(f"{self.settings_json}")
+        help.verbose_print(f"json key count: {len(self.settings_json)}")
+
+        # UPDATE json with new key, value pairs
+        if not "min_date" in self.settings_json:
+            self.settings_json["min_year"] = 2000
+        elif isinstance(self.settings_json["min_date"], str) and "-" in self.settings_json["min_date"]:
+            self.settings_json["min_year"] = int(self.settings_json["min_date"].split("-")[0])
+        else:
+            self.settings_json["min_year"] = int(self.settings_json["min_date"])
+
+        if not "min_month" in self.settings_json:
+            self.settings_json["min_month"] = 1
+        elif isinstance(self.settings_json["min_date"], str) and "-" in self.settings_json["min_date"]:
+            self.settings_json["min_month"] = help.from_padded(self.settings_json["min_date"].split("-")[1])
+
+        if not "min_day" in self.settings_json:
+            self.settings_json["min_day"] = 1
+        elif isinstance(self.settings_json["min_date"], str) and self.settings_json["min_date"].count("-") > 1:
+            self.settings_json["min_day"] = help.from_padded(self.settings_json["min_date"].split("-")[-1])
+
+        help.update_JSON(self.settings_json, self.config_name)
+
+        # load all presets
+        batch_folder = gr.update(value=self.settings_json["batch_folder"])
+        resized_img_folder = gr.update(value=self.settings_json["resized_img_folder"])
+        tag_sep = gr.update(value=self.settings_json["tag_sep"])
+        tag_order_format = gr.update(value=self.settings_json["tag_order_format"])
+        prepend_tags = gr.update(value=self.settings_json["prepend_tags"])
+        append_tags = gr.update(value=self.settings_json["append_tags"])
+        img_ext = gr.update(value=self.settings_json["img_ext"])
+        method_tag_files = gr.update(value=self.settings_json["method_tag_files"])
+        min_score = gr.update(value=self.settings_json["min_score"])
+        min_fav_count = gr.update(value=self.settings_json["min_fav_count"])
+        min_month = gr.update(value=self.settings_json["min_month"])
+        min_day = gr.update(value=self.settings_json["min_day"])
+        min_year = gr.update(value=self.settings_json["min_year"])
+        min_area = gr.update(value=self.settings_json["min_area"])
+        top_n = gr.update(value=self.settings_json["top_n"])
+        min_short_side = gr.update(value=self.settings_json["min_short_side"])
+        collect_checkbox_group_var = gr.update(choices=self.collect_checkboxes,
+                                               value=help.grab_pre_selected(self.settings_json, self.collect_checkboxes))
+        download_checkbox_group_var = gr.update(choices=self.download_checkboxes,
+                                                value=help.grab_pre_selected(self.settings_json, self.download_checkboxes))
+        resize_checkbox_group_var = gr.update(choices=self.resize_checkboxes,
+                                              value=help.grab_pre_selected(self.settings_json, self.resize_checkboxes))
+        required_tags_group_var = gr.update(choices=self.required_tags_list, value=[])
+        blacklist_group_var = gr.update(choices=self.blacklist_tags, value=[])
+        skip_posts_file = gr.update(value=self.settings_json["skip_posts_file"])
+        skip_posts_type = gr.update(value=self.settings_json["skip_posts_type"])
+        collect_from_listed_posts_file = gr.update(value=self.settings_json["collect_from_listed_posts_file"])
+        collect_from_listed_posts_type = gr.update(value=self.settings_json["collect_from_listed_posts_type"])
+        apply_filter_to_listed_posts = gr.update(value=self.settings_json["apply_filter_to_listed_posts"])
+        save_searched_list_type = gr.update(value=self.settings_json["save_searched_list_type"])
+        save_searched_list_path = gr.update(value=self.settings_json["save_searched_list_path"])
+        downloaded_posts_folder = gr.update(value=self.settings_json["downloaded_posts_folder"])
+        png_folder = gr.update(value=self.settings_json["png_folder"])
+        jpg_folder = gr.update(value=self.settings_json["jpg_folder"])
+        webm_folder = gr.update(value=self.settings_json["webm_folder"])
+        gif_folder = gr.update(value=self.settings_json["gif_folder"])
+        swf_folder = gr.update(value=self.settings_json["swf_folder"])
+        save_filename_type = gr.update(value=self.settings_json["save_filename_type"])
+        remove_tags_list = gr.update(value=self.settings_json["remove_tags_list"])
+        replace_tags_list = gr.update(value=self.settings_json["replace_tags_list"])
+        tag_count_list_folder = gr.update(value=self.settings_json["tag_count_list_folder"])
+        proxy_url_textbox = gr.update(value=self.settings_json["proxy_url"])
+
+        custom_csv_path_textbox = gr.update(value=self.settings_json["csv_custom_path"])
+        use_csv_custom_checkbox = gr.update(value=self.settings_json["use_csv_custom"])
+
+        help.verbose_print(f"{self.settings_json}")
+        help.verbose_print(f"json key count: {len(self.settings_json)}")
+
+        self.is_csv_loaded = False
+
         all_json_files_checkboxgroup = gr.update(choices=sorted(
             [(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]),
                                                  value=[])
@@ -424,116 +555,6 @@ class Download_tab:
                save_searched_list_type, save_searched_list_path, downloaded_posts_folder, png_folder, jpg_folder, webm_folder, gif_folder, swf_folder, save_filename_type, \
                remove_tags_list, replace_tags_list, tag_count_list_folder, all_json_files_checkboxgroup, quick_json_select, proxy_url_textbox, settings_path, \
                custom_csv_path_textbox, use_csv_custom_checkbox
-
-    # Function to color code categories
-    def category_color(self, category):
-        colors = {
-            "artist": "yellow",
-            "character": "green",
-            "species": "red",
-            "general": "white",
-            "rating": "blue",
-            "meta": "purple",
-            "invalid": "black",
-            "lore": "black",
-            "copyright": "black",
-        }
-        return colors.get(self.categories_map[category])
-
-    # Function to format the count
-    def format_count(self, count):
-        if count >= 1000:
-            return f"{round(count / 1000, 1)}k"
-        else:
-            return str(count)
-
-    def get_tag_options(self, input_string, num_suggestions):
-        # Get a list of all tags that start with the edited part
-        suggested_tags = self.gallery_tab_manager.trie.keys(input_string)
-
-        # Sort the tags by count and take the top num_suggestions
-        suggested_tags = sorted(suggested_tags, key=lambda tag: -self.gallery_tab_manager.trie[tag])[:num_suggestions]
-
-        # Color code the tags by their categories and add the count
-        color_coded_tags = []
-        tag_categories = []
-        for tag in suggested_tags:
-            category = self.categories_map[self.gallery_tab_manager.all_tags_ever_dict[tag][0]]  # gets category of already existing tag
-            tag_categories.append(category)
-            count = self.gallery_tab_manager.all_tags_ever_dict[tag][1]  # gets count of already existing tag
-            count_str = self.format_count(count)
-            color_coded_tag = f"{tag} → {count_str}"
-            color_coded_tags.append(color_coded_tag)
-
-        tag_textbox = gr.update(value=input_string)
-        tag_suggestion_dropdown = gr.update(choices=color_coded_tags, value=None)
-        state = input_string  # retain the tag name until it is time
-        state_tag = ""
-
-        # print(f"color_coded_tags:\t{color_coded_tags}")
-        return tag_textbox, tag_suggestion_dropdown, state, state_tag, tag_categories
-
-    # get the suggestions and populate the dropdown menu
-    def suggest_tags(self, input_string, state, num_suggestions, state_tag):
-        # print(f"input_string:\t{(input_string)}")
-        # print(f"state:\t{(state)}")
-        # print(f"num_suggestions:\t{(num_suggestions)}")
-        # print(f"state_tag:\t{(state_tag)}")
-
-        # tags_csv_dict          ####### tag -> count
-        # all_tags_ever_dict     ####### tag -> category
-
-        ###### prior string check, b4 updating new state
-
-        if input_string is None or len(input_string) == 0:  ### string is null or empty
-            # generic_textbox = gr.update(value="")
-            generic_dropdown = gr.update(choices=[], value=None)
-            tag_categories = []
-            state = ""  # set the new state of the input_string
-            state_tag = ""
-            return generic_dropdown, state, state_tag, tag_categories
-        elif " " in input_string:  ## string contains space
-            string_arr = input_string.split(" ")
-            tag_count = 0
-            text_arr = []  # tracks length of tag string fragments
-            for text in string_arr:
-                text_arr.append(len(text))
-                if text_arr[-1] > 0:
-                    tag_count += 1
-
-            if tag_count == 2:  # there are two valid tag strings
-                state_tag = string_arr[0]  # choose the first tag
-                state = string_arr[-1]  # the remainder string
-                # generic_textbox = gr.update(value=state)
-
-                # get suggestions for remainder tag
-                _, generic_dropdown, _, _, tag_categories = self.get_tag_options(string_arr[-1],
-                                                                            num_suggestions)  # state is 3rd output
-                # help.verbose_print(f"===============\ttag_categories\t{tag_categories}")
-                # help.verbose_print(f"===============\tstate\t{state}")
-                return generic_dropdown, state, state_tag, tag_categories
-            else:  # one valid tag string
-                state_tag = string_arr[0] if text_arr[0] > 0 else string_arr[-1]
-                state = ""  # the remainder string
-                # generic_textbox = gr.update(value=state)
-
-                generic_dropdown = gr.update(choices=[], value=None)
-                tag_categories = []
-
-                # help.verbose_print(f"------------------\tstring_arr\t{string_arr}")
-                # help.verbose_print(f"------------------\tstate_tag\t{state_tag}")
-                # help.verbose_print(f"------------------\tstate\t{state}")
-
-                return generic_dropdown, state, state_tag, tag_categories
-        else:  ### string contains ONLY text
-            tag_textbox, tag_suggestion_dropdown, state, state_tag, tag_categories = self.get_tag_options(input_string,
-                                                                                                     num_suggestions)
-            # help.verbose_print(f"===============\ttag_categories\t{tag_categories}")
-            # help.verbose_print(f"===============\ttag_textbox\t{tag_textbox}")
-            # help.verbose_print(f"===============\tstate\t{state}")
-            # help.verbose_print(f"===============\tstate_tag\t{state_tag}")
-
-            return tag_suggestion_dropdown, state, state_tag, tag_categories
 
     def textbox_handler_required(self, tag_string_comp, state, is_textbox):
         # help.verbose_print(f"tag_string_comp:\t{tag_string_comp}")
@@ -562,38 +583,6 @@ class Download_tab:
 
         check_box_group = gr.update(choices=self.blacklist_tags, value=[])
         return new_state_tag, check_box_group, gr.update(value=new_textbox_value)
-
-    def dropdown_handler_required(self, tag: gr.SelectData):
-        tag = tag.value
-        sep = " → "
-        if sep in tag:
-            tag = tag.split(sep)[0]
-
-        if not tag in self.required_tags_list:
-            self.required_tags_list.append(tag)
-
-        tag_textbox = gr.update(value="")
-        tag_suggestion_dropdown = gr.update(choices=[], value=[])
-        initial_state = ""
-        initial_state_tag = ""
-        required_tags_group_var = gr.update(choices=self.required_tags_list, value=[])
-        return tag_textbox, tag_suggestion_dropdown, initial_state, initial_state_tag, required_tags_group_var
-
-    def dropdown_handler_blacklist(self, tag: gr.SelectData):
-        tag = tag.value
-        sep = " → "
-        if sep in tag:
-            tag = tag.split(sep)[0]
-
-        if not tag in self.blacklist_tags:
-            self.blacklist_tags.append(tag)
-
-        tag_textbox = gr.update(value="")
-        tag_suggestion_dropdown = gr.update(choices=[], value=[])
-        initial_state = ""
-        initial_state_tag = ""
-        blacklist_group_var = gr.update(choices=self.blacklist_tags, value=[])
-        return tag_textbox, tag_suggestion_dropdown, initial_state, initial_state_tag, blacklist_group_var
 
     def gen_tags_list(self, reference_model_tags_file):
         help.convert_to_list_file(reference_model_tags_file)
@@ -1020,7 +1009,7 @@ class Download_tab:
 
 
 
-    def get_tab(self):
+    def render_tab(self):
         with gr.Tab("Downloading Image/s"):
             config_save_var = gr.Button(value="Apply & Save Settings", variant='primary')
             with gr.Accordion("Edit Requirements for General Download INFO", visible=True, open=True):
@@ -1093,6 +1082,17 @@ class Download_tab:
                     with gr.Column():
                         gr.Markdown(md_.resize)
                         resize_checkbox_group_var = gr.CheckboxGroup(choices=self.resize_checkboxes, label='Resize Checkboxes', value=help.grab_pre_selected(self.settings_json, self.resize_checkboxes))
+
+            tag_json_fast_proto_settings = {"required": {}, "blacklist": {}}
+            fast_proto_path = os.path.join(self.cwd, "fast_downloader_config")
+            fast_proto_path_name = "fast_downloader.json"
+            if not os.path.exists(fast_proto_path):
+                os.mkdir(fast_proto_path)
+                help.update_JSON(settings=tag_json_fast_proto_settings, temp_config_name=os.path.join(fast_proto_path, fast_proto_path_name))
+            else:
+                tag_json_fast_proto_settings = help.load_session_config(f_name=os.path.join(fast_proto_path, fast_proto_path_name))
+
+            # fast_tag_proto_list = [sorted([(proto_file.split(temp)[-1]) for proto_file in glob.glob(os.path.join(fast_proto_path, f"*.json"))])]
             with gr.Accordion("Edit Requirements for Required Tags", visible=True, open=False):
                 with gr.Row():
                     with gr.Column():
@@ -1108,6 +1108,19 @@ class Download_tab:
                 with gr.Row():
                     remove_button_required = gr.Button(value="Remove Checked Tags", variant='secondary')
                     parse_button_required = gr.Button(value="Parse/Add Tags", variant='secondary')
+                with gr.Row():
+                    with gr.Column():
+                        tag_json_fast_proto_required = gr.JSON(label="Fast Tag Downloader Prototype", value=tag_json_fast_proto_settings, visible=True)
+                    # add new entry w/ incrementing (numbers) designating the new potential configs >>>> (defaults to that entry when creating it)
+                    # dropdown menu to select the entry to edit
+                    # add tags to current entry button
+                    # reset json button
+                    # split into setting_(NUMBER).json files
+                    # manually remove entries with checkbox group AND delete button
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
+
             with gr.Accordion("Edit Requirements for Blacklist Tags", visible=True, open=False):
                 with gr.Row():
                     with gr.Column():
@@ -1123,6 +1136,20 @@ class Download_tab:
                 with gr.Row():
                     remove_button_blacklist = gr.Button(value="Remove Checked Tags", variant='secondary')
                     parse_button_blacklist = gr.Button(value="Parse/Add Tags", variant='secondary')
+                with gr.Row():
+                    with gr.Column():
+                        tag_json_fast_proto_blacklist = gr.JSON(label="Fast Tag Downloader Prototype",
+                                                      value=tag_json_fast_proto_settings, visible=True)
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
+                    ########################################################################################################################
             with gr.Accordion("Edit Requirements for Advanced Configuration", visible=True, open=False):
                 gr.Markdown(md_.add_comps_config)
                 with gr.Row():
@@ -1293,6 +1320,9 @@ class Download_tab:
         self.all_json_files_checkboxgroup = all_json_files_checkboxgroup
         self.run_button_batch = run_button_batch
         self.progress_run_batch = progress_run_batch
+        ########################################################################################################################
+        ########################################################################################################################
+        ########################################################################################################################
 
         return [
                 self.config_save_var,
@@ -1378,24 +1408,56 @@ class Download_tab:
                 self.all_json_files_checkboxgroup,
                 self.run_button_batch,
                 self.progress_run_batch,
-                ]
+                ]########################################################################################################################
 
     def get_event_listeners(self):
         self.quick_json_select.select(
-            fn=self.change_config,
-            inputs=[self.settings_path],
-            outputs=[self.batch_folder,self.resized_img_folder,self.tag_sep,self.tag_order_format,self.prepend_tags,self.append_tags,self.img_ext,
-                     self.method_tag_files,self.min_score,self.min_fav_count,self.min_year,self.min_month,self.min_day,self.min_area,self.top_n,self.min_short_side,
-                     self.collect_checkbox_group_var,self.download_checkbox_group_var,self.resize_checkbox_group_var,
-                     self.required_tags_group_var,self.blacklist_group_var,self.skip_posts_file,self.skip_posts_type,
-                     self.collect_from_listed_posts_file,self.collect_from_listed_posts_type,self.apply_filter_to_listed_posts,
-                     self.save_searched_list_type,self.save_searched_list_path,self.downloaded_posts_folder,self.png_folder,self.jpg_folder,
-                     self.webm_folder,self.gif_folder,self.swf_folder,self.save_filename_type,self.remove_tags_list,self.replace_tags_list,
-                     self.tag_count_list_folder,self.all_json_files_checkboxgroup,self.quick_json_select,self.proxy_url_textbox,
-                     self.settings_path, self.custom_csv_path_textbox, self.use_csv_custom_checkbox]).then(
-            fn=self.check_to_reload_auto_complete_config,
-            inputs=[],
+            fn=self.change_config, 
+            inputs=[self.settings_path], 
+            outputs=[self.batch_folder, self.resized_img_folder, self.tag_sep, self.tag_order_format,
+                     self.prepend_tags, self.append_tags, self.img_ext, self.method_tag_files, self.min_score,
+                     self.min_fav_count, self.min_year, self.min_month, self.min_day, self.min_area, self.top_n,
+                     self.min_short_side, self.collect_checkbox_group_var, self.download_checkbox_group_var,
+                     self.resize_checkbox_group_var, self.required_tags_group_var, self.blacklist_group_var,
+                     self.skip_posts_file, self.skip_posts_type, self.collect_from_listed_posts_file,
+                     self.collect_from_listed_posts_type, self.apply_filter_to_listed_posts,
+                     self.save_searched_list_type, self.save_searched_list_path, self.downloaded_posts_folder,
+                     self.png_folder, self.jpg_folder, self.webm_folder, self.gif_folder, self.swf_folder,
+                     self.save_filename_type, self.remove_tags_list, self.replace_tags_list,
+                     self.tag_count_list_folder, self.all_json_files_checkboxgroup, self.quick_json_select,
+                     self.proxy_url_textbox, self.settings_path,  self.custom_csv_path_textbox,
+                     self.use_csv_custom_checkbox]
+        ).then(
+            fn=self.check_to_reload_auto_complete_config, 
+            inputs=[], 
             outputs=[]
+        ).then(
+            fn=self.gallery_tab_manager.reset_gallery_manager,
+            inputs=[],
+            outputs=[
+                self.gallery_tab_manager.download_folder_type,
+                self.gallery_tab_manager.img_id_textbox,
+                self.gallery_tab_manager.tag_search_textbox,
+                self.gallery_tab_manager.tag_search_suggestion_dropdown,
+                self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup,
+                self.gallery_tab_manager.select_multiple_images_checkbox,
+                self.gallery_tab_manager.select_between_images_checkbox,
+                self.gallery_tab_manager.apply_datetime_sort_ckbx,
+                self.gallery_tab_manager.apply_datetime_choice_menu,
+                self.gallery_tab_manager.send_img_from_gallery_dropdown,
+                self.gallery_tab_manager.batch_send_from_gallery_checkbox,
+                self.gallery_tab_manager.tag_add_textbox,
+                self.gallery_tab_manager.tag_add_suggestion_dropdown,
+                self.gallery_tab_manager.category_filter_gallery_dropdown,
+                self.gallery_tab_manager.tag_effects_gallery_dropdown,
+                self.gallery_tab_manager.img_artist_tag_checkbox_group,
+                self.gallery_tab_manager.img_character_tag_checkbox_group,
+                self.gallery_tab_manager.img_species_tag_checkbox_group,
+                self.gallery_tab_manager.img_general_tag_checkbox_group,
+                self.gallery_tab_manager.img_meta_tag_checkbox_group,
+                self.gallery_tab_manager.img_rating_tag_checkbox_group,
+                self.gallery_tab_manager.gallery_comp
+            ]
         )
         self.config_save_var.click(
             fn=self.config_save_button,
@@ -1408,7 +1470,8 @@ class Download_tab:
                     self.collect_checkbox_group_var,self.download_checkbox_group_var,self.resize_checkbox_group_var,
                     self.create_new_config_checkbox,self.settings_path,self.proxy_url_textbox,
                     self.custom_csv_path_textbox, self.use_csv_custom_checkbox],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]).then(
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+        ).then(
             fn=self.check_to_reload_auto_complete_config,
             inputs=[],
             outputs=[]
@@ -1438,7 +1501,33 @@ class Download_tab:
             outputs=[self.progress_bar_textbox_resize]).then(
             fn=self.end_connection,
             inputs=[],
-            outputs=[]
+            outputs=[]).then(
+            fn=self.gallery_tab_manager.reset_gallery_manager,
+            inputs=[],
+            outputs=[
+                self.gallery_tab_manager.download_folder_type,
+                self.gallery_tab_manager.img_id_textbox,
+                self.gallery_tab_manager.tag_search_textbox,
+                self.gallery_tab_manager.tag_search_suggestion_dropdown,
+                self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup,
+                self.gallery_tab_manager.select_multiple_images_checkbox,
+                self.gallery_tab_manager.select_between_images_checkbox,
+                self.gallery_tab_manager.apply_datetime_sort_ckbx,
+                self.gallery_tab_manager.apply_datetime_choice_menu,
+                self.gallery_tab_manager.send_img_from_gallery_dropdown,
+                self.gallery_tab_manager.batch_send_from_gallery_checkbox,
+                self.gallery_tab_manager.tag_add_textbox,
+                self.gallery_tab_manager.tag_add_suggestion_dropdown,
+                self.gallery_tab_manager.category_filter_gallery_dropdown,
+                self.gallery_tab_manager.tag_effects_gallery_dropdown,
+                self.gallery_tab_manager.img_artist_tag_checkbox_group,
+                self.gallery_tab_manager.img_character_tag_checkbox_group,
+                self.gallery_tab_manager.img_species_tag_checkbox_group,
+                self.gallery_tab_manager.img_general_tag_checkbox_group,
+                self.gallery_tab_manager.img_meta_tag_checkbox_group,
+                self.gallery_tab_manager.img_rating_tag_checkbox_group,
+                self.gallery_tab_manager.gallery_comp
+            ]
         )
         self.run_button_batch.click(
             fn=self.make_run_visible,
@@ -1447,7 +1536,49 @@ class Download_tab:
             fn=self.run_script_batch,
             inputs=[self.basefolder,self.settings_path,self.numcpu,self.phaseperbatch,self.keepdb,self.cachepostsdb,self.postscsv,self.tagscsv,self.postsparquet,
                     self.tagsparquet,self.all_json_files_checkboxgroup,self.images_full_change_dict_textbox],
-            outputs=[self.progress_run_batch]
+            outputs=[self.progress_run_batch]).then(
+            fn=self.change_config_batch_run,
+            inputs=[self.all_json_files_checkboxgroup, self.settings_path],
+            outputs=[self.batch_folder,self.resized_img_folder,self.tag_sep,self.tag_order_format,self.prepend_tags,self.append_tags,self.img_ext,
+                     self.method_tag_files,self.min_score,self.min_fav_count,self.min_year,self.min_month,self.min_day,self.min_area,self.top_n,self.min_short_side,
+                     self.collect_checkbox_group_var,self.download_checkbox_group_var,self.resize_checkbox_group_var,
+                     self.required_tags_group_var,self.blacklist_group_var,self.skip_posts_file,self.skip_posts_type,
+                     self.collect_from_listed_posts_file,self.collect_from_listed_posts_type,self.apply_filter_to_listed_posts,
+                     self.save_searched_list_type,self.save_searched_list_path,self.downloaded_posts_folder,self.png_folder,self.jpg_folder,
+                     self.webm_folder,self.gif_folder,self.swf_folder,self.save_filename_type,self.remove_tags_list,self.replace_tags_list,
+                     self.tag_count_list_folder,self.all_json_files_checkboxgroup,self.quick_json_select,self.proxy_url_textbox,
+                     self.settings_path, self.custom_csv_path_textbox, self.use_csv_custom_checkbox]
+        ).then(
+            fn=self.check_to_reload_auto_complete_config,
+            inputs=[],
+            outputs=[]
+        ).then(
+            fn=self.gallery_tab_manager.reset_gallery_manager,
+            inputs=[],
+            outputs=[
+                self.gallery_tab_manager.download_folder_type,
+                self.gallery_tab_manager.img_id_textbox,
+                self.gallery_tab_manager.tag_search_textbox,
+                self.gallery_tab_manager.tag_search_suggestion_dropdown,
+                self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup,
+                self.gallery_tab_manager.select_multiple_images_checkbox,
+                self.gallery_tab_manager.select_between_images_checkbox,
+                self.gallery_tab_manager.apply_datetime_sort_ckbx,
+                self.gallery_tab_manager.apply_datetime_choice_menu,
+                self.gallery_tab_manager.send_img_from_gallery_dropdown,
+                self.gallery_tab_manager.batch_send_from_gallery_checkbox,
+                self.gallery_tab_manager.tag_add_textbox,
+                self.gallery_tab_manager.tag_add_suggestion_dropdown,
+                self.gallery_tab_manager.category_filter_gallery_dropdown,
+                self.gallery_tab_manager.tag_effects_gallery_dropdown,
+                self.gallery_tab_manager.img_artist_tag_checkbox_group,
+                self.gallery_tab_manager.img_character_tag_checkbox_group,
+                self.gallery_tab_manager.img_species_tag_checkbox_group,
+                self.gallery_tab_manager.img_general_tag_checkbox_group,
+                self.gallery_tab_manager.img_meta_tag_checkbox_group,
+                self.gallery_tab_manager.img_rating_tag_checkbox_group,
+                self.gallery_tab_manager.gallery_comp
+            ]
         )
         self.remove_button_required.click(
             fn=self.check_box_group_handler_required,
@@ -1470,7 +1601,7 @@ class Download_tab:
             outputs=[self.blacklist_group_var]
         )
         self.required_tags_textbox.change(
-            fn=self.suggest_tags,
+            fn=self.tag_ideas.suggest_tags,
             inputs=[self.required_tags_textbox, self.initial_required_state, self.advanced_settings_tab_manager.total_suggestions_slider, self.initial_required_state_tag],
             outputs=[self.tag_required_suggestion_dropdown, self.initial_required_state, self.initial_required_state_tag,
                      self.relevant_required_categories]).then(
@@ -1488,13 +1619,13 @@ class Download_tab:
              outputs=[self.initial_required_state_tag, self.required_tags_group_var, self.required_tags_textbox]
         )
         self.tag_required_suggestion_dropdown.select(
-            fn=self.dropdown_handler_required,
+            fn=self.tag_ideas.dropdown_handler_required,
             inputs=[],
             outputs=[self.required_tags_textbox, self.tag_required_suggestion_dropdown, self.initial_required_state,
                      self.initial_required_state_tag, self.required_tags_group_var]
         )
         self.blacklist_tags_textbox.change(
-            fn=self.suggest_tags,
+            fn=self.tag_ideas.suggest_tags,
             inputs=[self.blacklist_tags_textbox, self.initial_blacklist_state, self.advanced_settings_tab_manager.total_suggestions_slider, self.initial_blacklist_state_tag],
             outputs=[self.tag_blacklist_suggestion_dropdown, self.initial_blacklist_state, self.initial_blacklist_state_tag,
                      self.relevant_blacklist_categories]).then(
@@ -1512,7 +1643,7 @@ class Download_tab:
             outputs=[self.initial_blacklist_state_tag, self.blacklist_group_var, self.blacklist_tags_textbox]
         )
         self.tag_blacklist_suggestion_dropdown.select(
-            fn=self.dropdown_handler_blacklist,
+            fn=self.tag_ideas.dropdown_handler_blacklist,
             inputs=[],
             outputs=[self.blacklist_tags_textbox, self.tag_blacklist_suggestion_dropdown, self.initial_blacklist_state,
                      self.initial_blacklist_state_tag, self.blacklist_group_var]
@@ -1538,7 +1669,8 @@ class Download_tab:
             outputs=[self.progress_bar_textbox_collect]).then(
             fn=self.auto_config_apply,
             inputs=[self.images_full_change_dict_textbox],
-            outputs=[self.progress_bar_textbox_collect])
+            outputs=[self.progress_bar_textbox_collect]
+        )
         self.remove_now_button.click(
             fn=self.remove_from_all,
             inputs=[self.remove_tags_list, self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup],

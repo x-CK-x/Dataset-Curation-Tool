@@ -11,16 +11,16 @@ from utils.features.captioning import autotag
 
 
 class Custom_dataset_tab:
-    def __init__(self, categories_map, cwd, settings_json, gallery_tab_manager, image_mode_choice_state, autotagmodel,
+    def __init__(self, categories_map, cwd, download_tab_manager, gallery_tab_manager, image_mode_choice_state, autotagmodel,
                  all_predicted_confidences, all_predicted_tags):
         self.categories_map = categories_map
         self.cwd = cwd
-        self.settings_json = settings_json
         self.image_mode_choice_state = image_mode_choice_state
         self.autotagmodel = autotagmodel
         self.all_predicted_confidences = all_predicted_confidences
         self.all_predicted_tags = all_predicted_tags
 
+        self.download_tab_manager = download_tab_manager
         self.gallery_tab_manager = gallery_tab_manager
         self.image_editor_tab_manager = None
 
@@ -29,20 +29,23 @@ class Custom_dataset_tab:
 
     def generate_all_dirs(self):
         temp_path_list_dirs = []
-        batch_dir_path = os.path.join(os.getcwd(), self.settings_json["batch_folder"])
+        batch_dir_path = os.path.join(os.getcwd(), self.download_tab_manager.settings_json["batch_folder"])
         temp_path_list_dirs.append(batch_dir_path)
-        downloaded_posts_dir_path = os.path.join(batch_dir_path, self.settings_json["downloaded_posts_folder"])
+        downloaded_posts_dir_path = os.path.join(batch_dir_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
         temp_path_list_dirs.append(downloaded_posts_dir_path)
-        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.settings_json["png_folder"]))
-        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.settings_json["jpg_folder"]))
-        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.settings_json["webm_folder"]))
-        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.settings_json["gif_folder"]))
-        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.settings_json["swf_folder"]))
-        temp_path_list_dirs.append(os.path.join(batch_dir_path, self.settings_json["tag_count_list_folder"]))
+        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.download_tab_manager.settings_json["png_folder"]))
+        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.download_tab_manager.settings_json["jpg_folder"]))
+        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.download_tab_manager.settings_json["webm_folder"]))
+        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.download_tab_manager.settings_json["gif_folder"]))
+        temp_path_list_dirs.append(os.path.join(downloaded_posts_dir_path, self.download_tab_manager.settings_json["swf_folder"]))
+        temp_path_list_dirs.append(os.path.join(batch_dir_path, self.download_tab_manager.settings_json["tag_count_list_folder"]))
+
+        help.verbose_print(temp_path_list_dirs)
+
         # create all dirs
         help.make_all_dirs(temp_path_list_dirs)
         # check to create tags & category csv files
-        tag_folder = os.path.join(batch_dir_path, self.settings_json["tag_count_list_folder"])
+        tag_folder = os.path.join(batch_dir_path, self.download_tab_manager.settings_json["tag_count_list_folder"])
         # persist changes to csv dictionary files OR (CREATE NEW)
         help.write_tags_to_csv(self.gallery_tab_manager.artist_csv_dict, os.path.join(tag_folder, "artist.csv"))
         help.write_tags_to_csv(self.gallery_tab_manager.character_csv_dict, os.path.join(tag_folder, "character.csv"))
@@ -66,11 +69,11 @@ class Custom_dataset_tab:
 
     def load_images(self, images_path, image_mode_choice_state):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         image_mode_choice_state = ""
@@ -103,6 +106,7 @@ class Custom_dataset_tab:
     def prompt_string_builder(self, use_tag_opts_radio, any_selected_tags, threshold):
         use_tag_opts = ['Use All', 'Use All above Threshold', 'Manually Select']
         image_generated_tags_prompt_builder_textbox = gr.update(value="")
+
         if (self.all_predicted_tags is not None and self.all_predicted_confidences is not None) and \
                 (len(self.all_predicted_tags) > 0 and len(self.all_predicted_confidences) > 0):
             if use_tag_opts_radio is not None and len(use_tag_opts_radio) > 0:
@@ -117,15 +121,19 @@ class Custom_dataset_tab:
                             if temp_confids[key] <= (float(threshold) / 100.0):
                                 del temp_confids[key]
                                 temp_tags.remove(key)
-                    image_generated_tags_prompt_builder_textbox.update(value=", ".join(temp_tags))
+                    sorted_list = sorted(temp_tags, key=lambda tag: (self.download_tab_manager.settings_json["tag_order_format"].split(", ")).index(self.gallery_tab_manager.get_category_name(tag)))
+                    image_generated_tags_prompt_builder_textbox.update(value=", ".join(sorted_list))
                 elif use_tag_opts_radio in use_tag_opts[0]:
-                    image_generated_tags_prompt_builder_textbox.update(
-                        value=", ".join(copy.deepcopy(self.all_predicted_tags)))
+                    sorted_list = sorted(copy.deepcopy(self.all_predicted_tags), key=lambda tag: (self.download_tab_manager.settings_json["tag_order_format"].split(", ")).index(self.gallery_tab_manager.get_category_name(tag)))
+                    image_generated_tags_prompt_builder_textbox.update( value=", ".join(sorted_list))
                 elif use_tag_opts_radio in use_tag_opts[2]:
-                    image_generated_tags_prompt_builder_textbox.update(value=", ".join(any_selected_tags))
+                    sorted_list = sorted(any_selected_tags, key=lambda tag: (self.download_tab_manager.settings_json["tag_order_format"].split(", ")).index(self.gallery_tab_manager.get_category_name(tag)))
+                    image_generated_tags_prompt_builder_textbox.update(value=", ".join(sorted_list))
         return image_generated_tags_prompt_builder_textbox
 
     def save_custom_tags(self, image_mode_choice_state, image_with_tag_path_textbox, any_selected_tags):
+        self.download_tab_manager.is_csv_loaded = False
+
         self.generate_all_dirs()
 
         all_paths = self.autotagmodel.get_dataset().get_image_paths()
@@ -151,11 +159,11 @@ class Custom_dataset_tab:
 
     def load_model(self, model_name, use_cpu, event_data: gr.SelectData):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
 
@@ -187,11 +195,11 @@ class Custom_dataset_tab:
 
     def set_threshold(self, threshold):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
 
@@ -212,11 +220,11 @@ class Custom_dataset_tab:
 
     def update_image_mode(self, image_mode_choice_dropdown, event_data: gr.SelectData):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         image_modes = ['Single', 'Batch']
@@ -237,11 +245,11 @@ class Custom_dataset_tab:
 
     def set_square_size(self, square_image_edit_slider):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         self.autotagmodel.set_image_size(crop_size=square_image_edit_slider)
@@ -249,11 +257,11 @@ class Custom_dataset_tab:
 
     def set_crop_or_resize(self, crop_or_resize_radio):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         help.verbose_print(f"set crop or resize")
@@ -262,11 +270,11 @@ class Custom_dataset_tab:
 
     def set_landscape_square_crop(self, landscape_crop_dropdown, event_data: gr.SelectData):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         help.verbose_print(f"set landscape crop")
@@ -275,11 +283,11 @@ class Custom_dataset_tab:
 
     def set_portrait_square_crop(self, portrait_crop_dropdown, event_data: gr.SelectData):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         help.verbose_print(f"set portrait crop")
@@ -288,11 +296,11 @@ class Custom_dataset_tab:
 
     def set_write_tag_opts(self, event_data: gr.SelectData):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         self.autotagmodel.set_write_tag_opts(event_data.value)
@@ -300,11 +308,11 @@ class Custom_dataset_tab:
 
     def set_use_tag_opts_radio(self, event_data: gr.SelectData):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         self.autotagmodel.set_use_tag_opts(event_data.value)
@@ -312,11 +320,11 @@ class Custom_dataset_tab:
 
     def set_image_with_tag_path_textbox(self, image_with_tag_path_textbox):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         help.verbose_print(f"setting path to data origin")
@@ -324,25 +332,27 @@ class Custom_dataset_tab:
 
     def set_copy_mode_ckbx(self, copy_mode_ckbx):
         if self.autotagmodel is None:
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
             help.check_requirements()
         self.autotagmodel.set_copy_mode_ckbx(copy_mode_ckbx)
         help.verbose_print(f"set copy")
 
     def interrogate_images(self, image_mode_choice_state, confidence_threshold_slider, category_filter_dropdown,
-                           category_filter_batch_checkbox):
+                           category_filter_batch_checkbox, gallery_images_batch):
+        self.download_tab_manager.is_csv_loaded = False
+
         self.generate_all_dirs()
 
-        folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-        folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-        folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
-        tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                     self.settings_json["tag_count_list_folder"])
+        folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+        tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                     self.download_tab_manager.settings_json["tag_count_list_folder"])
 
         if self.autotagmodel is None:
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir)
@@ -364,7 +374,7 @@ class Custom_dataset_tab:
             _, _, _ = self.autotagmodel.get_predictions(False)
 
         if image_confidence_values is None and image_generated_tags is None and image_preview_pil is None:
-            return gr.update(value={}), gr.update(choices=[]), gr.update(value=None)
+            return gr.update(value={}), gr.update(choices=[]), gr.update(value=None), gr.update(value=None)
 
         self.all_predicted_confidences = image_confidence_values
         self.all_predicted_tags = image_generated_tags
@@ -393,21 +403,31 @@ class Custom_dataset_tab:
         # force reload csvs and global image dictionaries
         self.gallery_tab_manager.force_reload_images_and_csvs()
 
-        return gr.update(value=temp_confids), gr.update(choices=temp_tags), image_preview_pil
+        # reset batch image component from the gallery
+        gallery_images_batch = gr.update(value=(None if (gallery_images_batch is not None and len(gallery_images_batch.value) > 0) else gallery_images_batch))
+
+        sorted_list = sorted(temp_tags, key=lambda tag: self.download_tab_manager.settings_json["tag_order_format"].split(", ").index(self.gallery_tab_manager.get_category_name(tag)))
+
+        return gr.update(value=temp_confids), gr.update(choices=sorted_list), image_preview_pil, gallery_images_batch
 
     # also creates an empty tag file for the image file if there isn't one already
     def save_custom_images(self, image_mode_choice_state, image_with_tag_path_textbox, copy_mode_ckbx):
+        self.download_tab_manager.is_csv_loaded = False
+
         self.generate_all_dirs()
 
         all_paths = None
         try:
             all_paths = self.autotagmodel.get_dataset().get_image_paths()
         except AttributeError:
-            all_paths = glob.glob(os.path.join(image_with_tag_path_textbox, f"*.jpg")) + \
-                        glob.glob(os.path.join(image_with_tag_path_textbox, f"*.png")) + \
-                        glob.glob(os.path.join(image_with_tag_path_textbox, f"*.gif"))
+            help.verbose_print(f"ATTRIBUTE ERROR LOADING SAVING IMAGE!!!")
+            all_paths = self.autotagmodel.get_image_paths()
+                # glob.glob(os.path.join(image_with_tag_path_textbox, f"*.jpg")) + \
+                #         glob.glob(os.path.join(image_with_tag_path_textbox, f"*.png")) + \
+                #         glob.glob(os.path.join(image_with_tag_path_textbox, f"*.gif"))
 
         help.verbose_print(f"all image paths to save:\t{all_paths}")
+
         help.verbose_print(f"image_with_tag_path_textbox:\t{image_with_tag_path_textbox}")
         images_path = all_paths
         if (image_with_tag_path_textbox is None or not len(image_with_tag_path_textbox) > 0 or (
@@ -417,16 +437,30 @@ class Custom_dataset_tab:
 
         if copy_mode_ckbx:  # caches images for gallery tab & persists to disk where the others are located
             temp = '\\' if help.is_windows() else '/'
-            folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.settings_json["png_folder"])
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+
+            help.verbose_print(f"all_paths:\t{all_paths}")
+            help.verbose_print(f"image_mode_choice_state.lower():\t{image_mode_choice_state.lower()}")
+
             if image_mode_choice_state.lower() == 'single':
                 images_path = images_path[0]
                 name = (images_path).split(temp)[-1]
-                help.copy_over_imgs(os.path.join(image_with_tag_path_textbox, name), os.path.join(folder_path, name),
-                                    'single')
+
+                help.verbose_print(f"image name:\t{name}")
+
+                help.copy_over_imgs(
+                    src=os.path.join(image_with_tag_path_textbox, name),
+                    dst=os.path.join(folder_path, name),
+                    image_mode_choice_state='single'
+                )
             else:
-                help.copy_over_imgs(image_with_tag_path_textbox, folder_path, 'batch')
+                help.copy_over_imgs(
+                    src=image_with_tag_path_textbox,
+                    dst=folder_path,
+                    image_mode_choice_state='batch'
+                )
         image_confidence_values = {}
         image_generated_tags = []
         image_preview_pil = None
@@ -489,15 +523,51 @@ class Custom_dataset_tab:
     def unload_component(self, value=None):
         return gr.update(value=value)
 
+    def remove_invalid_chars(self, directory_path):
+        # for all files in the specified path
+        # rename them without invalid characters i.e. "."
+        for root, dirs, files in os.walk(directory_path):
+            for file in files:
+                # Splitting the filename and its extension
+                name, ext = os.path.splitext(file)
+
+                # Check if the filename (without extension) contains more than one "."
+                if name.count('.') > 0:
+                    # Remove all "." from the filename
+                    new_name = name.replace('.', '')
+                    # Join the cleaned name and the extension with a "."
+                    final_name = new_name + ext
+
+                    # Creating the full path for both old and new filenames
+                    old_file_path = os.path.join(root, file)
+                    new_file_path = os.path.join(root, final_name)
+
+                    # Renaming the file
+                    os.rename(old_file_path, new_file_path)
+                    print(f'Renamed: {old_file_path} -> {new_file_path}')
+
+    def resolve_unknown_exts(self, path, ext):
+        help.verbose_print(path)
+        onlyfiles = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+        onlyfiles = [f for f in onlyfiles if (not os.path.isdir(os.path.join(path, f)))]
+        onlyfiles = [f for f in onlyfiles if f.rfind(".") == -1]
+        for f in onlyfiles:
+            temp_path = os.path.join(path, f)
+            counter = 0
+            if os.path.exists(f"{temp_path}.{ext}"):
+                while os.path.exists(f"{temp_path}{counter}.{ext}"):
+                    counter += 1
+                os.rename(temp_path, f"{temp_path}{counter}.{ext}")
+            else:
+                os.rename(temp_path, f"{temp_path}.{ext}")
+        help.verbose_print(onlyfiles)
+        help.verbose_print("Complete!")
 
 
 
 
 
-
-
-
-    def get_tab(self):
+    def render_tab(self):
         with gr.Tab("Add Custom Dataset"):
             gr.Markdown(md_.custom)
             image_modes = ['Single', 'Batch']
@@ -539,10 +609,22 @@ class Custom_dataset_tab:
                                 with gr.Column():
                                     image_preview_pil = gr.Image(label=f"Image Preview", interactive=False,
                                                                  visible=True, type="pil", height=840)
-
-                        send_img_from_autotag_dropdown = gr.Dropdown(label="Image to Tab Selector",
+                        with gr.Row():
+                            send_img_from_autotag_dropdown = gr.Dropdown(label="Image to Tab Selector",
                                                                      choices=tab_selection)
-                        send_img_from_autotag_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
+                            ext_choices = ["png", "jpg", "gif", "webm", "webp", "mp3", "mp4", "jpeg", "swf", "mov", "tiff", "psd", "blend", "pdf", "txt", "zip", "rar"]
+                            ext_selection = gr.Dropdown(info="Extension Type",
+                                                        value=ext_choices[0],
+                                                        choices=ext_choices,
+                                                        interactive=True,
+                                                        show_label=False)
+                        with gr.Row():
+                            send_img_from_autotag_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
+                            remove_invalid_chars_button = gr.Button(value="Remove Bad Filename Chars",
+                                                                variant='secondary',
+                                                                info="Uses the path provided to resolve all files")
+                            fix_files = gr.Button(value="Resolve File Extesions",
+                                                  variant="secondary")
 
                     with gr.Accordion(label="Model Settings", visible=True, open=True):
                         with gr.Row():
@@ -594,7 +676,7 @@ class Custom_dataset_tab:
                                 tag_effects_dropdown = gr.Dropdown(label="Tag Selector Effect/s",
                                                                    choices=tag_selection_list)
                             with gr.Column(min_width=50, scale=1):
-                                category_filter_batch_checkbox = gr.Checkbox(label="Enable Filter on Batch Mode")
+                                category_filter_batch_checkbox = gr.Checkbox(label="Enable Filter on Batch Mode", info="auto-selects/applies category selection to batch")
                         with gr.Row():
                             category_filter_dropdown = gr.Dropdown(label="Filter by Category (Multi-Select Enabled)",
                                                                    choices=list(self.categories_map.values()),
@@ -672,6 +754,10 @@ class Custom_dataset_tab:
         self.video_output_dir = video_output_dir
         self.convert_video_button = convert_video_button
         self.video_frames_gallery = video_frames_gallery
+        self.remove_invalid_chars_button = remove_invalid_chars_button
+        self.fix_files = fix_files
+        self.ext_choices = ext_choices
+        self.ext_selection = ext_selection
 
         return [
                 self.file_upload_button_single,
@@ -706,9 +792,24 @@ class Custom_dataset_tab:
                 self.video_output_dir,
                 self.convert_video_button,
                 self.video_frames_gallery,
-                self.auto_tag_models
+                self.auto_tag_models,
+                self.remove_invalid_chars_button,
+                self.fix_files,
+                self.ext_selection
                 ]
+
     def get_event_listeners(self):
+
+        self.fix_files.click(
+            fn=self.resolve_unknown_exts,
+            inputs=[self.image_with_tag_path_textbox, self.ext_selection],
+            outputs=[]
+        )
+        self.remove_invalid_chars_button.click(
+            fn=self.remove_invalid_chars,
+            inputs=[self.image_with_tag_path_textbox],
+            outputs=[]
+        )
         self.tag_effects_dropdown.select(
             fn=self.update_generated_tag_selection,
             inputs=[self.image_generated_tags, self.confidence_threshold_slider, self.category_filter_dropdown],
@@ -747,18 +848,25 @@ class Custom_dataset_tab:
             outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil,
                      self.image_generated_tags_prompt_builder_textbox]
         )
-        self.interrogate_button.click(self.unload_component, None, self.image_preview_pil).then(
+        self.interrogate_button.click(
+            fn=self.unload_component,
+            inputs=None,
+            outputs=[self.image_preview_pil]
+        ).then(
             fn=self.unload_component,
             inputs=gr.State([]),
-            outputs=self.image_generated_tags).then(
+            outputs=self.image_generated_tags
+        ).then(
             fn=self.unload_component,
             inputs=gr.State(""),
-            outputs=self.image_generated_tags_prompt_builder_textbox).then(
+            outputs=self.image_generated_tags_prompt_builder_textbox
+        ).then(
             fn=self.interrogate_images,
             inputs=[self.image_mode_choice_state, self.confidence_threshold_slider, self.category_filter_dropdown,
-                    self.category_filter_batch_checkbox],
-            outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil],
-            show_progress=True).then(
+                    self.category_filter_batch_checkbox, self.gallery_images_batch],
+            outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil, self.gallery_images_batch],
+            show_progress=True
+        ).then(
             fn=self.prompt_string_builder,
             inputs=[self.use_tag_opts_radio, self.image_generated_tags, self.confidence_threshold_slider],
             outputs=[self.image_generated_tags_prompt_builder_textbox]
@@ -777,7 +885,8 @@ class Custom_dataset_tab:
         self.confidence_threshold_slider.change(
             fn=self.set_threshold,
             inputs=[self.confidence_threshold_slider],
-            outputs=[self.image_confidence_values, self.image_generated_tags]).then(
+            outputs=[self.image_confidence_values, self.image_generated_tags]
+        ).then(
             fn=self.prompt_string_builder,
             inputs=[self.use_tag_opts_radio, self.image_generated_tags, self.confidence_threshold_slider],
             outputs=[self.image_generated_tags_prompt_builder_textbox]
@@ -816,7 +925,8 @@ class Custom_dataset_tab:
         self.use_tag_opts_radio.select(
             fn=self.set_use_tag_opts_radio,
             inputs=[],
-            outputs=[]).then(
+            outputs=[]
+        ).then(
             fn=self.prompt_string_builder,
             inputs=[self.use_tag_opts_radio, self.image_generated_tags, self.confidence_threshold_slider],
             outputs=[self.image_generated_tags_prompt_builder_textbox]

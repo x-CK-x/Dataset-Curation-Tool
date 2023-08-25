@@ -8,18 +8,17 @@ from utils import js_constants as js_, md_constants as md_, helper_functions as 
 
 
 class Gallery_tab:
-    def __init__(self, file_extn_list, categories_map, cwd, settings_json,
-                 multi_select_ckbx_state, only_selected_state_object, images_selected_state, image_mode_choice_state,
+    def __init__(self, file_extn_list, categories_map, cwd, multi_select_ckbx_state, only_selected_state_object,
+                 images_selected_state, image_mode_choice_state,
                  previous_search_state_text, current_search_state_placement_tuple, relevant_search_categories,
                  initial_add_state, initial_add_state_tag, relevant_add_categories, images_tuple_points,
-                 download_tab_manager, auto_complete_config_name, all_tags_ever_dict, trie, all_images_dict,
+                 download_tab_manager, auto_complete_config_name, all_tags_ever_dict, all_images_dict,
                  selected_image_dict, artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict,
                  meta_csv_dict, rating_csv_dict, tags_csv_dict, image_creation_times, is_csv_loaded
     ):
         self.file_extn_list = file_extn_list
         self.categories_map = categories_map
         self.cwd = cwd
-        self.settings_json = settings_json
         self.multi_select_ckbx_state = multi_select_ckbx_state
         self.only_selected_state_object = only_selected_state_object
         self.images_selected_state = images_selected_state
@@ -33,7 +32,6 @@ class Gallery_tab:
         self.images_tuple_points = images_tuple_points
         self.auto_complete_config_name = auto_complete_config_name
         self.all_tags_ever_dict = all_tags_ever_dict
-        self.trie = trie
         self.all_images_dict = all_images_dict
         self.selected_image_dict = selected_image_dict
         self.artist_csv_dict = artist_csv_dict
@@ -44,45 +42,25 @@ class Gallery_tab:
         self.rating_csv_dict = rating_csv_dict
         self.tags_csv_dict = tags_csv_dict
         self.image_creation_times = image_creation_times
-        self.is_csv_loaded = is_csv_loaded
 
 
 
         self.advanced_settings_tab_manager = None
         self.download_tab_manager = download_tab_manager
         self.image_editor_tab_manager = None
-        self.file_upload_button_single = None
-        self.image_editor = None
-        self.image_editor_crop = None
-        self.image_editor_sketch = None
-        self.image_editor_color_sketch = None
-        self.gallery_images_batch = None
+        self.tag_ideas = None
 
 
+
+
+    def set_tag_ideas(self, tag_ideas):
+        self.tag_ideas = tag_ideas
 
     def set_advanced_settings_tab_manager(self, advanced_settings_tab_manager):
         self.advanced_settings_tab_manager = advanced_settings_tab_manager
 
     def set_image_editor_tab_manager(self, image_editor_tab_manager):
         self.image_editor_tab_manager = image_editor_tab_manager
-
-    def set_file_upload_button_single(self, file_upload_button_single):
-        self.file_upload_button_single = file_upload_button_single
-
-    def set_image_editor(self, image_editor):
-        self.image_editor = image_editor
-
-    def set_image_editor_crop(self, image_editor_crop):
-        self.image_editor_crop = image_editor_crop
-
-    def set_image_editor_sketch(self, image_editor_sketch):
-        self.image_editor_sketch = image_editor_sketch
-
-    def set_image_editor_color_sketch(self, image_editor_color_sketch):
-        self.image_editor_color_sketch = image_editor_color_sketch
-
-    def set_gallery_images_batch(self, gallery_images_batch):
-        self.gallery_images_batch = gallery_images_batch
 
     def set_custom_dataset_tab_manager(self, custom_dataset_tab_manager):
         self.custom_dataset_tab_manager = custom_dataset_tab_manager
@@ -111,14 +89,18 @@ class Gallery_tab:
         if "searched" in temp:
             temp.remove("searched")
         for ext in temp:
-            for every_image in list(self.all_images_dict[ext].keys()):
-                if not every_image in self.download_tab_manager.auto_complete_config[ext]:
-                    self.download_tab_manager.auto_complete_config[ext][every_image] = []
+            for image in list(self.all_images_dict[ext].keys()):
+                if not image in self.download_tab_manager.auto_complete_config[ext]:
+                    self.download_tab_manager.auto_complete_config[ext][image] = []
 
     def reload_selected_image_dict(self, ext, img_name):
+        help.verbose_print(f"self.all_images_dict:\t{self.all_images_dict}")
+        help.verbose_print(f"self.all_images_dict[ext]:\t{self.all_images_dict[ext]}")
+
         # self.selected_image_dict  # id -> {categories: tag/s}, type -> string
         if img_name:
             img_tag_list = copy.deepcopy(self.all_images_dict[ext][img_name])
+
             help.verbose_print(f"img_tag_list:\t\t{img_tag_list}")
             # determine the category of each tag (TAGS WITHOUT A CATEGORY ARE NOT DISPLAYED)
             temp_tag_dict = {}
@@ -169,11 +151,11 @@ class Gallery_tab:
     ### Update gellery component
     def update_search_gallery(self, sort_images, sort_option):
         temp = '\\' if help.is_windows() else '/'
-        folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-        folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
         images = []
         for ext in list(self.all_images_dict["searched"].keys()):
-            search_path = os.path.join(folder_path, self.settings_json[f"{ext}_folder"])
+            search_path = os.path.join(folder_path, self.download_tab_manager.settings_json[f"{ext}_folder"])
             for img_id in list(self.all_images_dict["searched"][ext].keys()):
                 images.append(os.path.join(search_path, f"{img_id}.{ext}"))
 
@@ -189,7 +171,7 @@ class Gallery_tab:
         return images
 
     def initialize_posts_timekeeper(self):
-        start_year_temp = int(self.settings_json["min_year"])
+        start_year_temp = int(self.download_tab_manager.settings_json["min_year"])
         end_year_temp = datetime.date.today().year
         help.verbose_print(f"start_year_temp:\t{start_year_temp}")
         help.verbose_print(f"end_year_temp:\t{end_year_temp}")
@@ -209,8 +191,8 @@ class Gallery_tab:
         help.verbose_print(f"self.image_creation_times:\t{self.image_creation_times}")
 
     def is_csv_dict_empty(self, stats_load_file):
-        tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                     self.settings_json["tag_count_list_folder"])
+        tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                     self.download_tab_manager.settings_json["tag_count_list_folder"])
         if "artist" in stats_load_file:
             value = len(list(self.artist_csv_dict.keys()))
             if (value == 0):
@@ -248,32 +230,59 @@ class Gallery_tab:
             return [copy.deepcopy(self.tags_csv_dict), value]
 
     def load_images_and_csvs(self):
-        if not self.is_csv_loaded or (not self.all_images_dict or len(self.all_images_dict.keys()) == 0):
-            # clear searched dict
-            if "searched" in self.all_images_dict:
-                del self.all_images_dict["searched"]
-                self.all_images_dict["searched"] = {}
+        if (not self.download_tab_manager.is_csv_loaded) or (not self.all_images_dict or len(self.all_images_dict.keys()) == 0):
 
-            full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                               self.settings_json["downloaded_posts_folder"])
-            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-                self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.settings_json[f"png_folder"]),
-                                                  os.path.join(full_path_downloads, self.settings_json[f"jpg_folder"]),
-                                                  os.path.join(full_path_downloads, self.settings_json[f"gif_folder"]))
+            batch_path_check = os.path.exists(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]))
+            help.verbose_print(f"batch_path_check:\t{batch_path_check}")
 
-            # populate the timekeeping dictionary
-            self.initialize_posts_timekeeper()
+            tag_count_path_check = os.path.exists(os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                         self.download_tab_manager.settings_json["tag_count_list_folder"]))
+            help.verbose_print(f"tag_count_path_check:\t{tag_count_path_check}")
 
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
-            self.is_csv_loaded = True
-            self.artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
-            self.character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
-            self.species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
-            self.general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
-            self.meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
-            self.rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
-            self.tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
+            artists_path_check = os.path.exists(os.path.join(os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                         self.download_tab_manager.settings_json["tag_count_list_folder"]), "artist.csv"))
+
+            help.verbose_print(f"artists_path_check:\t{artists_path_check}")
+
+            if batch_path_check and tag_count_path_check and artists_path_check:
+                help.verbose_print(f"os.path.join(self.cwd, self.download_tab_manager.settings_json['batch_folder']):\t{os.path.join(self.cwd, self.download_tab_manager.settings_json['batch_folder'])}")
+                full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                                   self.download_tab_manager.settings_json["downloaded_posts_folder"])
+                help.verbose_print(f"full_path_downloads:\t{full_path_downloads}")
+                help.verbose_print(f"os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f'png_folder']):\t{os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f'png_folder'])}")
+                help.verbose_print(f"os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f'jpg_folder']):\t{os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f'jpg_folder'])}")
+                help.verbose_print(f"os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f'gif_folder']):\t{os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f'gif_folder'])}")
+                tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                             self.download_tab_manager.settings_json["tag_count_list_folder"])
+                help.verbose_print(f"tag_count_dir:\t{tag_count_dir}")
+                help.verbose_print(f"os.path.join(tag_count_dir, 'artist.csv'):\t{os.path.join(tag_count_dir, 'artist.csv')}")
+
+
+
+                # clear searched dict
+                if "searched" in self.all_images_dict:
+                    del self.all_images_dict["searched"]
+                    self.all_images_dict["searched"] = {}
+
+                # reset
+                self.all_images_dict = {}
+
+                if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
+                    self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
+                                                      os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
+                                                      os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+
+                # populate the timekeeping dictionary
+                self.initialize_posts_timekeeper()
+
+                self.download_tab_manager.is_csv_loaded = True
+                self.artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
+                self.character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
+                self.species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
+                self.general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
+                self.meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
+                self.rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
+                self.tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
 
     def force_reload_images_and_csvs(self):
         # clear searched dict
@@ -281,19 +290,19 @@ class Gallery_tab:
             del self.all_images_dict["searched"]
             self.all_images_dict["searched"] = {}
 
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                           self.settings_json["downloaded_posts_folder"])
+        full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                           self.download_tab_manager.settings_json["downloaded_posts_folder"])
         if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-            self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.settings_json[f"png_folder"]),
-                                              os.path.join(full_path_downloads, self.settings_json[f"jpg_folder"]),
-                                              os.path.join(full_path_downloads, self.settings_json[f"gif_folder"]))
+            self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
+                                              os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
+                                              os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
 
         # populate the timekeeping dictionary
         self.initialize_posts_timekeeper()
 
-        tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                     self.settings_json["tag_count_list_folder"])
-        self.is_csv_loaded = True
+        tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                     self.download_tab_manager.settings_json["tag_count_list_folder"])
+        self.download_tab_manager.is_csv_loaded = True
         self.artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
         self.character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
         self.species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
@@ -696,7 +705,8 @@ class Gallery_tab:
                 temp_ext = each_key
                 break
         # reload the categories for the self.selected_image_dict
-        if len(images_selected_state) == 0 and not multi_select_ckbx_state[0]:
+        if (len(images_selected_state) == 0 and not multi_select_ckbx_state[0]) and \
+                (img_id is not None and len(img_id) > 0):
             self.reload_selected_image_dict(temp_ext, img_id)
 
         category_component = None
@@ -976,8 +986,8 @@ class Gallery_tab:
         return category_comp1, category_comp2, category_comp3, category_comp4, category_comp5, category_comp6, gallery, id_box, only_selected_state_object, images_selected_state
 
     def csv_persist_to_disk(self):
-        tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                     self.settings_json["tag_count_list_folder"])
+        tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                     self.download_tab_manager.settings_json["tag_count_list_folder"])
         # update csv stats files
         help.write_tags_to_csv(self.artist_csv_dict, os.path.join(tag_count_dir, "artist.csv"))
         help.write_tags_to_csv(self.character_csv_dict, os.path.join(tag_count_dir, "character.csv"))
@@ -989,8 +999,8 @@ class Gallery_tab:
 
     def save_tag_changes(self):
         # do a full save of all tags
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                           self.settings_json["downloaded_posts_folder"])
+        full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                           self.download_tab_manager.settings_json["downloaded_posts_folder"])
         if not self.all_images_dict or not "png" in self.all_images_dict:
             raise ValueError('radio button not pressed i.e. image type button')
 
@@ -1005,7 +1015,7 @@ class Gallery_tab:
             help.verbose_print(f"removing searched key")
             help.verbose_print(f"temp_list:\t\t{temp_list}")
         for ext in temp_list:
-            full_path_gallery_type = os.path.join(full_path_downloads, self.settings_json[f"{ext}_folder"])
+            full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
             for img_id in list(self.all_images_dict[ext]):
                 full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
                 temp_tag_string = ",".join(self.all_images_dict[ext][img_id])
@@ -1026,8 +1036,8 @@ class Gallery_tab:
         help.verbose_print(f"SAVE COMPLETE")
 
     def save_image_changes(self):
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                           self.settings_json["downloaded_posts_folder"])
+        full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                           self.download_tab_manager.settings_json["downloaded_posts_folder"])
         if not self.all_images_dict or not "png" in self.all_images_dict:
             raise ValueError('radio button not pressed i.e. image type button')
         help.verbose_print(f"++++++++++++++++++++++++++")
@@ -1043,7 +1053,7 @@ class Gallery_tab:
 
         temp = '\\' if help.is_windows() else '/'
         for ext in temp_list:
-            full_path_gallery_type = os.path.join(full_path_downloads, self.settings_json[f"{ext}_folder"])
+            full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
             # type select
             images = [name.split(temp)[-1].split(".")[0] for name in glob.glob(os.path.join(full_path_gallery_type,
                                                                                             f"*.{ext}"))]  # getting the names of the files w.r.t. the directory
@@ -1141,120 +1151,9 @@ class Gallery_tab:
                    gr.update(choices=all_available_tags[4], value=all_selected_tags[4]), \
                    gr.update(choices=all_available_tags[5], value=all_selected_tags[5])
 
-    def get_search_tag_options(self, partial_tag, num_suggestions):
-        tag_categories = []
-        if (partial_tag[0] == "-" and len(partial_tag) == 1):
-            return gr.update(choices=[], value=None), tag_categories
-        # check for leading "-" with additional text afterwards i.e. length exceeding 1 :: remove "-" if condition is true
-        partial_tag = partial_tag[1:] if (partial_tag[0] == "-" and len(partial_tag) > 1) else partial_tag
 
-        # Get a list of all tags that start with the edited part
-        suggested_tags = self.trie.keys(partial_tag)
 
-        # Sort the tags by count and take the top num_suggestions
-        suggested_tags = sorted(suggested_tags, key=lambda tag: -self.trie[tag])[:num_suggestions]
 
-        # Color code the tags by their categories and add the count
-        color_coded_tags = []
-        for tag in suggested_tags:
-            category = self.categories_map[self.all_tags_ever_dict[tag][0]]  # gets category of already existing tag
-            tag_categories.append(category)
-            count = self.all_tags_ever_dict[tag][1]  # gets count of already existing tag
-            count_str = self.download_tab_manager.format_count(count)
-            color_coded_tag = f"{tag} → {count_str}"
-            color_coded_tags.append(color_coded_tag)
-
-        tag_suggestion_dropdown = gr.update(choices=color_coded_tags, value=None)
-
-        # print(f"color_coded_tags:\t{color_coded_tags}")
-        return tag_suggestion_dropdown, tag_categories
-
-    def identify_changing_tag(self, past_string, current_string):
-        # Split the strings into tags
-        past_tags = past_string.split()
-        current_tags = current_string.split()
-        # Compare the tags and find the one that is being changed
-        for i in range(min(len(past_tags), len(current_tags))):
-            if past_tags[i] != current_tags[i]:
-                return (current_string.index(current_tags[i]), current_tags[i])
-        # If we're here, it means one of the strings has more tags than the other
-        if len(past_tags) < len(current_tags):
-            # A tag was added
-            return (current_string.index(current_tags[-1]), current_tags[-1])
-        elif len(past_tags) > len(current_tags):
-            # A tag was removed
-            return (0, "")
-        # If we're here, it means there was no change
-        return (0, "")
-
-    def suggest_search_tags(self, input_string, num_suggestions, previous_text):
-        # obtain the current information
-        current_placement_tuple = self.identify_changing_tag(previous_text, input_string)
-
-        # print(f"previous_text:\t{(previous_text)}")
-        # print(f"CURRENT TEXT:\t{(input_string)}")
-        # print(f"num_suggestions:\t{(num_suggestions)}")
-        # print(f"current_placement_tuple:\t{(current_placement_tuple)}")
-
-        if current_placement_tuple[-1] is None or len(
-                current_placement_tuple[-1]) == 0:  # ignore if the changes nothing of importance
-            generic_dropdown = gr.update(choices=[], value=None)
-            previous_text = input_string  # update previous state
-            tag_categories = []
-            return generic_dropdown, previous_text, current_placement_tuple, tag_categories
-
-        generic_dropdown, tag_categories = self.get_search_tag_options(current_placement_tuple[-1], num_suggestions)
-        # print(f"generic_dropdown:\t{(generic_dropdown)}")
-        # print(f"tag_categories:\t{(tag_categories)}")
-
-        return generic_dropdown, previous_text, current_placement_tuple, tag_categories
-
-    def dropdown_search_handler(self, tag: gr.SelectData, input_string, previous_text, current_placement_tuple):
-        tag = tag.value
-        sep = " → "
-        if sep in tag:
-            tag = tag.split(sep)[0]
-
-        if current_placement_tuple[-1][0] == "-":
-            tag = f"-{tag}"
-        # help.verbose_print(f"tag:\t{tag}")
-        # help.verbose_print(f"input_string:\t{input_string}")
-        # help.verbose_print(f"previous_text:\t{previous_text}")
-        # help.verbose_print(f"current_placement_tuple:\t{current_placement_tuple}")
-        # change the textbox
-        start_index = current_placement_tuple[0]
-        end_index = current_placement_tuple[0] + len(current_placement_tuple[-1])
-        new_string = input_string[:start_index] + tag + input_string[end_index:]
-        # update the previous state
-        previous_text = new_string
-        # reset the placement tuple
-        current_search_state_placement_tuple = (0, "")
-        return gr.update(value=new_string), previous_text, current_search_state_placement_tuple, gr.update(choices=[],
-                                                                                                           value=None)
-
-    def dropdown_handler_add_tags(self, tag: gr.SelectData, apply_to_all_type_select_checkboxgroup, img_id,
-                                  multi_select_ckbx_state,
-                                  only_selected_state_object, images_selected_state, state_of_suggestion):
-        tag = tag.value
-        sep = " → "
-        if sep in tag:
-            tag = tag.split(sep)[0]
-
-        img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
-        img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
-        state_tag, tag_textbox = self.add_tag_changes(tag, apply_to_all_type_select_checkboxgroup, img_id,
-                                                 multi_select_ckbx_state, only_selected_state_object,
-                                                 images_selected_state, state_of_suggestion, False)
-
-        tag_textbox = gr.update(value="")
-        state_of_suggestion = ""
-        tag_suggestion_dropdown = gr.update(choices=[], value=[])
-        return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
-               img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
-               tag_textbox, tag_suggestion_dropdown, state_of_suggestion, state_tag
-
-    def reset_gallery(self):
-        return gr.update(value=[], visible=True)
 
     def reset_selected_img(self, img_id_textbox):
         # reset selected_img
@@ -1310,64 +1209,81 @@ class Gallery_tab:
     ### searched -> {img_id, tags}
     ######
     def show_gallery(self, folder_type_select, sort_images, sort_option):
-        help.verbose_print(f"folder_type_select:\t{folder_type_select}")
-        temp = '\\' if help.is_windows() else '/'
-        # clear searched dict
-        if "searched" in self.all_images_dict:
-            del self.all_images_dict["searched"]
-            self.all_images_dict["searched"] = {}
+        help.verbose_print(f"self.download_tab_manager.is_csv_loaded:\t{self.download_tab_manager.is_csv_loaded}")
 
-        folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-        folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-        folder_path = os.path.join(folder_path, self.settings_json[f"{folder_type_select}_folder"])
-
-        # type select
         images = []
-        if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-            images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
-            # loading images
-            self.add_current_images()
-        else:
-            for name in list(self.all_images_dict[folder_type_select].keys()):
-                images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
-        if not self.is_csv_loaded:
-            full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                               self.settings_json["downloaded_posts_folder"])
+        if folder_type_select is not None:
+            help.verbose_print(f"folder_type_select:\t{folder_type_select}")
+            temp = '\\' if help.is_windows() else '/'
+            # clear searched dict
+            if "searched" in self.all_images_dict:
+                del self.all_images_dict["searched"]
+                self.all_images_dict["searched"] = {}
 
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
-            # load ALL tags into relative categorical dictionaries
-            self.is_csv_loaded = True
-            self.artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
-            self.character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
-            self.species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
-            self.general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
-            self.meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
-            self.rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
-            self.tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
 
-            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-                self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.settings_json[f"png_folder"]),
-                                                  os.path.join(full_path_downloads, self.settings_json[f"jpg_folder"]),
-                                                  os.path.join(full_path_downloads, self.settings_json[f"gif_folder"]))
+            help.verbose_print(f"folder_path:\t{folder_path}")
 
-            # populate the timekeeping dictionary
-            self.initialize_posts_timekeeper()
+            # type select : re-load images
+            help.verbose_print(f"self.all_images_dict is None:\t{self.all_images_dict is None}")
+            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
+                    (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
+                    not self.download_tab_manager.is_csv_loaded:
+                images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
+                help.verbose_print(f"images:\t{images}")
+            else: # render from existing dictionary
+                for name in list(self.all_images_dict[folder_type_select].keys()):
+                    images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
 
-            # verbose_print(f"self.all_images_dict:\t\t{self.all_images_dict}")
-            # help.verbose_print(f"list(self.all_images_dict[ext]):\t\t{list(self.all_images_dict[folder_type_select])}")
+            if not self.download_tab_manager.is_csv_loaded:
+                full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                                   self.download_tab_manager.settings_json["downloaded_posts_folder"])
 
-        if sort_images and len(sort_option) > 0 and len(list(self.image_creation_times.keys())) > 0:
-            # parse to img_id -> to get the year
-            if sort_option == "new-to-old":
-                images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
-                                                                               float('-inf')),
-                                reverse=True)
-            elif sort_option == "old-to-new":
-                images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
-                                                                               float('-inf')))
+                tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                             self.download_tab_manager.settings_json["tag_count_list_folder"])
 
-        # help.verbose_print(f"images:\t{images}")
+
+                if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
+                    not self.download_tab_manager.is_csv_loaded:
+                    self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
+                                                      os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
+                                                      os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+
+                # loading images
+                self.add_current_images()
+
+                # load ALL tags into relative categorical dictionaries
+                self.download_tab_manager.is_csv_loaded = True
+                self.artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
+                self.character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
+                self.species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
+                self.general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
+                self.meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
+                self.rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
+                self.tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
+
+
+
+
+
+                # populate the timekeeping dictionary
+                self.initialize_posts_timekeeper()
+
+                # verbose_print(f"self.all_images_dict:\t\t{self.all_images_dict}")
+                # help.verbose_print(f"list(self.all_images_dict[ext]):\t\t{list(self.all_images_dict[folder_type_select])}")
+
+            if sort_images and len(sort_option) > 0 and len(list(self.image_creation_times.keys())) > 0:
+                # parse to img_id -> to get the year
+                if sort_option == "new-to-old":
+                    images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
+                                                                                   float('-inf')),
+                                    reverse=True)
+                elif sort_option == "old-to-new":
+                    images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
+                                                                                   float('-inf')))
+            # help.verbose_print(f"images:\t{images}")
         return gr.update(value=images, visible=True)
 
     def extract_name_and_extention(self, gallery_comp_path):
@@ -1473,28 +1389,42 @@ class Gallery_tab:
             del self.all_images_dict["searched"]
             self.all_images_dict["searched"] = {}
 
-        folder_path = os.path.join(self.cwd, self.settings_json["batch_folder"])
-        folder_path = os.path.join(folder_path, self.settings_json["downloaded_posts_folder"])
-        folder_path = os.path.join(folder_path, self.settings_json[f"{folder_type_select}_folder"])
+        folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
+
+        help.verbose_print(f"folder_path:\t{folder_path}")
 
         # type select
         images = []
-        if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
+        if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
+                    (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
+                    not self.download_tab_manager.is_csv_loaded:
             images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
-            # loading images
-            self.add_current_images()
         else:
             for name in list(self.all_images_dict[folder_type_select].keys()):
                 images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
-        self.is_csv_loaded = False
-        if not self.is_csv_loaded:
-            full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                               self.settings_json["downloaded_posts_folder"])
 
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                         self.settings_json["tag_count_list_folder"])
+        self.download_tab_manager.is_csv_loaded = False
+
+        if not self.download_tab_manager.is_csv_loaded:
+            full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                               self.download_tab_manager.settings_json["downloaded_posts_folder"])
+
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+
+            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
+                    not self.download_tab_manager.is_csv_loaded:
+                self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
+                                                  os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
+                                                  os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+
+            # loading images
+            self.add_current_images()
+
             # load ALL tags into relative categorical dictionaries
-            self.is_csv_loaded = True
+            self.download_tab_manager.is_csv_loaded = True
             self.artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
             self.character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
             self.species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
@@ -1503,10 +1433,7 @@ class Gallery_tab:
             self.rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
             self.tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
 
-            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-                self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.settings_json[f"png_folder"]),
-                                                  os.path.join(full_path_downloads, self.settings_json[f"jpg_folder"]),
-                                                  os.path.join(full_path_downloads, self.settings_json[f"gif_folder"]))
+
 
             # populate the timekeeping dictionary
             self.initialize_posts_timekeeper()
@@ -1527,23 +1454,73 @@ class Gallery_tab:
         # help.verbose_print(f"images:\t{images}")
         return gr.update(value=images, visible=True)
 
+    def reset_gallery_component_only(self):
+        return gr.update(value=[], visible=True)
+
+    def reset_gallery_manager(self):
+        download_folder_type = gr.update(value=None)
+        img_id_textbox = gr.update(value="")
+        tag_search_textbox = gr.update(value="")
+        tag_search_suggestion_dropdown = gr.update(value=None)
+        apply_to_all_type_select_checkboxgroup = gr.update(value=[])
+        select_multiple_images_checkbox = gr.update(value=False)
+        select_between_images_checkbox = gr.update(value=False)
+        apply_datetime_sort_ckbx = gr.update(value=False)
+        apply_datetime_choice_menu = gr.update(value=None)
+        send_img_from_gallery_dropdown = gr.update(value=None)
+        batch_send_from_gallery_checkbox = gr.update(value=False)
+        tag_add_textbox = gr.update(value="")
+        tag_add_suggestion_dropdown = gr.update(value=None)
+        category_filter_gallery_dropdown = gr.update(value=None)
+        tag_effects_gallery_dropdown = gr.update(value=None)
+        img_artist_tag_checkbox_group = gr.update(value=[])
+        img_character_tag_checkbox_group = gr.update(value=[])
+        img_species_tag_checkbox_group = gr.update(value=[])
+        img_general_tag_checkbox_group = gr.update(value=[])
+        img_meta_tag_checkbox_group = gr.update(value=[])
+        img_rating_tag_checkbox_group = gr.update(value=[])
+        gallery_comp = gr.update(value=None)
+
+        self.multi_select_ckbx_state = gr.JSON([False], visible=False) # JSON boolean component wrapped in a list
+        self.only_selected_state_object = gr.State(dict()) # state of image mappings represented by index -> [ext, img_id]
+        self.images_selected_state = gr.JSON([], visible=False) # JSON list of image ids in the gallery
+        self.images_tuple_points = gr.JSON([], visible=False) # JSON list of all images selected given by two points: a-b|b-a
+        self.selected_image_dict = {}
+        self.download_tab_manager.is_csv_loaded = False
+
+        self.load_images_and_csvs()
+        self.all_images_dict = {} # DONE TO ENSURE gallery loads images properly
+        self.download_tab_manager.is_csv_loaded = False # DONE TO ENSURE gallery loads images properly
+
+        return [
+                download_folder_type,
+                img_id_textbox,
+                tag_search_textbox,
+                tag_search_suggestion_dropdown,
+                apply_to_all_type_select_checkboxgroup,
+                select_multiple_images_checkbox,
+                select_between_images_checkbox,
+                apply_datetime_sort_ckbx,
+                apply_datetime_choice_menu,
+                send_img_from_gallery_dropdown,
+                batch_send_from_gallery_checkbox,
+                tag_add_textbox,
+                tag_add_suggestion_dropdown,
+                category_filter_gallery_dropdown,
+                tag_effects_gallery_dropdown,
+                img_artist_tag_checkbox_group,
+                img_character_tag_checkbox_group,
+                img_species_tag_checkbox_group,
+                img_general_tag_checkbox_group,
+                img_meta_tag_checkbox_group,
+                img_rating_tag_checkbox_group,
+                gallery_comp
+                ]
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-    def get_tab(self):
+    def render_tab(self):
         with gr.Tab("Tag Editor & Image Gallery"):
             tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor",
                              "Image Color Sketch Editor"]
@@ -1605,8 +1582,12 @@ class Gallery_tab:
 
                     with gr.Accordion("Tag Edit & Selection Options"):
                         with gr.Row():
-                            tag_remove_button = gr.Button(value="Remove Selected Tag/s", variant='primary')
-                            tag_save_button = gr.Button(value="Save Tag Changes", variant='primary')
+                            with gr.Column(min_width=50, scale=1):
+                                year_remove_button = gr.Button(value="(Global) Remove Year Tag/s", variant='secondary')
+                            with gr.Column(min_width=50, scale=1):
+                                tag_remove_button = gr.Button(value="Remove Selected Tag/s", variant='primary')
+                            with gr.Column(min_width=50, scale=1):
+                                tag_save_button = gr.Button(value="Save Tag Changes", variant='primary')
                         with gr.Row():
                             tag_add_textbox = gr.Textbox(label="Enter Tag/s here", lines=1, value="",
                                                          info="Press Enter/Space to ADD tag/s")
@@ -1620,7 +1601,7 @@ class Gallery_tab:
                                     choices=list(self.categories_map.values()), multiselect=True)
                             with gr.Column(min_width=50, scale=1):
                                 tag_effects_gallery_dropdown = gr.Dropdown(label="Tag Selector Effect/s",
-                                                                           choices=tag_selection_list)
+                                                                           choices=tag_selection_list, interactive=True)
 
                         img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[])
                         img_character_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Character Tag/s',
@@ -1659,6 +1640,7 @@ class Gallery_tab:
         self.img_meta_tag_checkbox_group = img_meta_tag_checkbox_group
         self.img_rating_tag_checkbox_group = img_rating_tag_checkbox_group
         self.gallery_comp = gallery_comp
+        self.year_remove_button = year_remove_button
 
         return [
                 self.refresh_aspect_btn,
@@ -1688,20 +1670,46 @@ class Gallery_tab:
                 self.img_general_tag_checkbox_group,
                 self.img_meta_tag_checkbox_group,
                 self.img_rating_tag_checkbox_group,
-                self.gallery_comp
+                self.gallery_comp,
+                self.year_remove_button
                 ]
 
     def get_event_listeners(self):
+        self.year_remove_button.click(
+            fn=self.remove_all,
+            inputs=[
+                self.img_artist_tag_checkbox_group,
+                self.img_character_tag_checkbox_group,
+                self.img_species_tag_checkbox_group,
+                self.img_general_tag_checkbox_group,
+                gr.State([str(year) for year in range(2000,2025,1)]),
+                self.img_rating_tag_checkbox_group,
+                gr.State(["png", "jpg", "gif"]),
+                self.img_id_textbox,
+                self.multi_select_ckbx_state,
+                self.only_selected_state_object,
+                self.images_selected_state
+            ],
+            outputs=[
+                self.img_artist_tag_checkbox_group,
+                self.img_character_tag_checkbox_group,
+                self.img_species_tag_checkbox_group,
+                self.img_general_tag_checkbox_group,
+                self.img_meta_tag_checkbox_group,
+                self.img_rating_tag_checkbox_group
+            ]
+        )
         self.send_img_from_gallery_button.click(
             fn=self.image_editor_tab_manager.send_images_from_feature,
             inputs=[self.send_img_from_gallery_dropdown, self.gallery_comp, gr.State(-1), self.img_id_textbox,
                     self.batch_send_from_gallery_checkbox, self.apply_to_all_type_select_checkboxgroup,
                     self.multi_select_ckbx_state, self.only_selected_state_object, self.images_selected_state],
-            outputs=[self.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.gallery_images_batch]
+            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor_tab_manager.image_editor,
+                     self.image_editor_tab_manager.image_editor_crop, self.image_editor_tab_manager.image_editor_sketch,
+                     self.image_editor_tab_manager.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.load_images_handler,
-            inputs=[self.file_upload_button_single, self.gallery_images_batch, self.image_mode_choice_state,
+            inputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.custom_dataset_tab_manager.gallery_images_batch, self.image_mode_choice_state,
                     self.batch_send_from_gallery_checkbox],
             outputs=[self.image_mode_choice_state]
         )
@@ -1714,7 +1722,7 @@ class Gallery_tab:
                    self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group]
         )
         self.tag_search_textbox.change(
-            fn=self.suggest_search_tags,
+            fn=self.tag_ideas.suggest_search_tags,
             inputs=[self.tag_search_textbox, self.advanced_settings_tab_manager.total_suggestions_slider, self.previous_search_state_text],
             outputs=[self.tag_search_suggestion_dropdown, self.previous_search_state_text,
                     self.current_search_state_placement_tuple, self.relevant_search_categories]
@@ -1725,7 +1733,7 @@ class Gallery_tab:
             _js=js_.js_set_colors_on_list_searchbar
         )
         self.tag_search_suggestion_dropdown.select(
-            fn=self.dropdown_search_handler,
+            fn=self.tag_ideas.dropdown_search_handler,
             inputs=[self.tag_search_textbox, self.previous_search_state_text, self.current_search_state_placement_tuple],
             outputs=[self.tag_search_textbox, self.previous_search_state_text, self.current_search_state_placement_tuple,
                      self.tag_search_suggestion_dropdown]
@@ -1742,7 +1750,7 @@ class Gallery_tab:
                      self.img_rating_tag_checkbox_group]
         )
         self.tag_add_textbox.change(
-            fn=self.download_tab_manager.suggest_tags,
+            fn=self.tag_ideas.suggest_tags,
             inputs=[self.tag_add_textbox, self.initial_add_state, self.advanced_settings_tab_manager.total_suggestions_slider,
                     self.initial_add_state_tag],
             outputs=[self.tag_add_suggestion_dropdown, self.initial_add_state, self.initial_add_state_tag, self.relevant_add_categories]).then(
@@ -1768,7 +1776,7 @@ class Gallery_tab:
                       self.initial_add_state_tag, self.tag_add_textbox]
         )
         self.tag_add_suggestion_dropdown.select(
-             fn=self.dropdown_handler_add_tags,
+             fn=self.tag_ideas.dropdown_handler_add_tags,
              inputs=[self.apply_to_all_type_select_checkboxgroup, self.img_id_textbox, self.multi_select_ckbx_state,
                      self.only_selected_state_object, self.images_selected_state, self.initial_add_state],
              outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
@@ -1783,7 +1791,7 @@ class Gallery_tab:
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
                      self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
                      self.gallery_comp, self.img_id_textbox, self.only_selected_state_object, self.images_selected_state]).then(
-            fn=self.reset_gallery,
+            fn=self.reset_gallery_component_only,
             inputs=[],
             outputs=[self.gallery_comp]).then(
             fn=self.show_searched_gallery,
@@ -1823,7 +1831,7 @@ class Gallery_tab:
             fn=self.save_tag_changes,
             inputs=[],
             outputs=[]).then(
-            fn=self.reset_gallery,
+            fn=self.reset_gallery_component_only,
             inputs=[],
             outputs=[self.gallery_comp]).then(
             fn=self.show_searched_gallery,

@@ -80,7 +80,7 @@ class Extras_tab:
         nested_model_links_checkbox_group = gr.update(value=None)
         return model_download_types, tagging_model_download_types, nested_model_links_checkbox_group
 
-    def get_tab(self):
+    def render_tab(self):
         with gr.Tab("Download Extra/s: Model/s & Code Repos"):
             gr.Markdown(md_.extra)
             with gr.Column():

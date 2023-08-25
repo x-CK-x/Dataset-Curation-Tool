@@ -1,0 +1,2 @@
+### placeholder to migrate any/all hardcoded meta data surrounding the existing image board to be more generic for any image boards in the future
+### this will act as a controller class object to provide the respective image board information to the other classes & features in a more efficient manner

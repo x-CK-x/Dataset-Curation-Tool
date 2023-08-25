@@ -6,20 +6,14 @@ from utils import helper_functions as help
 
 
 class Image_editor_tab:
-    def __init__(self, gallery_tab_manager, all_images_dict, selected_image_dict, all_tags_ever_dict, settings_json,
-                 cwd, file_upload_button_single, gallery_images_batch, image_mode_choice_state,
+    def __init__(self, gallery_tab_manager, download_tab_manager, cwd, image_mode_choice_state,
                  custom_dataset_tab_manager):
-        self.all_images_dict = all_images_dict
-        self.selected_image_dict = selected_image_dict
-        self.all_tags_ever_dict = all_tags_ever_dict
-        self.settings_json = settings_json
         self.cwd = cwd
 
+        self.download_tab_manager = download_tab_manager
         self.gallery_tab_manager = gallery_tab_manager
         self.custom_dataset_tab_manager = custom_dataset_tab_manager
 
-        self.file_upload_button_single = file_upload_button_single
-        self.gallery_images_batch = gallery_images_batch
         self.image_mode_choice_state = image_mode_choice_state
 
 
@@ -47,11 +41,11 @@ class Image_editor_tab:
             if (len(apply_type_select) > 0 or use_highlight[0]):
                 # find type of selected image
                 temp_ext = None
-                temp_all_images_dict_keys = list(self.all_images_dict.keys())
+                temp_all_images_dict_keys = list(self.gallery_tab_manager.all_images_dict.keys())
                 if "searched" in temp_all_images_dict_keys:
                     temp_all_images_dict_keys.remove("searched")
                 for each_key in temp_all_images_dict_keys:
-                    if image_id in list(self.all_images_dict[each_key]):
+                    if image_id in list(self.gallery_tab_manager.all_images_dict[each_key]):
                         temp_ext = each_key
                         break
                 # reload the categories for the selected_image_dict
@@ -64,11 +58,11 @@ class Image_editor_tab:
                     key_types = copy.copy(apply_type_select)
                     key_types.remove("searched")
                     for key_type in key_types:
-                        image_id_list += self.all_images_dict["searched"][key_type]
+                        image_id_list += self.gallery_tab_manager.all_images_dict["searched"][key_type]
                 elif ("png" in apply_type_select) or ("jpg" in apply_type_select) or ("gif" in apply_type_select):
                     key_types = copy.copy(apply_type_select)
                     for key_type in key_types:
-                        image_id_list += self.all_images_dict[key_type]
+                        image_id_list += self.gallery_tab_manager.all_images_dict[key_type]
                 # help.verbose_print(f"==============================================image_id_list:\t{image_id_list}")
                 if use_highlight[0]:
                     temp_id_list = []
@@ -78,14 +72,14 @@ class Image_editor_tab:
                     image_id_list = temp_id_list
                 # help.verbose_print(f"==============================================image_id_list:\t{image_id_list}")
                 # get the generic paths
-                full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                                   self.settings_json["downloaded_posts_folder"])
+                full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                                   self.download_tab_manager.settings_json["downloaded_posts_folder"])
                 # get the type of each image & collect full paths
                 full_paths_all = []
                 for ext in ["png", "jpg", "gif"]:
-                    full_path_gallery_type = os.path.join(full_path_downloads, self.settings_json[f"{ext}_folder"])
+                    full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
                     for img_id in image_id_list:
-                        if img_id in self.all_images_dict[ext]:
+                        if img_id in self.gallery_tab_manager.all_images_dict[ext]:
                             full_path = os.path.join(full_path_gallery_type, f"{img_id}.{ext}")
                             full_paths_all.append(full_path)
                 # help.verbose_print(f"++++++++++++++++++++++++++++++++++++++++++++full_paths_all:\t{full_paths_all}")
@@ -159,11 +153,11 @@ class Image_editor_tab:
         image_editor_color_sketch = gr.update(value=updates[4]) if updates[4][0] is not None else gr.update()
         gallery_images_batch = gr.update()
         # help.verbose_print(f"updates:\t{updates}")
-        # help.verbose_print(f"file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, image_editor_color_sketch:\t{[file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, image_editor_color_sketch]}")
+        # help.verbose_print(f"custom_dataset_tab_manager.file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, image_editor_color_sketch:\t{[custom_dataset_tab_manager.file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, image_editor_color_sketch]}")
         return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
                image_editor_color_sketch, gallery_images_batch
 
-    def get_tab(self):
+    def render_tab(self):
         with gr.Tab("Image Editor"):
             tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
             with gr.Tab("Image Editor Tool"):
@@ -221,43 +215,43 @@ class Image_editor_tab:
             fn=self.send_images_from_feature,
             inputs=[self.send_img_from_default_editor_dropdown, self.image_editor, gr.State(1), gr.State(None),
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.gallery_images_batch]
+            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
+                     self.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.custom_dataset_tab_manager.load_images,
-            inputs=[self.file_upload_button_single,self. image_mode_choice_state],
+            inputs=[self.custom_dataset_tab_manager.file_upload_button_single,self. image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )
         self.send_img_from_crop_editor_button.click(
             fn=self.send_images_from_feature,
             inputs=[self.send_img_from_crop_editor_dropdown, self.image_editor_crop, gr.State(2), gr.State(None),
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.gallery_images_batch]
+            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
+                     self.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.custom_dataset_tab_manager.load_images,
-            inputs=[self.file_upload_button_single, self.image_mode_choice_state],
+            inputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )
         self.send_img_from_sketch_editor_button.click(
             fn=self.send_images_from_feature,
             inputs=[self.send_img_from_sketch_editor_dropdown, self.image_editor_sketch, gr.State(3), gr.State(None),
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.gallery_images_batch]
+            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
+                     self.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.custom_dataset_tab_manager.load_images,
-            inputs=[self.file_upload_button_single, self.image_mode_choice_state],
+            inputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )
         self.send_img_from_color_editor_button.click(
             fn=self.send_images_from_feature,
             inputs=[self.send_img_from_color_editor_dropdown, self.image_editor_color_sketch, gr.State(4), gr.State(None),
                     gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.gallery_images_batch]
+            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
+                     self.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.custom_dataset_tab_manager.load_images,
-            inputs=[self.file_upload_button_single, self.image_mode_choice_state],
+            inputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )

@@ -229,7 +229,8 @@ class AutoTag:
                 if self.copy_mode_ckbx: # copy to dataset directory
                     help.write_tags_to_text_file(tag_string, temp_dst_tags_path)
                     # copy image over
-                    shutil.copy(temp_src_image_path, temp_dst_image_path)
+                    if not os.path.exists(temp_dst_image_path):
+                        shutil.copy(temp_src_image_path, temp_dst_image_path)
 
                 artist_csv_dict = {}
                 character_csv_dict = {}

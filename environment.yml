@@ -1,0 +1,13 @@
+name: data-curation
+
+channels:
+  - conda-forge
+  - nodefaults
+
+dependencies:
+  - python==3.10
+  - ipython
+  - pip
+  - pip:
+    - -r file:requirements.txt
+  - datrie

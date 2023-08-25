@@ -19,7 +19,9 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 - [X] Update the existing **Version_3 WebUI** ![WIKI Page](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki) for the **Version_4 WebUI**
 - [X] Finish Code Refactor
+- [X] Conda setup instructions
 - [ ] CSV load time optimization with the pandas framework **(Currently In Progress)**
+- [ ] .sh & .bat installer scripts for conda
 - [ ] Add Aliases for tags suggestions in the textboxes
 - [ ] Include support for a variation of different public image boards
 - [ ] Add Support for *brand new* tag & captioning models
@@ -30,18 +32,23 @@ A tool for downloading from public image boards (which allow scraping) / preview
 - [ ] Add UMAP
 - [ ] Color code tag categories for tag suggestions in the dropdown menus (**blocked** : ![https://github.com/gradio-app/gradio/issues/4988](https://github.com/gradio-app/gradio/issues/4988))
 
-## Installation Requirements
-> python 3.8+
 
-> Clone the Repo
+
+
+## Installation Requirements
+
+~["conda" package manager installation process](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
+~["conda" install options](https://docs.conda.io/en/latest/miniconda.html)
+
+> Open the terminal/cmd and copy-paste the following:
 ```
 git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
 ```
 
-> Install Dependencies
+> Install Dependencies with:
 ```
 cd Dataset-Curation-Tool
-pip install -r requirements.txt
+conda env create -f environment.yml
 ```
 
 #### Other System Install Options

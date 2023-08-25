@@ -28,7 +28,7 @@ class Stats_tab:
         # verbose_print(f"show_list:\t\t{show_list}")
         return dataframe
 
-    def get_tab(self):
+    def render_tab(self):
         with gr.Tab("Data Stats"):
             with gr.Row():
                 stats_run_options = gr.Dropdown(label="Run Method", choices=["frequency table", "inverse freq table"])

@@ -204,7 +204,7 @@ def parse_files_all_tags(file_list):
     return all_tags_all_files.copy()
 
 def parse_csv_all_tags(csv_file_path):
-    # verbose_print(f"single_file:\t\t{csv_file_path}")
+    # verbose_print(f"csv_file_path:\t\t{csv_file_path}")
     temp_dict = {}
     counter = 0
     with open(csv_file_path, 'r', encoding='utf-8') as read_file:
@@ -538,24 +538,29 @@ def is_installed(package):
     return spec is not None
 
 def copy_over_imgs(src, dst, image_mode_choice_state):
+
+    verbose_print(f"src folder:\t{src}")
+    verbose_print(f"dst folder:\t{dst}")
+
     temp = '\\' if is_windows() else '/'
     if image_mode_choice_state.lower() == 'single':
         if '.png' in src or '.jpg' in src:
             shutil.copy(src, dst)
 
-            file_name_src = list(src)
-            del file_name_src[-3:]
-            file_name_src = ''.join(file_name_src)
-            file_name_src += 'txt'
+            file_name_src, _ = os.path.splitext(src)
+            file_name_src = f"{file_name_src}.txt"
             path_src = os.path.join(src, file_name_src)
 
-            file_name_dst = list(src)
-            del file_name_dst[-3:]
-            file_name_dst = ''.join(file_name_dst)
-            file_name_dst += 'txt'
-            path_dst = os.path.join(src, file_name_dst)
+            file_name_dst, _ = os.path.splitext(dst)
+            file_name_dst = f"{file_name_dst}.txt"
+            path_dst = os.path.join(dst, file_name_dst)
 
-            if not os.path.exists(path_src):
+            verbose_print(f"path_src:\t{path_src}")
+            verbose_print(f"path_dst:\t{path_dst}")
+
+            if os.path.exists(path_src):
+                shutil.copy(path_src, path_dst)
+            else:
                 # create a new file & assumes NO tags
                 f = open(path_dst, 'w')
                 f.close()
@@ -567,11 +572,13 @@ def copy_over_imgs(src, dst, image_mode_choice_state):
             if '.png' in file_name or '.jpg' in file_name:
                 shutil.copy(os.path.join(src, file_name), os.path.join(dst, file_name))
 
-                file_name = list(file_name)
-                del file_name[-3:]
-                file_name = ''.join(file_name)
-                file_name += 'txt'
+                file_name, _ = os.path.splitext(file_name)
+                file_name = f"{file_name}.txt"
                 path = os.path.join(src, file_name)
+
+                verbose_print(f"path_src:\t{os.path.join(src, file_name)}")
+                verbose_print(f"path_dst:\t{os.path.join(dst, file_name)}")
+
                 if os.path.exists(path):
                     shutil.copy(path, os.path.join(dst, file_name))
                 else:
@@ -843,4 +850,50 @@ def get_full_text_path(download_folder_type, img_name, cwd):
     # help.verbose_print(f"img_name:\t\t{img_name}")
     # help.verbose_print(f"full_path:\t\t{full_path}")
     return full_path
+
+def load_tags_csv(proxy_url=None, settings_json=None, all_tags_ever_dict=None):
+    data = None
+    if ("use_csv_custom" in settings_json and settings_json["use_csv_custom"]) and \
+            ("csv_custom_path" in settings_json and len(settings_json["csv_custom_path"]) > 0):
+        try:
+            data = pd.read_csv(settings_json["csv_custom_path"])
+            # Check if there is a header
+            if data.columns.str.contains('Unnamed').any():
+                data = pd.read_csv(settings_json["csv_custom_path"], header=None, skiprows=1)
+        except pd.errors.ParserError:
+            print("File not found or is not a CSV")
+
+        # take first three columns and name them
+        data = data.iloc[:, :3]
+        data.columns = ['name', 'category', 'post_count']
+    else:
+        # check to update the tags csv
+        check_to_update_csv(proxy_url=proxy_url)
+        # get newest
+        current_list_of_csvs = sort_csv_files_by_date(os.getcwd())
+        try:
+            # load
+            data = pd.read_csv(current_list_of_csvs[0], usecols=['name', 'category', 'post_count'])
+        except pd.errors.ParserError:
+            print("File not found or is not a CSV")
+
+    # Convert 'name' column to string type
+    data['name'] = data['name'].astype(str)
+    # Remove rows where post_count equals 0
+    data = data[data['post_count'] != 0]
+
+    # Convert the DataFrame into a dictionary
+    # where the key is 'name' and the values are lists of [category, post_count]
+    all_tags_ever_dict = data.set_index('name')[['category', 'post_count']].T.to_dict('list')
+
+    # all_tags_ever_dict = copy.deepcopy(data_dict) # this is the part that takes the most time
+    del data
+    # del data_dict
+    return all_tags_ever_dict
+
+def load_trie(trie, all_tags_ever_dict):
+    # Add data to the trie
+    for tag in all_tags_ever_dict.keys():
+        trie[tag] = all_tags_ever_dict[tag][1]
+    verbose_print(f"Done constructing Trie tree!")
 
