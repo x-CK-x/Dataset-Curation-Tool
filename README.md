@@ -64,9 +64,15 @@ sudo apt-get install unzip
 
 ## How to Run Program
 
-> Run with sharing turned off : Default
+> Firstly Activate the Conda Environment
 ```
 conda activate data-curation
+```
+
+### Below are Several Run Options to choose from
+
+> Run with sharing turned off : Default
+```
 python webui.py
 ```
 
