@@ -1,5 +1,7 @@
 #!/bin/bash
 
+PATHFILE="dataset_curation_path.txt"
+
 # Check if conda command is available
 command -v conda >/dev/null 2>&1
 if [ $? -eq 0 ]; then
@@ -17,14 +19,34 @@ else
     source ~/.bashrc
 fi
 
-# Clone the GitHub repository if not already cloned
-if [ ! -d "Dataset-Curation-Tool" ]; then
-    git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
+# Check if we have a stored path
+if [ -f "$PATHFILE" ]; then
+    STORED_PATH=$(<"$PATHFILE")
+    cd "$STORED_PATH"
+else
+    # Check if the current directory is "Dataset-Curation-Tool"
+    if [ "$(basename "$PWD")" != "Dataset-Curation-Tool" ]; then
+        # Check and clone the GitHub repository if not already cloned
+        if [ ! -d "Dataset-Curation-Tool" ]; then
+            git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
+        else
+            echo "Repository already exists. Skipping clone."
+        fi
+        cd Dataset-Curation-Tool
+    else
+        echo "Already in 'Dataset-Curation-Tool' directory."
+    fi
+    # Store the current path for future use
+    echo "$PWD" > "$PATHFILE"
 fi
 
-# Change directory and create conda environment
-cd Dataset-Curation-Tool
-conda env create -f environment.yml
+# Check if the conda environment already exists
+conda info --envs | grep data-curation > /dev/null
+if [ $? -ne 0 ]; then
+    conda env create -f environment.yml
+else
+    echo "Conda environment 'data-curation' already exists. Skipping environment creation."
+fi
 
 # Activate the conda environment
 conda activate data-curation

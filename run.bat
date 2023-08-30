@@ -1,4 +1,8 @@
 @echo off
+setlocal
+
+REM File to store path
+set PATHFILE=dataset_curation_path.txt
 
 REM Check if conda command is available
 where conda >nul 2>nul
@@ -12,16 +16,39 @@ if %errorlevel% equ 0 (
     del miniconda.exe
 )
 
-REM Check and clone the GitHub repository if not already cloned
-if not exist Dataset-Curation-Tool (
-    git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
+REM Check if we have a stored path
+if exist %PATHFILE% (
+    set /p STORED_PATH=<%PATHFILE%
+    cd /d %STORED_PATH%
+) else (
+    REM Check if current directory is "Dataset-Curation-Tool"
+    if "%~n1" NEQ "Dataset-Curation-Tool" (
+        REM Check and clone the GitHub repository if not already cloned
+        if not exist Dataset-Curation-Tool (
+            git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
+        ) else (
+            echo Repository already exists. Skipping clone.
+        )
+        cd Dataset-Curation-Tool
+    ) else (
+        echo Already in 'Dataset-Curation-Tool' directory.
+    )
+    REM Store the current path for future use
+    echo %CD% > %PATHFILE%
 )
 
-cd Dataset-Curation-Tool
-call conda env create -f environment.yml
+REM Check if the conda environment already exists
+call conda info --envs | findstr /C:"data-curation" >nul
+if %errorlevel% neq 0 (
+    call conda env create -f environment.yml
+) else (
+    echo Conda environment 'data-curation' already exists. Skipping environment creation.
+)
 
 REM Activate the conda environment
 call activate data-curation
 
 REM Run the python program with the passed arguments
 python webui.py %*
+
+endlocal
