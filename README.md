@@ -118,7 +118,7 @@ Files/folders that use the same path are merged, not overwritten. For example, u
 * When resizing, when `resized_img_folder` uses a different folder from the source folder, if the file in the destination folder already exists, it is skipped. It does not check if the already existing file has the specified `min_short_side`.
 * When running a new batch using the same save directories for tag files, tag count folders, and save_searched_list, tag files, tag count csvs, and save_searched_lists will be overwritten.
 
-##### For more information/help on the downloading script, Please see the original backend development project : https://github.com/pikaflufftuft/pikaft-e621-posts-downloader
+##### For more information/help on the downloading script, Please see the original image board downloader script : https://github.com/pikaflufftuft/pikaft-e621-posts-downloader
 
 ## License
 
