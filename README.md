@@ -38,19 +38,25 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ## Installation Requirements
 
-["conda" package manager installation process](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
+Make sure you have `git` installed!
 
-["conda" install options](https://docs.conda.io/en/latest/miniconda.html)
+> Download either the windows, mac, or linux run file (repo will be installed for you):
+> 
+> [Windows Download](https://github.com/x-CK-x/Dataset-Curation-Tool/blob/main/run.bat)
+> 
+> [Linux Download](https://github.com/x-CK-x/Dataset-Curation-Tool/blob/main/linux_run.sh)
+> 
+> [MacOS Download](https://github.com/x-CK-x/Dataset-Curation-Tool/blob/main/mac_run.sh)
 
-> Open the terminal/cmd and copy-paste the following:
+> Mac and Linux Users should make the file executable with the following terminal command:
 ```
-git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
+chmod +x linux_run.sh
 ```
 
-> Install Dependencies with:
+OR
+
 ```
-cd Dataset-Curation-Tool
-conda env create -f environment.yml
+chmod +x mac_run.sh
 ```
 
 #### Other System Install Options
@@ -65,31 +71,23 @@ sudo apt-get install unzip
 
 ## How to Run Program
 
-> Firstly Activate the Conda Environment
-```
-conda activate data-curation
-```
+> Double-Click file to run with (Default) settings
 
-### Below are Several Run Options to choose from
-
-> Run with sharing turned off : Default
-```
-python webui.py
-```
+### Below are Several Run (additional) Options to choose from
 
 > Run with sharing turned on : Provides a *live* link that anyone can use
 ```
-python webui.py --share
+./RUN_FILE --share
 ```
 
 > Run password protected : Requires user to type in a username & password to access the webUI
 ```
-python webui.py --server_port 7860 --username NAME --password PASS
+./RUN_FILE --server_port 7860 --username NAME --password PASS
 ```
 
 > Run on a specified PORT : Displays the webUI relative to a specified PORT
 ```
-python webui.py --server_port 7860
+./RUN_FILE --server_port 7860
 ```
 
 > OR CHOOSE ANY COMBINATION OF ^
