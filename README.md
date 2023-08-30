@@ -61,8 +61,6 @@ chmod +x mac_run.sh
 
 #### Other System Install Options
 - Unzip for the (optionally) downloaded zip files
-- Navigate to the inside the Dataset-Curation-Tool folder
-- Run the pip install command
 
 (Linux)
 ```
