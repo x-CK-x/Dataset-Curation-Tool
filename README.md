@@ -20,8 +20,9 @@ A tool for downloading from public image boards (which allow scraping) / preview
 - [X] Update the existing **Version_3 WebUI** [WIKI Page](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki) for the **Version_4 WebUI**
 - [X] Finish Code Refactor
 - [X] Conda setup instructions
-- [ ] CSV load time optimization with the pandas framework **(Currently In Progress)**
-- [ ] .sh & .bat installer scripts for conda
+- [X] CSV load time optimization with the pandas framework
+- [X] .sh & .bat installer scripts for conda
+- [ ] Image Board manager class object **(Currently In Progress)**
 - [ ] Add Aliases for tags suggestions in the textboxes
 - [ ] Include support for a variation of different public image boards
 - [ ] Add Support for *brand new* tag & captioning models
