@@ -40,13 +40,22 @@ else
     echo "$PWD" > "$PATHFILE"
 fi
 
+# Fetch latest changes and tags from remote
+git fetch
+
+# Stash any user changes
+git stash
+
 # Check the current tag
 CURRENT_TAG=$(git describe --tags --exact-match 2> /dev/null)
-if [ "$CURRENT_TAG" != "v4.2.2" ]; then
-    git checkout tags/v4.2.2
+if [ "$CURRENT_TAG" != "v4.2.3" ]; then
+    git checkout tags/v4.2.3
 else
-    echo "Already on tag v4.2.2."
+    echo "Already on tag v4.2.3."
 fi
+
+# Apply stashed user changes
+git stash apply
 
 # Check if the conda environment already exists
 conda info --envs | grep data-curation > /dev/null
