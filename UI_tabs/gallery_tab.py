@@ -8,7 +8,7 @@ from utils import js_constants as js_, md_constants as md_, helper_functions as 
 
 
 class Gallery_tab:
-    def __init__(self, file_extn_list, categories_map, cwd, multi_select_ckbx_state, only_selected_state_object,
+    def __init__(self, file_extn_list, image_board, cwd, multi_select_ckbx_state, only_selected_state_object,
                  images_selected_state, image_mode_choice_state,
                  previous_search_state_text, current_search_state_placement_tuple, relevant_search_categories,
                  initial_add_state, initial_add_state_tag, relevant_add_categories, images_tuple_points,
@@ -17,7 +17,7 @@ class Gallery_tab:
                  meta_csv_dict, rating_csv_dict, tags_csv_dict, image_creation_times, is_csv_loaded
     ):
         self.file_extn_list = file_extn_list
-        self.categories_map = categories_map
+        self.image_board = image_board
         self.cwd = cwd
         self.multi_select_ckbx_state = multi_select_ckbx_state
         self.only_selected_state_object = only_selected_state_object
@@ -94,8 +94,8 @@ class Gallery_tab:
                     self.download_tab_manager.auto_complete_config[ext][image] = []
 
     def reload_selected_image_dict(self, ext, img_name):
-        help.verbose_print(f"self.all_images_dict:\t{self.all_images_dict}")
-        help.verbose_print(f"self.all_images_dict[ext]:\t{self.all_images_dict[ext]}")
+        # help.verbose_print(f"self.all_images_dict:\t{self.all_images_dict}")
+        # help.verbose_print(f"self.all_images_dict[ext]:\t{self.all_images_dict[ext]}")
 
         # self.selected_image_dict  # id -> {categories: tag/s}, type -> string
         if img_name:
@@ -107,17 +107,17 @@ class Gallery_tab:
             temp_list = [[], [], [], [], [], []]
             for tag in img_tag_list:
                 if tag in self.all_tags_ever_dict:
-                    if self.categories_map[self.all_tags_ever_dict[tag][0]] == 'artist':
+                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'artist':
                         temp_list[0].append(tag)
-                    if self.categories_map[self.all_tags_ever_dict[tag][0]] == 'character':
+                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'character':
                         temp_list[1].append(tag)
-                    if self.categories_map[self.all_tags_ever_dict[tag][0]] == 'species':
+                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'species':
                         temp_list[2].append(tag)
-                    if self.categories_map[self.all_tags_ever_dict[tag][0]] == 'general':
+                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'general':
                         temp_list[3].append(tag)
-                    if self.categories_map[self.all_tags_ever_dict[tag][0]] == 'meta':
+                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'meta':
                         temp_list[4].append(tag)
-                    if self.categories_map[self.all_tags_ever_dict[tag][0]] == 'rating':
+                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'rating':
                         temp_list[5].append(tag)
                 else:
                     help.verbose_print(f"tag:\t{tag}\tnot in self.all_tags_ever_dict")
@@ -489,7 +489,7 @@ class Gallery_tab:
                 for tag in tag_list:
                     if not tag in self.all_images_dict["searched"][self.selected_image_dict["type"]][img_id]:
                         # get last tag in category
-                        last_tag = self.get_insert_last_tags_name(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                        last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                              self.selected_image_dict["type"], img_id,
                                                              tag)  # i.e. the tag before the new one
                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -510,12 +510,12 @@ class Gallery_tab:
                         self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]][img_id].append(['+', tag, (glob_index)])
 
                         # create or increment category table AND frequency table for (all) tags
-                        self.add_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                        self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
             elif img_id in list(self.all_images_dict[self.selected_image_dict["type"]].keys()):  # find image in ( TYPE ) : id
                 for tag in tag_list:
                     if not tag in self.all_images_dict[self.selected_image_dict["type"]][img_id]:
                         # get last tag in category
-                        last_tag = self.get_insert_last_tags_name(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                        last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                              self.selected_image_dict["type"], img_id,
                                                              tag)  # i.e. the tag before the new one
                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -532,7 +532,7 @@ class Gallery_tab:
                         self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]][img_id].append(['+', tag, (glob_index)])
 
                         # create or increment category table AND frequency table for (all) tags
-                        self.add_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                        self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
         if len(apply_to_all_type_select_checkboxgroup) > 0:
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
                 if multi_select_ckbx_state[0]:
@@ -544,7 +544,7 @@ class Gallery_tab:
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict["searched"][ext][img_id]:  # add tag
                                         # get last tag in category
-                                        last_tag = self.get_insert_last_tags_name(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                                        last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                                              ext, img_id,
                                                                              tag)  # i.e. the tag before the new one
                                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -566,14 +566,14 @@ class Gallery_tab:
                                         self.download_tab_manager.auto_complete_config[ext][img_id].append(['+', tag, (glob_index)])
 
                                         # create or increment category table AND frequency table for (all) tags
-                                        self.add_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                                        self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
                 else:
                     for key_type in list(self.all_images_dict["searched"].keys()):
                         for img_id in list(self.all_images_dict["searched"][key_type].keys()):
                             for tag in tag_list:
                                 if not tag in self.all_images_dict["searched"][key_type][img_id]:  # add tag
                                     # get last tag in category
-                                    last_tag = self.get_insert_last_tags_name(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                                    last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                                          key_type, img_id,
                                                                          tag)  # i.e. the tag before the new one
                                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -595,7 +595,7 @@ class Gallery_tab:
                                     self.download_tab_manager.auto_complete_config[key_type][img_id].append(['+', tag, (glob_index)])
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    self.add_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                                    self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
             else:
                 if multi_select_ckbx_state[0]:
                     ##### returns index -> [ext, img_id]
@@ -606,7 +606,7 @@ class Gallery_tab:
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict[ext][img_id]:
                                         # get last tag in category
-                                        last_tag = self.get_insert_last_tags_name(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                                        last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                                              ext, img_id,
                                                                              tag)  # i.e. the tag before the new one
                                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -628,14 +628,14 @@ class Gallery_tab:
                                             self.all_images_dict["searched"][ext][img_id].insert(glob_index, tag)
 
                                         # create or increment category table AND frequency table for (all) tags
-                                        self.add_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                                        self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
                 else:
                     for key_type in apply_to_all_type_select_checkboxgroup:
                         for img_id in list(self.all_images_dict[key_type].keys()):
                             for tag in tag_list:
                                 if not tag in self.all_images_dict[key_type][img_id]:
                                     # get last tag in category
-                                    last_tag = self.get_insert_last_tags_name(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                                    last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                                          key_type, img_id,
                                                                          tag)  # i.e. the tag before the new one
                                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -657,7 +657,7 @@ class Gallery_tab:
                                         self.all_images_dict["searched"][key_type][img_id].insert(glob_index, tag)
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    self.add_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                                    self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
 
         # find type of selected image
         temp_ext = None
@@ -715,9 +715,9 @@ class Gallery_tab:
             "type"] in apply_to_all_type_select_checkboxgroup:
             # update info for selected image
             for tag in tag_list:
-                if tag in self.selected_image_dict[img_id][self.categories_map[self.all_tags_ever_dict[tag][0]]]:
-                    while tag in self.selected_image_dict[img_id][self.categories_map[self.all_tags_ever_dict[tag][0]]]:
-                        self.selected_image_dict[img_id][self.categories_map[self.all_tags_ever_dict[tag][0]]].remove(tag)
+                if tag in self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]]:
+                    while tag in self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]]:
+                        self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]].remove(tag)
             # update info for category components
             img_artist_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['artist'], value=[])
             img_character_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['character'], value=[])
@@ -731,9 +731,9 @@ class Gallery_tab:
                 not apply_to_all_type_select_checkboxgroup or len(apply_to_all_type_select_checkboxgroup) == 0):
             # update info for selected image
             for tag in tag_list:
-                if tag in self.selected_image_dict[img_id][self.categories_map[self.all_tags_ever_dict[tag][0]]]:
-                    while tag in self.selected_image_dict[img_id][self.categories_map[self.all_tags_ever_dict[tag][0]]]:
-                        self.selected_image_dict[img_id][self.categories_map[self.all_tags_ever_dict[tag][0]]].remove(tag)
+                if tag in self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]]:
+                    while tag in self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]]:
+                        self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]].remove(tag)
             # update info for category components
             img_artist_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['artist'], value=[])
             img_character_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['character'], value=[])
@@ -760,7 +760,7 @@ class Gallery_tab:
                             self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]][img_id].append(['-', tag])
 
                         # create or increment category table AND frequency table for (all) tags
-                        self.remove_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # remove
+                        self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # remove
             elif img_id in list(self.all_images_dict[self.selected_image_dict["type"]].keys()):  # find image in ( TYPE ) : id
                 for tag in tag_list:
                     if tag in self.all_images_dict[self.selected_image_dict["type"]][img_id]:
@@ -772,7 +772,7 @@ class Gallery_tab:
                             self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]][img_id].append(['-', tag])
 
                         # create or increment category table AND frequency table for (all) tags
-                        self.remove_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # remove
+                        self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # remove
 
         if len(apply_to_all_type_select_checkboxgroup) > 0:
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
@@ -795,7 +795,7 @@ class Gallery_tab:
                                             self.download_tab_manager.auto_complete_config[ext][img_id].append(['-', tag])
 
                                         # create or increment category table AND frequency table for (all) tags
-                                        self.remove_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                                        self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                                    tag)  # remove
                 else:
                     for key_type in list(self.all_images_dict["searched"].keys()):
@@ -813,7 +813,7 @@ class Gallery_tab:
                                         self.download_tab_manager.auto_complete_config[key_type][img_id].append(['-', tag])
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    self.remove_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                                    self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                                tag)  # remove
             else:
                 if multi_select_ckbx_state[0]:
@@ -837,7 +837,7 @@ class Gallery_tab:
                                                 self.all_images_dict["searched"][ext][img_id].remove(tag)
 
                                         # create or increment category table AND frequency table for (all) tags
-                                        self.remove_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                                        self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                                    tag)  # remove
                 else:
                     for key_type in apply_to_all_type_select_checkboxgroup:
@@ -857,7 +857,7 @@ class Gallery_tab:
                                             self.all_images_dict["searched"][key_type][img_id].remove(tag)
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    self.remove_to_csv_dictionaries(self.categories_map[self.all_tags_ever_dict[tag][0]],
+                                    self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
                                                                tag)  # remove
 
         return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
@@ -881,7 +881,7 @@ class Gallery_tab:
 
     def get_category_name(self, tag):
         if tag in self.all_tags_ever_dict:
-            return self.categories_map[self.all_tags_ever_dict[tag][0]]
+            return self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]
         else:
             return None
 
@@ -1598,7 +1598,7 @@ class Gallery_tab:
                             with gr.Column(min_width=50, scale=3):
                                 category_filter_gallery_dropdown = gr.Dropdown(
                                     label="Filter by Category (Multi-Select Enabled)",
-                                    choices=list(self.categories_map.values()), multiselect=True)
+                                    choices=list(self.image_board.categories_map.values()), multiselect=True)
                             with gr.Column(min_width=50, scale=1):
                                 tag_effects_gallery_dropdown = gr.Dropdown(label="Tag Selector Effect/s",
                                                                            choices=tag_selection_list, interactive=True)

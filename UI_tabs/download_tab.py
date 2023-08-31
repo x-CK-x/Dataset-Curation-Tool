@@ -1,3 +1,4 @@
+import copy
 import glob
 import os
 import multiprocessing as mp
@@ -9,7 +10,7 @@ from utils.features.downloader import batch_downloader
 
 
 class Download_tab:
-    def __init__(self, settings_json, cwd, categories_map, img_extensions, method_tag_files_opts, collect_checkboxes,
+    def __init__(self, settings_json, cwd, image_board, img_extensions, method_tag_files_opts, collect_checkboxes,
                  download_checkboxes, resize_checkboxes, file_extn_list, config_name, required_tags_list,
                  blacklist_tags, auto_config_path, initial_required_state,
                  initial_required_state_tag, relevant_required_categories, initial_blacklist_state,
@@ -17,7 +18,7 @@ class Download_tab:
                  ):
         self.settings_json = settings_json
         self.cwd = cwd
-        self.categories_map = categories_map
+        self.image_board = image_board
         self.img_extensions = img_extensions
         self.method_tag_files_opts = method_tag_files_opts
         self.collect_checkboxes = collect_checkboxes
@@ -72,7 +73,13 @@ class Download_tab:
         self.settings_json["batch_folder"] = str(batch_folder)
         self.settings_json["resized_img_folder"] = str(resized_img_folder)
         self.settings_json["tag_sep"] = str(tag_sep)
-        self.settings_json["tag_order_format"] = str(tag_order_format)
+
+
+        self.settings_json["tag_order_format"] = (self.settings_json["tag_sep"]).join(tag_order_format)
+        self.image_board.set_tag_order(tag_order_format)
+        self.image_board.update_img_brd()
+
+
         self.settings_json["prepend_tags"] = str(prepend_tags)
         self.settings_json["append_tags"] = str(append_tags)
         self.settings_json["img_ext"] = str(img_ext)
@@ -374,7 +381,7 @@ class Download_tab:
         batch_folder = gr.update(value=self.settings_json["batch_folder"])
         resized_img_folder = gr.update(value=self.settings_json["resized_img_folder"])
         tag_sep = gr.update(value=self.settings_json["tag_sep"])
-        tag_order_format = gr.update(value=self.settings_json["tag_order_format"])
+        tag_order_format = gr.update(value=self.image_board.tag_order)
         prepend_tags = gr.update(value=self.settings_json["prepend_tags"])
         append_tags = gr.update(value=self.settings_json["append_tags"])
         img_ext = gr.update(value=self.settings_json["img_ext"])
@@ -394,7 +401,7 @@ class Download_tab:
         resize_checkbox_group_var = gr.update(choices=self.resize_checkboxes,
                                               value=help.grab_pre_selected(self.settings_json, self.resize_checkboxes))
         required_tags_group_var = gr.update(choices=self.required_tags_list, value=[])
-        blacklist_group_var = gr.update(choices=self.blacklist_tags, value=[])
+        blacklist_tags_group_var = gr.update(choices=self.blacklist_tags, value=[])
         skip_posts_file = gr.update(value=self.settings_json["skip_posts_file"])
         skip_posts_type = gr.update(value=self.settings_json["skip_posts_type"])
         collect_from_listed_posts_file = gr.update(value=self.settings_json["collect_from_listed_posts_file"])
@@ -433,7 +440,7 @@ class Download_tab:
 
         return batch_folder, resized_img_folder, tag_sep, tag_order_format, prepend_tags, append_tags, img_ext, method_tag_files, min_score, min_fav_count, min_year, min_month, \
                min_day, min_area, top_n, min_short_side, collect_checkbox_group_var, download_checkbox_group_var, resize_checkbox_group_var, required_tags_group_var, \
-               blacklist_group_var, skip_posts_file, skip_posts_type, collect_from_listed_posts_file, collect_from_listed_posts_type, apply_filter_to_listed_posts, \
+               blacklist_tags_group_var, skip_posts_file, skip_posts_type, collect_from_listed_posts_file, collect_from_listed_posts_type, apply_filter_to_listed_posts, \
                save_searched_list_type, save_searched_list_path, downloaded_posts_folder, png_folder, jpg_folder, webm_folder, gif_folder, swf_folder, save_filename_type, \
                remove_tags_list, replace_tags_list, tag_count_list_folder, all_json_files_checkboxgroup, quick_json_select, proxy_url_textbox, settings_path, \
                custom_csv_path_textbox, use_csv_custom_checkbox
@@ -495,7 +502,7 @@ class Download_tab:
         batch_folder = gr.update(value=self.settings_json["batch_folder"])
         resized_img_folder = gr.update(value=self.settings_json["resized_img_folder"])
         tag_sep = gr.update(value=self.settings_json["tag_sep"])
-        tag_order_format = gr.update(value=self.settings_json["tag_order_format"])
+        tag_order_format = gr.update(value=self.image_board.tag_order)
         prepend_tags = gr.update(value=self.settings_json["prepend_tags"])
         append_tags = gr.update(value=self.settings_json["append_tags"])
         img_ext = gr.update(value=self.settings_json["img_ext"])
@@ -515,7 +522,7 @@ class Download_tab:
         resize_checkbox_group_var = gr.update(choices=self.resize_checkboxes,
                                               value=help.grab_pre_selected(self.settings_json, self.resize_checkboxes))
         required_tags_group_var = gr.update(choices=self.required_tags_list, value=[])
-        blacklist_group_var = gr.update(choices=self.blacklist_tags, value=[])
+        blacklist_tags_group_var = gr.update(choices=self.blacklist_tags, value=[])
         skip_posts_file = gr.update(value=self.settings_json["skip_posts_file"])
         skip_posts_type = gr.update(value=self.settings_json["skip_posts_type"])
         collect_from_listed_posts_file = gr.update(value=self.settings_json["collect_from_listed_posts_file"])
@@ -551,7 +558,7 @@ class Download_tab:
 
         return batch_folder, resized_img_folder, tag_sep, tag_order_format, prepend_tags, append_tags, img_ext, method_tag_files, min_score, min_fav_count, min_year, min_month, \
                min_day, min_area, top_n, min_short_side, collect_checkbox_group_var, download_checkbox_group_var, resize_checkbox_group_var, required_tags_group_var, \
-               blacklist_group_var, skip_posts_file, skip_posts_type, collect_from_listed_posts_file, collect_from_listed_posts_type, apply_filter_to_listed_posts, \
+               blacklist_tags_group_var, skip_posts_file, skip_posts_type, collect_from_listed_posts_file, collect_from_listed_posts_type, apply_filter_to_listed_posts, \
                save_searched_list_type, save_searched_list_path, downloaded_posts_folder, png_folder, jpg_folder, webm_folder, gif_folder, swf_folder, save_filename_type, \
                remove_tags_list, replace_tags_list, tag_count_list_folder, all_json_files_checkboxgroup, quick_json_select, proxy_url_textbox, settings_path, \
                custom_csv_path_textbox, use_csv_custom_checkbox
@@ -998,7 +1005,94 @@ class Download_tab:
         help.verbose_print("Done")
 
 
+    def load_single_tag_json(self, selected, existing_tags, json, json_key):
+        selected = [selected] if not isinstance(selected, list) else selected
+        tags = None
+        # only load existing tags if (one) is selected
+        if len(selected) == 1:
+            # display contents for that entry
+            tags = gr.update(choices=json[selected[0]][json_key])
+        else:
+            tags = gr.update(choices=existing_tags)
+        return tags
 
+    def new_json_proto_entry(self, json, json_key):
+        # json update
+        next_entry_key = str((max([int(key) for key in json.keys()]) + 1) if (len(list(json.keys())) > 0) else 0)
+        json[next_entry_key] = {"required": {}, "blacklist": {}}
+        json[next_entry_key][json_key] = []
+        json_update = gr.update(value=json)
+        # entry dropdown update
+        dropdown = gr.update(choices=list(json.keys()), value=[])
+        # current checkbox group clear
+        checkbox_group = gr.update(choices=[], value=[])
+        return json_update, dropdown, checkbox_group, json_update, dropdown
+
+    def reset_json_proto_entry(self, json, json_key, selected):
+        selected = [selected] if not isinstance(selected, list) else selected
+        for entry_number in selected:
+            # json update
+            json[entry_number][json_key] = []
+        json_update = gr.update(value=json)
+        # current checkbox group clear
+        checkbox_group = gr.update(choices=[], value=[])
+        return json_update, checkbox_group, json_update
+
+    def add_to_json_proto_entry(self, json, json_key, selected, checkbox_group):
+        selected = [selected] if not isinstance(selected, list) else selected
+        for entry_number in selected:
+            # json update
+            json[entry_number][json_key] = checkbox_group
+            help.verbose_print(f"entry_number:\t{entry_number}")
+            help.verbose_print(f"json_key:\t{json_key}")
+            help.verbose_print(f"checkbox_group:\t{checkbox_group}")
+            help.verbose_print(f"json status [{entry_number}]:\t{json[entry_number][json_key]}")
+            help.verbose_print(f"json:\t{json}")
+        json_update = gr.update(value=json)
+        # current checkbox group clear
+        checkbox_group = gr.update(choices=[], value=[])
+        return json_update, checkbox_group, json_update
+
+    def remove_json_proto_entry(self, json, selected):
+        selected = [selected] if not isinstance(selected, list) else selected
+        for entry_number in selected:
+            # json update
+            del json[entry_number]
+        json_update = gr.update(value=json)
+        # entry dropdown update
+        dropdown = gr.update(choices=list(json.keys()), value=[])
+        # current checkbox group clear
+        checkbox_group = gr.update(choices=[], value=[])
+        return json_update, dropdown, checkbox_group, json_update, dropdown
+
+    def create_all_setting_configs(self, json, settings_path):
+        settings_copy = copy.deepcopy(self.settings_json)
+        path = settings_path
+        temp = '\\' if help.is_windows() else '/'
+        if ".json" in path:
+            path = (path.split(temp))[:-1]
+            path = f'{temp}'.join(path)
+        entries = list(json.keys())
+        for entry_key in entries:
+            # edit copy
+            # update batch_folder, required_tags, blacklist
+            settings_copy["batch_folder"] = '_'.join(json[entry_key]["required"])
+            settings_copy["required_tags"] = settings_copy["tag_sep"].join(json[entry_key]["required"])
+            settings_copy["blacklist"] = settings_copy["tag_sep"].join(json[entry_key]["blacklist"])
+            # check new file name
+            number = 0
+            new_path = os.path.join(path, f"settings_{number}.json")
+            while os.path.exists(new_path):
+                number += 1
+                new_path = os.path.join(path, f"settings_{number}.json")
+            # save with path
+            help.update_JSON(settings_copy, new_path)
+        temp = '\\' if help.is_windows() else '/'
+        all_json_files_checkboxgroup = sorted(
+            [(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]
+        )
+        all_json_files_checkboxgroup = gr.update(choices=all_json_files_checkboxgroup, value=[])
+        return all_json_files_checkboxgroup
 
 
 
@@ -1036,7 +1130,10 @@ class Download_tab:
                     with gr.Column(min_width=50, scale=1):
                         tag_sep = gr.Textbox(lines=1, label='Tag Separator/Delimeter', value=self.settings_json["tag_sep"])
                     with gr.Column(min_width=50, scale=2):
-                        tag_order_format = gr.Textbox(lines=1, label='Tag ORDER', value=self.settings_json["tag_order_format"])
+                        tag_order_format = gr.Dropdown(multiselect=True, interactive=True, label='Tag ORDER',
+                                                       choices=self.image_board.valid_categories,
+                                                       value=self.image_board.tag_order
+                                                       )
                     with gr.Column(min_width=50, scale=2):
                         prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=self.settings_json["prepend_tags"])
                     with gr.Column(min_width=50, scale=2):
@@ -1082,8 +1179,8 @@ class Download_tab:
                     with gr.Column():
                         gr.Markdown(md_.resize)
                         resize_checkbox_group_var = gr.CheckboxGroup(choices=self.resize_checkboxes, label='Resize Checkboxes', value=help.grab_pre_selected(self.settings_json, self.resize_checkboxes))
-
-            tag_json_fast_proto_settings = {"required": {}, "blacklist": {}}
+            ######################################## prototype config creation tool ########################################
+            tag_json_fast_proto_settings = {}
             fast_proto_path = os.path.join(self.cwd, "fast_downloader_config")
             fast_proto_path_name = "fast_downloader.json"
             if not os.path.exists(fast_proto_path):
@@ -1091,7 +1188,7 @@ class Download_tab:
                 help.update_JSON(settings=tag_json_fast_proto_settings, temp_config_name=os.path.join(fast_proto_path, fast_proto_path_name))
             else:
                 tag_json_fast_proto_settings = help.load_session_config(f_name=os.path.join(fast_proto_path, fast_proto_path_name))
-
+            ################################################################################################################
             # fast_tag_proto_list = [sorted([(proto_file.split(temp)[-1]) for proto_file in glob.glob(os.path.join(fast_proto_path, f"*.json"))])]
             with gr.Accordion("Edit Requirements for Required Tags", visible=True, open=False):
                 with gr.Row():
@@ -1109,18 +1206,27 @@ class Download_tab:
                     remove_button_required = gr.Button(value="Remove Checked Tags", variant='secondary')
                     parse_button_required = gr.Button(value="Parse/Add Tags", variant='secondary')
                 with gr.Row():
-                    with gr.Column():
-                        tag_json_fast_proto_required = gr.JSON(label="Fast Tag Downloader Prototype", value=tag_json_fast_proto_settings, visible=True)
-                    # add new entry w/ incrementing (numbers) designating the new potential configs >>>> (defaults to that entry when creating it)
-                    # dropdown menu to select the entry to edit
-                    # add tags to current entry button
-                    # reset json button
+                    with gr.Column(min_width=50, scale=5):
+                        tag_json_fast_proto_required = gr.JSON(label="Fast Tag Downloader Prototype",
+                                                           value=tag_json_fast_proto_settings, visible=True)
+                    with gr.Column(min_width=50, scale=1):
+                        # dropdown menu to select the entry to edit --- multi-select ----- use the options below to add tags to multiple entries at a time
+                        entry_selection_required = gr.Dropdown(show_label=False, info="Entry Selection",
+                                                               choices=list(tag_json_fast_proto_settings.keys()),
+                                                               multiselect=True, interactive=True)
+                        entry_load_button_required = gr.Button(value="Load Entry", variant='secondary')
+                with gr.Row():
                     # split into setting_(NUMBER).json files
-                    # manually remove entries with checkbox group AND delete button
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
-
+                    fast_create_json_button_required = gr.Button(value="Split to Setting Files", variant='primary',
+                                                                 info="Converts json file to auto create setting_(NUMBER).json files")
+                    # add new entry w/ incrementing (numbers) designating the new potential configs >>>> (defaults to that entry when creating it)
+                    new_entry_button_required = gr.Button(value="New Entry", variant='secondary')
+                    # reset json button
+                    reset_entry_button_required = gr.Button(value="Reset Entry", variant='secondary')
+                    # add tags to current entry button
+                    add_to_entry_button_required = gr.Button(value="Add Tag/s to Entry", variant='secondary')
+                    # remove tags to current entry button
+                    remove_entry_button_required = gr.Button(value="Remove Entry", variant='secondary')
             with gr.Accordion("Edit Requirements for Blacklist Tags", visible=True, open=False):
                 with gr.Row():
                     with gr.Column():
@@ -1129,7 +1235,7 @@ class Download_tab:
                                 blacklist_tags_textbox = gr.Textbox(lines=1, label='Press Enter/Space to ADD tag/s', value="")
                             with gr.Column(min_width=50, scale=2):
                                 tag_blacklist_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, elem_id="blacklist_dropdown")
-                        blacklist_group_var = gr.CheckboxGroup(choices=self.blacklist_tags, label='ALL Blacklisted Tags',
+                        blacklist_tags_group_var = gr.CheckboxGroup(choices=self.blacklist_tags, label='ALL Blacklisted Tags',
                                                                value=[])
                     with gr.Column():
                         file_all_tags_list_blacklist = gr.File(file_count="multiple", file_types=["file"], label="Select ALL files with Tags to be parsed and Added")
@@ -1137,19 +1243,27 @@ class Download_tab:
                     remove_button_blacklist = gr.Button(value="Remove Checked Tags", variant='secondary')
                     parse_button_blacklist = gr.Button(value="Parse/Add Tags", variant='secondary')
                 with gr.Row():
-                    with gr.Column():
+                    with gr.Column(min_width=50, scale=5):
                         tag_json_fast_proto_blacklist = gr.JSON(label="Fast Tag Downloader Prototype",
                                                       value=tag_json_fast_proto_settings, visible=True)
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
-                    ########################################################################################################################
+                    with gr.Column(min_width=50, scale=1):
+                        # dropdown menu to select the entry to edit --- multi-select ----- use the options below to add tags to multiple entries at a time
+                        entry_selection_blacklist = gr.Dropdown(show_label=False, info="Entry Selection",
+                                                                choices=list(tag_json_fast_proto_settings.keys()),
+                                                                multiselect=True, interactive=True)
+                        entry_load_button_blacklist = gr.Button(value="Load Entry", variant='secondary')
+                with gr.Row():
+                    # split into setting_(NUMBER).json files
+                    fast_create_json_button_blacklist = gr.Button(value="Split to Setting Files", variant='primary',
+                                                                  info="Converts json file to auto create setting_(NUMBER).json files")
+                    # add new entry w/ incrementing (numbers) designating the new potential configs >>>> (defaults to that entry when creating it)
+                    new_entry_button_blacklist = gr.Button(value="New Entry", variant='secondary')
+                    # reset json button
+                    reset_entry_button_blacklist = gr.Button(value="Reset Entry", variant='secondary')
+                    # add tags to current entry button
+                    add_to_entry_button_blacklist = gr.Button(value="Add Tag/s to Entry", variant='secondary')
+                    # remove tags to current entry button
+                    remove_entry_button_blacklist = gr.Button(value="Remove Tag/s to Entry", variant='secondary')
             with gr.Accordion("Edit Requirements for Advanced Configuration", visible=True, open=False):
                 gr.Markdown(md_.add_comps_config)
                 with gr.Row():
@@ -1271,7 +1385,7 @@ class Download_tab:
         self.parse_button_required = parse_button_required
         self.blacklist_tags_textbox = blacklist_tags_textbox
         self.tag_blacklist_suggestion_dropdown = tag_blacklist_suggestion_dropdown
-        self.blacklist_group_var = blacklist_group_var
+        self.blacklist_tags_group_var = blacklist_tags_group_var
         self.file_all_tags_list_blacklist = file_all_tags_list_blacklist
         self.remove_button_blacklist = remove_button_blacklist
         self.parse_button_blacklist = parse_button_blacklist
@@ -1320,6 +1434,23 @@ class Download_tab:
         self.all_json_files_checkboxgroup = all_json_files_checkboxgroup
         self.run_button_batch = run_button_batch
         self.progress_run_batch = progress_run_batch
+
+        self.tag_json_fast_proto_required = tag_json_fast_proto_required
+        self.entry_selection_required = entry_selection_required
+        self.new_entry_button_required = new_entry_button_required
+        self.reset_entry_button_required = reset_entry_button_required
+        self.add_to_entry_button_required = add_to_entry_button_required
+        self.remove_entry_button_required = remove_entry_button_required
+        self.fast_create_json_button_required = fast_create_json_button_required
+        self.tag_json_fast_proto_blacklist = tag_json_fast_proto_blacklist
+        self.entry_selection_blacklist = entry_selection_blacklist
+        self.new_entry_button_blacklist = new_entry_button_blacklist
+        self.reset_entry_button_blacklist = reset_entry_button_blacklist
+        self.add_to_entry_button_blacklist = add_to_entry_button_blacklist
+        self.remove_entry_button_blacklist = remove_entry_button_blacklist
+        self.fast_create_json_button_blacklist = fast_create_json_button_blacklist
+        self.entry_load_button_required = entry_load_button_required
+        self.entry_load_button_blacklist = entry_load_button_blacklist
         ########################################################################################################################
         ########################################################################################################################
         ########################################################################################################################
@@ -1359,7 +1490,7 @@ class Download_tab:
                 self.parse_button_required,
                 self.blacklist_tags_textbox,
                 self.tag_blacklist_suggestion_dropdown,
-                self.blacklist_group_var,
+                self.blacklist_tags_group_var,
                 self.file_all_tags_list_blacklist,
                 self.remove_button_blacklist,
                 self.parse_button_blacklist,
@@ -1408,9 +1539,137 @@ class Download_tab:
                 self.all_json_files_checkboxgroup,
                 self.run_button_batch,
                 self.progress_run_batch,
+                self.tag_json_fast_proto_required,
+                self.entry_selection_required,
+                self.new_entry_button_required,
+                self.reset_entry_button_required,
+                self.add_to_entry_button_required,
+                self.remove_entry_button_required,
+                self.fast_create_json_button_required,
+                self.tag_json_fast_proto_blacklist,
+                self.entry_selection_blacklist,
+                self.new_entry_button_blacklist,
+                self.reset_entry_button_blacklist,
+                self.add_to_entry_button_blacklist,
+                self.remove_entry_button_blacklist,
+                self.fast_create_json_button_blacklist,
+                self.entry_load_button_required,
+                self.entry_load_button_blacklist
                 ]########################################################################################################################
 
     def get_event_listeners(self):
+        self.entry_load_button_required.click(
+            fn=self.load_single_tag_json,
+            inputs=[self.entry_selection_required, self.required_tags_group_var, self.tag_json_fast_proto_required,
+                    gr.State("required")],
+            outputs=[self.required_tags_group_var]
+        )
+        self.new_entry_button_required.click(
+            fn=self.new_json_proto_entry,
+            inputs=[self.tag_json_fast_proto_required, gr.State("required")],
+            outputs=[
+                self.tag_json_fast_proto_required,
+                self.entry_selection_required,
+                self.required_tags_group_var,
+                self.tag_json_fast_proto_blacklist,
+                self.entry_selection_blacklist
+            ]
+        )
+        self.reset_entry_button_required.click(
+            fn=self.reset_json_proto_entry,
+            inputs=[self.tag_json_fast_proto_required, gr.State("required"), self.entry_selection_required],
+            outputs=[
+                self.tag_json_fast_proto_required,
+                self.required_tags_group_var,
+                self.tag_json_fast_proto_blacklist
+            ]
+        )
+        self.add_to_entry_button_required.click(
+            fn=self.add_to_json_proto_entry,
+            inputs=[
+                self.tag_json_fast_proto_required,
+                gr.State("required"),
+                self.entry_selection_required,
+                self.required_tags_group_var
+            ],
+            outputs=[
+                self.tag_json_fast_proto_required,
+                self.required_tags_group_var,
+                self.tag_json_fast_proto_blacklist
+            ]
+        )
+        self.remove_entry_button_required.click(
+            fn=self.remove_json_proto_entry,
+            inputs=[self.tag_json_fast_proto_required, self.entry_selection_required],
+            outputs=[
+                self.tag_json_fast_proto_required,
+                self.entry_selection_required,
+                self.required_tags_group_var,
+                self.tag_json_fast_proto_blacklist,
+                self.entry_selection_blacklist
+            ]
+        )
+        self.fast_create_json_button_required.click(
+            fn=self.create_all_setting_configs,
+            inputs=[self.tag_json_fast_proto_required, self.settings_path],
+            outputs=[self.all_json_files_checkboxgroup]
+        )
+        self.entry_load_button_blacklist.click(
+            fn=self.load_single_tag_json,
+            inputs=[self.entry_selection_blacklist, self.blacklist_tags_group_var, self.tag_json_fast_proto_blacklist,
+                    gr.State("blacklist")],
+            outputs=[self.blacklist_tags_group_var]
+        )
+        self.new_entry_button_blacklist.click(
+            fn=self.new_json_proto_entry,
+            inputs=[self.tag_json_fast_proto_blacklist, gr.State("blacklist")],
+            outputs=[
+                self.tag_json_fast_proto_blacklist,
+                self.entry_selection_blacklist,
+                self.blacklist_tags_group_var,
+                self.tag_json_fast_proto_required,
+                self.entry_selection_required
+            ]
+        )
+        self.reset_entry_button_blacklist.click(
+            fn=self.reset_json_proto_entry,
+            inputs=[self.tag_json_fast_proto_blacklist, gr.State("blacklist"), self.entry_selection_blacklist],
+            outputs=[
+                self.tag_json_fast_proto_blacklist,
+                self.blacklist_tags_group_var,
+                self.tag_json_fast_proto_required
+            ]
+        )
+        self.add_to_entry_button_blacklist.click(
+            fn=self.add_to_json_proto_entry,
+            inputs=[
+                self.tag_json_fast_proto_blacklist,
+                gr.State("blacklist"),
+                self.entry_selection_blacklist,
+                self.blacklist_tags_group_var
+            ],
+            outputs=[
+                self.tag_json_fast_proto_blacklist,
+                self.blacklist_tags_group_var,
+                self.tag_json_fast_proto_required
+            ]
+        )
+        self.remove_entry_button_blacklist.click(
+            fn=self.remove_json_proto_entry,
+            inputs=[self.tag_json_fast_proto_blacklist, self.entry_selection_blacklist],
+            outputs=[
+                self.tag_json_fast_proto_blacklist,
+                self.entry_selection_blacklist,
+                self.blacklist_tags_group_var,
+                self.tag_json_fast_proto_required,
+                self.entry_selection_required
+            ]
+        )
+        self.fast_create_json_button_blacklist.click(
+            fn=self.create_all_setting_configs,
+            inputs=[self.tag_json_fast_proto_blacklist, self.settings_path],
+            outputs=[self.all_json_files_checkboxgroup]
+        )
         self.quick_json_select.select(
             fn=self.change_config, 
             inputs=[self.settings_path], 
@@ -1418,7 +1677,7 @@ class Download_tab:
                      self.prepend_tags, self.append_tags, self.img_ext, self.method_tag_files, self.min_score,
                      self.min_fav_count, self.min_year, self.min_month, self.min_day, self.min_area, self.top_n,
                      self.min_short_side, self.collect_checkbox_group_var, self.download_checkbox_group_var,
-                     self.resize_checkbox_group_var, self.required_tags_group_var, self.blacklist_group_var,
+                     self.resize_checkbox_group_var, self.required_tags_group_var, self.blacklist_tags_group_var,
                      self.skip_posts_file, self.skip_posts_type, self.collect_from_listed_posts_file,
                      self.collect_from_listed_posts_type, self.apply_filter_to_listed_posts,
                      self.save_searched_list_type, self.save_searched_list_path, self.downloaded_posts_folder,
@@ -1542,7 +1801,7 @@ class Download_tab:
             outputs=[self.batch_folder,self.resized_img_folder,self.tag_sep,self.tag_order_format,self.prepend_tags,self.append_tags,self.img_ext,
                      self.method_tag_files,self.min_score,self.min_fav_count,self.min_year,self.min_month,self.min_day,self.min_area,self.top_n,self.min_short_side,
                      self.collect_checkbox_group_var,self.download_checkbox_group_var,self.resize_checkbox_group_var,
-                     self.required_tags_group_var,self.blacklist_group_var,self.skip_posts_file,self.skip_posts_type,
+                     self.required_tags_group_var,self.blacklist_tags_group_var,self.skip_posts_file,self.skip_posts_type,
                      self.collect_from_listed_posts_file,self.collect_from_listed_posts_type,self.apply_filter_to_listed_posts,
                      self.save_searched_list_type,self.save_searched_list_path,self.downloaded_posts_folder,self.png_folder,self.jpg_folder,
                      self.webm_folder,self.gif_folder,self.swf_folder,self.save_filename_type,self.remove_tags_list,self.replace_tags_list,
@@ -1587,8 +1846,8 @@ class Download_tab:
         )
         self.remove_button_blacklist.click(
             fn=self.check_box_group_handler_blacklist,
-            inputs=[self.blacklist_group_var],
-            outputs=[self.blacklist_group_var]
+            inputs=[self.blacklist_tags_group_var],
+            outputs=[self.blacklist_tags_group_var]
         )
         self.parse_button_required.click(
             fn=self.parse_file_required,
@@ -1598,7 +1857,7 @@ class Download_tab:
         self.parse_button_blacklist.click(
             fn=self.parse_file_blacklist,
             inputs=[self.file_all_tags_list_blacklist],
-            outputs=[self.blacklist_group_var]
+            outputs=[self.blacklist_tags_group_var]
         )
         self.required_tags_textbox.change(
             fn=self.tag_ideas.suggest_tags,
@@ -1631,7 +1890,7 @@ class Download_tab:
                      self.relevant_blacklist_categories]).then(
             fn=self.textbox_handler_blacklist,
             inputs=[self.initial_blacklist_state_tag, self.initial_blacklist_state, gr.State(False)],
-            outputs=[self.initial_blacklist_state_tag, self.blacklist_group_var, self.blacklist_tags_textbox]).then(
+            outputs=[self.initial_blacklist_state_tag, self.blacklist_tags_group_var, self.blacklist_tags_textbox]).then(
             fn=None,
             inputs=[self.tag_blacklist_suggestion_dropdown, self.relevant_blacklist_categories],
             outputs=None,
@@ -1640,13 +1899,13 @@ class Download_tab:
         self.blacklist_tags_textbox.submit(
             fn=self.textbox_handler_blacklist,
             inputs=[self.blacklist_tags_textbox, self.initial_blacklist_state, gr.State(True)],
-            outputs=[self.initial_blacklist_state_tag, self.blacklist_group_var, self.blacklist_tags_textbox]
+            outputs=[self.initial_blacklist_state_tag, self.blacklist_tags_group_var, self.blacklist_tags_textbox]
         )
         self.tag_blacklist_suggestion_dropdown.select(
             fn=self.tag_ideas.dropdown_handler_blacklist,
             inputs=[],
             outputs=[self.blacklist_tags_textbox, self.tag_blacklist_suggestion_dropdown, self.initial_blacklist_state,
-                     self.initial_blacklist_state_tag, self.blacklist_group_var]
+                     self.initial_blacklist_state_tag, self.blacklist_tags_group_var]
         )
         self.gen_tags_list_button.click(
             fn=self.gen_tags_list,

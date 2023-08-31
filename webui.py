@@ -4,6 +4,7 @@ import argparse
 
 from utils import css_constants as css_, helper_functions as help
 from utils.features.tag_suggestions.tag_suggest import Tag_Suggest
+from utils.features.image_boards.image_board_manager import Image_Board
 
 def build_ui():
     from UI_tabs.download_tab import Download_tab
@@ -20,8 +21,6 @@ def build_ui():
 
         # set local path
         cwd = os.getcwd()
-        categories_map = {0: 'general', 1: 'artist', 2: 'rating', 3: 'copyright', 4: 'character', 5: 'species',
-                          6: 'invalid', 7: 'meta', 8: 'lore'}
         # options
         img_extensions = ["png", "jpg", "same_as_original"]
         method_tag_files_opts = ["relocate", "copy"]
@@ -35,13 +34,15 @@ def build_ui():
         resize_checkboxes = ["skip_resize", "delete_original"]
         file_extn_list = ["png", "jpg", "gif"]
 
-        artist_csv_dict = {}
-        character_csv_dict = {}
-        species_csv_dict = {}
-        general_csv_dict = {}
-        meta_csv_dict = {}
-        rating_csv_dict = {}
-        tags_csv_dict = {}
+        artist_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
+        character_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
+        species_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
+        general_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
+        meta_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
+        rating_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
+        tags_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
+
+
         all_predicted_confidences = {}
         all_predicted_tags = []
         repo_release_urls = {}
@@ -51,7 +52,7 @@ def build_ui():
         config_name = "settings.json"
         settings_json = help.load_session_config(os.path.join(cwd, config_name))
 
-
+        image_board = Image_Board(config_path=os.path.join(cwd, "captioning", "image_boards", "e6.json"))
 
         required_tags_list = help.get_list(settings_json["required_tags"], settings_json["tag_sep"])
 
@@ -100,7 +101,9 @@ def build_ui():
 
         help.verbose_print(f"EVERYTHING INITIALIZING")
         help.verbose_print(f"Initial check to download & load tags CSV")
-        all_tags_ever_dict = help.load_tags_csv(proxy_url=args.proxy_url, settings_json=settings_json, all_tags_ever_dict=all_tags_ever_dict)
+        help.preprocess_csv(proxy_url=args.proxy_url, settings_json=settings_json,
+                            all_tags_ever_dict=all_tags_ever_dict, invalid_categories=image_board.get_invalid_categories())
+        all_tags_ever_dict = help.load_tags_csv_fast()
 
         #####################
         ### Gradio States ###
@@ -130,7 +133,7 @@ def build_ui():
 
         ################################################################################################################
         # download tab init
-        download_tab_manager = Download_tab(settings_json, cwd, categories_map, img_extensions, method_tag_files_opts,
+        download_tab_manager = Download_tab(settings_json, cwd, image_board, img_extensions, method_tag_files_opts,
                                             collect_checkboxes, download_checkboxes, resize_checkboxes, file_extn_list,
                                             config_name, required_tags_list, blacklist_tags, auto_config_path,
                                             initial_required_state,
@@ -143,7 +146,7 @@ def build_ui():
 
         ################################################################################################################
         # gallery tab init
-        gallery_tab_manager = Gallery_tab(file_extn_list, categories_map, cwd, multi_select_ckbx_state,
+        gallery_tab_manager = Gallery_tab(file_extn_list, image_board, cwd, multi_select_ckbx_state,
                                           only_selected_state_object, images_selected_state, image_mode_choice_state,
                                           previous_search_state_text, current_search_state_placement_tuple,
                                           relevant_search_categories, initial_add_state, initial_add_state_tag,
@@ -172,7 +175,7 @@ def build_ui():
 
         ################################################################################################################
         # custom dataset tab init
-        custom_dataset_tab_manager = Custom_dataset_tab(categories_map, cwd, download_tab_manager, gallery_tab_manager,
+        custom_dataset_tab_manager = Custom_dataset_tab(image_board, cwd, download_tab_manager, gallery_tab_manager,
                                                         image_mode_choice_state, autotagmodel,
                                                         all_predicted_confidences, all_predicted_tags
                                                         )

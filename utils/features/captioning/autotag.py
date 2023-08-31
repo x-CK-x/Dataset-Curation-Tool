@@ -16,10 +16,7 @@ from utils.features.captioning import image_data_loader
 
 class AutoTag:
     def __init__(self, labels_file="tags-selected.csv", batch_size=1, max_data_loader_n_workers=math.ceil(mp.cpu_count()/2),
-                 caption_extension='.txt', debug=True, dest_folder=None, tag_folder=None):
-        self.categories_map = {0: 'general', 1: 'artist', 2: 'rating', 3: 'copyright', 4: 'character', 5: 'species', 6: 'invalid',
-                              7: 'meta', 8: 'lore'}
-        self.valid_categories = {'artist': 0, 'character': 1, 'species': 2, 'general': 3, 'meta': 4, 'rating': 5}
+                 caption_extension='.txt', debug=True, dest_folder=None, tag_folder=None, image_board=None):
         self.labels_file = labels_file
         self.caption_extension = caption_extension
         self.batch_size = batch_size
@@ -43,6 +40,9 @@ class AutoTag:
         self.filter_in_categories = None
         self.filter_in_checkbox = None
         self.image_paths = None
+
+        self.image_board = image_board
+        self.valid_categories = {name: i for i, name in enumerate(image_board.valid_categories)}
 
     def set_crop_image_size(self, crop_image_size):
         if '.onnx' in self.model_name:
@@ -83,6 +83,9 @@ class AutoTag:
 
     def set_write_tag_opts(self, write_tag_opts_dropdown):
         self.write_tag_opts_dropdown = write_tag_opts_dropdown
+
+    def set_merge_tag_opts(self, merge_tag_opts_dropdown):
+        self.merge_tag_opts_dropdown = merge_tag_opts_dropdown
 
     def set_use_tag_opts(self, use_tag_opts_radio):
         self.use_tag_opts_radio = use_tag_opts_radio
@@ -160,7 +163,7 @@ class AutoTag:
 
                 # remove tags not in csv or not a valid category type
                 found_tags = [tag for tag in found_tags if (tag[0] in all_tags_ever_dict) and
-                              (self.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
+                              (self.image_board.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
 
                 # set predictions for the UI
                 for element in found_tags:
@@ -177,18 +180,18 @@ class AutoTag:
                 found_tags = found_tags.values.tolist()
                 # remove tags not in csv or not a valid category type
                 found_tags = [tag for tag in found_tags if (tag[0] in all_tags_ever_dict) and
-                              (self.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
+                              (self.image_board.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
 
                 # user selected categories filter (optional)
                 if self.filter_in_checkbox:
-                    found_tags = [tag for tag in found_tags if (self.categories_map[all_tags_ever_dict[tag[0]][0]]) in self.filter_in_categories]
+                    found_tags = [tag for tag in found_tags if (self.image_board.categories_map[all_tags_ever_dict[tag[0]][0]]) in self.filter_in_categories]
 
                 # set predictions for the UI
                 for element in found_tags:
                     self.combined_tags[element[0]] = [element[1], f"{image_name}.{image_ext}"]  # tag -> [probability, name w/ extension]
 
                 # sort by category
-                sorted_list = sorted(found_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x[0]][0]]])
+                sorted_list = sorted(found_tags, key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x[0]][0]]])
                 sorted_list = [pair[0] for pair in sorted_list] # get just the tags
 
                 # Load image tags from file and sort them into the same kind of this sorted by category
@@ -200,21 +203,104 @@ class AutoTag:
                     f = open(temp_src_tags_path, 'w')
                     f.close()
                 # sort by category
-                sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
+                sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
 
                 # remove duplicate tag/s in generated tag list
                 sorted_list1_set = set(sorted_existing_tags_list)
-                filtered_sorted_list2 = [tag for tag in sorted_list if tag not in sorted_list1_set]
-                filtered_sorted_list2 = sorted(filtered_sorted_list2, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
 
                 merged_list = []
                 if self.write_tag_opts_dropdown == 'Merge':
-                    # merge the two sorted lists by category
-                    merged_list = list(heapq.merge(sorted_existing_tags_list, filtered_sorted_list2, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]]))
+                    filtered_sorted_list2 = sorted_list
+                    filtered_sorted_list2 = sorted(filtered_sorted_list2,
+                                                   key=lambda x: self.valid_categories[
+                                                       self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+
+                    if self.merge_tag_opts_dropdown is None:  # default setting
+                        # merge the two sorted lists by category
+                        merged_list = list(heapq.merge(sorted_existing_tags_list, filtered_sorted_list2,
+                                                       key=lambda x: self.valid_categories[
+                                                           self.image_board.categories_map[all_tags_ever_dict[x][0]]]))
+                    else:
+                        merge_tag_opts = ['Union', 'Intersection', 'New-Original', 'Original-New']
+                        for each_set_opt in self.merge_tag_opts_dropdown:
+                            help.verbose_print(f"Applying ( {each_set_opt} ) tag merge operation")
+                            if len(merged_list) == 0:
+                                if merge_tag_opts[0].lower() in each_set_opt.lower():  # Union
+                                    merged_set = list(set(sorted_existing_tags_list) | set(filtered_sorted_list2))
+                                    sorted_list = sorted(merged_set,
+                                                         key=lambda x: self.valid_categories[
+                                                             self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                    merged_list = sorted_list
+                                    help.verbose_print(f"{merged_set} - merged_set!")
+                                    help.verbose_print(f"{merged_list} - merged_list!")
+                                    help.verbose_print(f"{each_set_opt} - done!")
+                                elif merge_tag_opts[1].lower() in each_set_opt.lower():  # Intersection
+                                    merged_set = list(
+                                        set(sorted_existing_tags_list) & set(filtered_sorted_list2))  ########## NONE!!!
+                                    sorted_list = sorted(merged_set,
+                                                         key=lambda x: self.valid_categories[
+                                                             self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                    merged_list = sorted_list
+                                    help.verbose_print(f"{merged_set} - merged_set!")
+                                    help.verbose_print(f"{merged_list} - merged_list!")
+                                    help.verbose_print(f"{each_set_opt} - done!")
+                                elif merge_tag_opts[2].lower() in each_set_opt.lower():  # New-Original
+                                    merged_set = list(
+                                        set(filtered_sorted_list2) - set(sorted_existing_tags_list))  ########## NONE!!!
+                                    sorted_list = sorted(merged_set,
+                                                         key=lambda x: self.valid_categories[
+                                                             self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                    merged_list = sorted_list
+                                    help.verbose_print(f"{merged_set} - merged_set!")
+                                    help.verbose_print(f"{merged_list} - merged_list!")
+                                    help.verbose_print(f"{each_set_opt} - done!")
+                                elif merge_tag_opts[3].lower() in each_set_opt.lower():  # Original-New
+                                    merged_set = list(
+                                        set(sorted_existing_tags_list) - set(filtered_sorted_list2))  ########## NONE!!!
+                                    sorted_list = sorted(merged_set,
+                                                         key=lambda x: self.valid_categories[
+                                                             self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                    merged_list = sorted_list
+                                    help.verbose_print(f"{merged_set} - merged_set!")
+                                    help.verbose_print(f"{merged_list} - merged_list!")
+                                    help.verbose_print(f"{each_set_opt} - done!")
+                            else:
+                                if merge_tag_opts[0].lower() in each_set_opt.lower():
+                                    merged_set = list(set(merged_list) | set(filtered_sorted_list2))
+                                    sorted_list = sorted(merged_set,
+                                                         key=lambda x: self.valid_categories[
+                                                             self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                    merged_list = sorted_list
+                                elif merge_tag_opts[1].lower() in each_set_opt.lower():
+                                    merged_set = list(set(merged_list) & set(filtered_sorted_list2))
+                                    sorted_list = sorted(merged_set,
+                                                         key=lambda x: self.valid_categories[
+                                                             self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                    merged_list = sorted_list
+                                elif merge_tag_opts[2].lower() in each_set_opt.lower():
+                                    merged_set = list(set(filtered_sorted_list2) - set(merged_list))
+                                    sorted_list = sorted(merged_set,
+                                                         key=lambda x: self.valid_categories[
+                                                             self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                    merged_list = sorted_list
+                                elif merge_tag_opts[3].lower() in each_set_opt.lower():
+                                    merged_set = list(set(merged_list) - set(filtered_sorted_list2))
+                                    sorted_list = sorted(merged_set,
+                                                         key=lambda x: self.valid_categories[
+                                                             self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                    merged_list = sorted_list
                 elif self.write_tag_opts_dropdown == 'Pre-pend':
+                    filtered_sorted_list2 = [tag for tag in sorted_list if tag not in sorted_list1_set]
+                    filtered_sorted_list2 = sorted(filtered_sorted_list2,
+                                                   key=lambda x: self.valid_categories[
+                                                       self.image_board.categories_map[all_tags_ever_dict[x][0]]])
                     # pre-pend the generated list to the existing one
                     merged_list = filtered_sorted_list2 + sorted_existing_tags_list
                 elif self.write_tag_opts_dropdown == 'Append':
+                    filtered_sorted_list2 = [tag for tag in sorted_list if tag not in sorted_list1_set]
+                    filtered_sorted_list2 = sorted(filtered_sorted_list2,
+                                                   key=lambda x: self.valid_categories[
+                                                       self.image_board.categories_map[all_tags_ever_dict[x][0]]])
                     # append the generated list to the existing one
                     merged_list = sorted_existing_tags_list + filtered_sorted_list2
                 elif self.write_tag_opts_dropdown == 'Overwrite':
@@ -262,7 +348,7 @@ class AutoTag:
                                                                      copy.deepcopy(meta_csv_dict),
                                                                      copy.deepcopy(rating_csv_dict),
                                                                      copy.deepcopy(tags_csv_dict),
-                                                                     self.categories_map[all_tags_ever_dict[tag][0]], tag, "+", 1)
+                                                                     self.image_board.categories_map[all_tags_ever_dict[tag][0]], tag, "+", 1)
                 # persist changes to csv dictionary files
                 help.write_tags_to_csv(artist_csv_dict, os.path.join(self.tag_folder, "artist.csv"))
                 help.write_tags_to_csv(character_csv_dict, os.path.join(self.tag_folder, "character.csv"))
@@ -409,10 +495,10 @@ class AutoTag:
 
             # remove tags not in csv or not a valid category type
             any_selected_tags = [tag for tag in any_selected_tags if (tag in all_tags_ever_dict) and
-                                 (self.categories_map[all_tags_ever_dict[tag][0]] in self.valid_categories)]
+                                 (self.image_board.categories_map[all_tags_ever_dict[tag][0]] in self.valid_categories)]
 
             # sort by category
-            sorted_list = sorted(any_selected_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
+            sorted_list = sorted(any_selected_tags, key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
 
             # Load image tags from file and sort them into the same kind of this sorted by category
             existing_tags = []
@@ -423,24 +509,94 @@ class AutoTag:
                 f = open(temp_src_tags_path, 'w')
                 f.close()
             # sort by category
-            sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
+            sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
 
             # remove duplicate tag/s in generated tag list
             sorted_list1_set = set(sorted_existing_tags_list)
-            filtered_sorted_list2 = [tag for tag in sorted_list if tag not in sorted_list1_set]
 
-            filtered_sorted_list2 = sorted(filtered_sorted_list2,
-                                           key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]])
+
 
             merged_list = []
             if self.write_tag_opts_dropdown == 'Merge':
-                # merge the two sorted lists by category
-                merged_list = list(heapq.merge(sorted_existing_tags_list, filtered_sorted_list2,
-                                                   key=lambda x: self.valid_categories[self.categories_map[all_tags_ever_dict[x][0]]]))
+                filtered_sorted_list2 = sorted_list
+                filtered_sorted_list2 = sorted(filtered_sorted_list2,
+                                               key=lambda x: self.valid_categories[
+                                                   self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+
+                if self.merge_tag_opts_dropdown is None: # default setting
+                    # merge the two sorted lists by category
+                    merged_list = list(heapq.merge(sorted_existing_tags_list, filtered_sorted_list2,
+                                                       key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]]))
+                else:
+                    merge_tag_opts = ['Union', 'Intersection', 'New-Original', 'Original-New']
+                    for each_set_opt in self.merge_tag_opts_dropdown:
+                        help.verbose_print(f"Applying ( {each_set_opt} ) tag merge operation")
+                        if len(merged_list) == 0:
+                            if merge_tag_opts[0].lower() in each_set_opt.lower(): # Union
+                                merged_set = list(set(sorted_existing_tags_list) | set(filtered_sorted_list2))
+                                sorted_list = sorted(merged_set,
+                                                     key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                merged_list = sorted_list
+                                # help.verbose_print(f"{merged_set} - merged_set!")
+                                # help.verbose_print(f"{merged_list} - merged_list!")
+                                # help.verbose_print(f"{each_set_opt} - done!")
+                            elif merge_tag_opts[1].lower() in each_set_opt.lower(): # Intersection
+                                merged_set = list(set(sorted_existing_tags_list) & set(filtered_sorted_list2))
+                                sorted_list = sorted(merged_set,
+                                                     key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                merged_list = sorted_list
+                                # help.verbose_print(f"{merged_set} - merged_set!")
+                                # help.verbose_print(f"{merged_list} - merged_list!")
+                                # help.verbose_print(f"{each_set_opt} - done!")
+                            elif merge_tag_opts[2].lower() in each_set_opt.lower(): # New-Original
+                                merged_set = list(set(filtered_sorted_list2) - set(sorted_existing_tags_list))
+                                sorted_list = sorted(merged_set,
+                                                     key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                merged_list = sorted_list
+                                # help.verbose_print(f"{merged_set} - merged_set!")
+                                # help.verbose_print(f"{merged_list} - merged_list!")
+                                # help.verbose_print(f"{each_set_opt} - done!")
+                            elif merge_tag_opts[3].lower() in each_set_opt.lower(): # Original-New
+                                merged_set = list(set(sorted_existing_tags_list) - set(filtered_sorted_list2))
+                                sorted_list = sorted(merged_set,
+                                                     key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                merged_list = sorted_list
+                                # help.verbose_print(f"{merged_set} - merged_set!")
+                                # help.verbose_print(f"{merged_list} - merged_list!")
+                                # help.verbose_print(f"{each_set_opt} - done!")
+                        else:
+                            if merge_tag_opts[0].lower() in each_set_opt.lower():
+                                merged_set = list(set(merged_list) | set(filtered_sorted_list2))
+                                sorted_list = sorted(merged_set,
+                                                     key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                merged_list = sorted_list
+                            elif merge_tag_opts[1].lower() in each_set_opt.lower():
+                                merged_set = list(set(merged_list) & set(filtered_sorted_list2))
+                                sorted_list = sorted(merged_set,
+                                                     key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                merged_list = sorted_list
+                            elif merge_tag_opts[2].lower() in each_set_opt.lower():
+                                merged_set = list(set(filtered_sorted_list2) - set(merged_list))
+                                sorted_list = sorted(merged_set,
+                                                     key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                merged_list = sorted_list
+                            elif merge_tag_opts[3].lower() in each_set_opt.lower():
+                                merged_set = list(set(merged_list) - set(filtered_sorted_list2))
+                                sorted_list = sorted(merged_set,
+                                                     key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+                                merged_list = sorted_list
             elif self.write_tag_opts_dropdown == 'Pre-pend':
+                filtered_sorted_list2 = [tag for tag in sorted_list if tag not in sorted_list1_set]
+                filtered_sorted_list2 = sorted(filtered_sorted_list2,
+                                               key=lambda x: self.valid_categories[
+                                                   self.image_board.categories_map[all_tags_ever_dict[x][0]]])
                 # pre-pend the generated list to the existing one
                 merged_list = filtered_sorted_list2 + sorted_existing_tags_list
             elif self.write_tag_opts_dropdown == 'Append':
+                filtered_sorted_list2 = [tag for tag in sorted_list if tag not in sorted_list1_set]
+                filtered_sorted_list2 = sorted(filtered_sorted_list2,
+                                               key=lambda x: self.valid_categories[
+                                                   self.image_board.categories_map[all_tags_ever_dict[x][0]]])
                 # append the generated list to the existing one
                 merged_list = sorted_existing_tags_list + filtered_sorted_list2
             elif self.write_tag_opts_dropdown == 'Overwrite':
@@ -488,7 +644,7 @@ class AutoTag:
                                                                  copy.deepcopy(meta_csv_dict),
                                                                  copy.deepcopy(rating_csv_dict),
                                                                  copy.deepcopy(tags_csv_dict),
-                                                                 self.categories_map[all_tags_ever_dict[tag][0]], tag, "+", 1)
+                                                                 self.image_board.categories_map[all_tags_ever_dict[tag][0]], tag, "+", 1)
             # persist changes to csv dictionary files
             help.write_tags_to_csv(artist_csv_dict, os.path.join(self.tag_folder, "artist.csv"))
             help.write_tags_to_csv(character_csv_dict, os.path.join(self.tag_folder, "character.csv"))

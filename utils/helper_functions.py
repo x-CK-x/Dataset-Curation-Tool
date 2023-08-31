@@ -526,9 +526,13 @@ def check_to_update_csv(proxy_url=None):
         if days_since(date) >= VALID_TIME_RANGE:
             download_all_e6_tags_csv(proxy_url=proxy_url)
             verbose_print(f"ALL TAGS CSV HAS BEEN UPDATED. PLEASE REMOVE OLDER VERSION/S")
+            return True
+        else:
+            return False
     else:
         download_all_e6_tags_csv(proxy_url=proxy_url)
         verbose_print(f"ALL TAGS CSV HAS BEEN UPDATED. PLEASE REMOVE OLDER VERSION/S")
+        return True
 
 def is_installed(package):
     try:
@@ -851,7 +855,82 @@ def get_full_text_path(download_folder_type, img_name, cwd):
     # help.verbose_print(f"full_path:\t\t{full_path}")
     return full_path
 
-def load_tags_csv(proxy_url=None, settings_json=None, all_tags_ever_dict=None):
+# def load_tags_csv(proxy_url=None, settings_json=None, all_tags_ever_dict=None):
+#     data = None
+#     if ("use_csv_custom" in settings_json and settings_json["use_csv_custom"]) and \
+#             ("csv_custom_path" in settings_json and len(settings_json["csv_custom_path"]) > 0):
+#         try:
+#             data = pd.read_csv(settings_json["csv_custom_path"])
+#             # Check if there is a header
+#             if data.columns.str.contains('Unnamed').any():
+#                 data = pd.read_csv(settings_json["csv_custom_path"], header=None, skiprows=1)
+#         except pd.errors.ParserError:
+#             print("File not found or is not a CSV")
+#
+#         # take first three columns and name them
+#         data = data.iloc[:, :3]
+#         data.columns = ['name', 'category', 'post_count']
+#     else:
+#         # check to update the tags csv
+#         check_to_update_csv(proxy_url=proxy_url)
+#         # get newest
+#         current_list_of_csvs = sort_csv_files_by_date(os.getcwd())
+#         try:
+#             # load
+#             data = pd.read_csv(current_list_of_csvs[0], usecols=['name', 'category', 'post_count'])
+#         except pd.errors.ParserError:
+#             print("File not found or is not a CSV")
+#
+#     # Convert 'name' column to string type
+#     data['name'] = data['name'].astype(str)
+#     # Remove rows where post_count equals 0
+#     data = data[data['post_count'] != 0]
+#
+#     # Convert the DataFrame into a dictionary
+#     # where the key is 'name' and the values are lists of [category, post_count]
+#     all_tags_ever_dict = data.set_index('name')[['category', 'post_count']].T.to_dict('list')
+#
+#     # all_tags_ever_dict = copy.deepcopy(data_dict) # this is the part that takes the most time
+#     del data
+#     # del data_dict
+#     return all_tags_ever_dict
+
+
+def dataframe_to_dict(df):
+    array = df.to_numpy()
+    return {row[0]: list(row[1:]) for row in array}
+
+
+import concurrent.futures
+import multiprocessing as mp
+from tqdm import tqdm
+
+
+def chunk_to_dict(chunk):
+    """Convert a chunk of the DataFrame to the desired dictionary format."""
+    array = chunk.to_numpy()
+    return {row[0]: list(row[1:]) for row in array}
+
+
+def parallel_dataframe_to_dict(df, num_threads):
+    """Convert the DataFrame to a dictionary using parallel threads."""
+    # Split DataFrame into chunks based on the number of threads
+    chunk_size = len(df) // num_threads
+    chunks = [df.iloc[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
+
+    result_dict = {}
+    # Create a tqdm object
+    with tqdm(total=len(chunks), desc="Processing Tag chunks", unit="chunk") as pbar:
+        # Use ThreadPoolExecutor to process chunks in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+            for d in executor.map(chunk_to_dict, chunks):
+                result_dict.update(d)
+                pbar.update(1)  # Update the progress bar
+
+    return result_dict
+
+
+def preprocess_csv(proxy_url=None, settings_json=None, all_tags_ever_dict=None, invalid_categories=None):
     data = None
     if ("use_csv_custom" in settings_json and settings_json["use_csv_custom"]) and \
             ("csv_custom_path" in settings_json and len(settings_json["csv_custom_path"]) > 0):
@@ -868,7 +947,11 @@ def load_tags_csv(proxy_url=None, settings_json=None, all_tags_ever_dict=None):
         data.columns = ['name', 'category', 'post_count']
     else:
         # check to update the tags csv
-        check_to_update_csv(proxy_url=proxy_url)
+        downloaded_again = check_to_update_csv(proxy_url=proxy_url)
+        # if no csv downloaded again and preprocessed_tags.parquet exist
+        if not downloaded_again and os.path.exists('preprocessed_tags.parquet'):
+            return
+
         # get newest
         current_list_of_csvs = sort_csv_files_by_date(os.getcwd())
         try:
@@ -877,23 +960,34 @@ def load_tags_csv(proxy_url=None, settings_json=None, all_tags_ever_dict=None):
         except pd.errors.ParserError:
             print("File not found or is not a CSV")
 
-    # Convert 'name' column to string type
+    # Data type conversions
     data['name'] = data['name'].astype(str)
-    # Remove rows where post_count equals 0
+    data['category'] = data['category'].astype('category')
+    data['post_count'] = data['post_count'].astype(int)
+
+    # Remove rows with invalid categories if provided
+    if invalid_categories:
+        data = data[~data['category'].isin(invalid_categories)]
+
+    # Filter out rows
     data = data[data['post_count'] != 0]
 
-    # Convert the DataFrame into a dictionary
-    # where the key is 'name' and the values are lists of [category, post_count]
-    all_tags_ever_dict = data.set_index('name')[['category', 'post_count']].T.to_dict('list')
+    # Save the preprocessed data in Parquet format (or Feather)
+    data.to_parquet('preprocessed_tags.parquet', index=False)
 
-    # all_tags_ever_dict = copy.deepcopy(data_dict) # this is the part that takes the most time
+def load_tags_csv_fast():
+    data = pd.read_parquet('preprocessed_tags.parquet')
+    # all_tags_ever_dict = data.set_index('name')[['category', 'post_count']].T.to_dict('list')
+    all_tags_ever_dict = parallel_dataframe_to_dict(data, mp.cpu_count()) # use all available threads
+    print("Done Loading Tags!")
     del data
-    # del data_dict
     return all_tags_ever_dict
 
 def load_trie(trie, all_tags_ever_dict):
-    # Add data to the trie
-    for tag in all_tags_ever_dict.keys():
+    print("Starting Trie Tree Construction!")
+    # Add data to the trie with a progress bar
+    for tag in tqdm(all_tags_ever_dict.keys(), desc="Loading Trie"):
+        print(f"tag:{tag}")
         trie[tag] = all_tags_ever_dict[tag][1]
-    verbose_print(f"Done constructing Trie tree!")
+    print("Done constructing Trie tree!")
 

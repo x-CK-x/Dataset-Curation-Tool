@@ -22,10 +22,14 @@ A tool for downloading from public image boards (which allow scraping) / preview
 - [X] Conda setup instructions
 - [X] CSV load time optimization with the pandas framework
 - [X] .sh & .bat installer scripts for conda
-- [ ] Image Board manager class object **(Currently In Progress)**
-- [ ] Add Aliases for tags suggestions in the textboxes
+- [X] Image Board manager class object
+- [ ] Add Aliases for tags suggestions in the textboxes **(Currently In Progress)**
+- [ ] Add Support for *brand new* tag & captioning models & tag combining options
+  - deepdanbooru
+  - huggingface IDEFICS (api call)
+  - gpt-4 (api call)
+- [ ] Add Auto-caption feature using various heuristics to determine from each auto-tag/caption model; what tags are best
 - [ ] Include support for a variation of different public image boards
-- [ ] Add Support for *brand new* tag & captioning models
 - [ ] Add De-Noise & Upscale Models, e.g. [StableSR](https://github.com/IceClear/StableSR)
 - [ ] Add Segmentation & Detection Models, e.g. [SegmentAnything-HQ](https://github.com/continue-revolution/sd-webui-segment-anything)
 - [ ] Add Cross Attention Visualization [DAAM](https://github.com/castorini/daam)
