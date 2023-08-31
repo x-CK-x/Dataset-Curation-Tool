@@ -23,6 +23,7 @@ A tool for downloading from public image boards (which allow scraping) / preview
 - [X] CSV load time optimization with the pandas framework
 - [X] .sh & .bat installer scripts for conda
 - [X] Image Board manager class object
+- [ ] PNG Info & tag combination options **(Currently In Progress)**
 - [ ] Add Aliases for tags suggestions in the textboxes **(Currently In Progress)**
 - [ ] Add Support for *brand new* tag & captioning models & tag combining options
   - deepdanbooru
