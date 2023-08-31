@@ -26,6 +26,7 @@ if exist %PATHFILE% (
         REM Check and clone the GitHub repository if not already cloned
         if not exist Dataset-Curation-Tool (
             git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
+            git checkout tags/v4.2.0
         ) else (
             echo Repository already exists. Skipping clone.
         )
