@@ -39,10 +39,10 @@ if exist %PATHFILE% (
 
 REM Check the current tag
 for /f "delims=" %%i in ('git describe --tags --exact-match 2^>nul') do set CURRENT_TAG=%%i
-if "%CURRENT_TAG%" NEQ "v4.2.0" (
-    git checkout tags/v4.2.0
+if "%CURRENT_TAG%" NEQ "v4.2.2" (
+    git checkout tags/v4.2.2
 ) else (
-    echo Already on tag v4.2.0.
+    echo Already on tag v4.2.2.
 )
 
 REM Check if the conda environment already exists

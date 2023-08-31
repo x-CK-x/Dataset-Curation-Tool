@@ -42,10 +42,10 @@ fi
 
 # Check the current tag
 CURRENT_TAG=$(git describe --tags --exact-match 2> /dev/null)
-if [ "$CURRENT_TAG" != "v4.2.0" ]; then
-    git checkout tags/v4.2.0
+if [ "$CURRENT_TAG" != "v4.2.2" ]; then
+    git checkout tags/v4.2.2
 else
-    echo "Already on tag v4.2.0."
+    echo "Already on tag v4.2.2."
 fi
 
 # Check if the conda environment already exists
