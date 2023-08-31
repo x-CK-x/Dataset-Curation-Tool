@@ -26,7 +26,6 @@ if exist %PATHFILE% (
         REM Check and clone the GitHub repository if not already cloned
         if not exist Dataset-Curation-Tool (
             git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
-            git checkout tags/v4.2.0
         ) else (
             echo Repository already exists. Skipping clone.
         )
@@ -36,6 +35,14 @@ if exist %PATHFILE% (
     )
     REM Store the current path for future use
     echo %CD% > %PATHFILE%
+)
+
+REM Check the current tag
+for /f "delims=" %%i in ('git describe --tags --exact-match 2^>nul') do set CURRENT_TAG=%%i
+if "%CURRENT_TAG%" NEQ "v4.2.0" (
+    git checkout tags/v4.2.0
+) else (
+    echo Already on tag v4.2.0.
 )
 
 REM Check if the conda environment already exists

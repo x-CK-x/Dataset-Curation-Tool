@@ -52,7 +52,7 @@ def build_ui():
         config_name = "settings.json"
         settings_json = help.load_session_config(os.path.join(cwd, config_name))
 
-        image_board = Image_Board(config_path=os.path.join(cwd, "captioning", "image_boards", "e6.json"))
+        image_board = Image_Board(config_path=os.path.join(cwd, "utils", "features", "image_boards", "e6.json"))
 
         required_tags_list = help.get_list(settings_json["required_tags"], settings_json["tag_sep"])
 

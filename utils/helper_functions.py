@@ -65,7 +65,7 @@ def download_url(url, file_name):
                 if chunk:  # Filter out keep-alive new chunks
                     file.write(chunk)
     except requests.exceptions.RequestException as err:
-        print(f"Error occurred with {url}: {err}")
+        verbose_print(f"Error occurred with {url}: {err}")
 
 def grab_pre_selected(settings, all_checkboxes):
     pre_selected_checkboxes = []
@@ -239,8 +239,8 @@ def merge_dict(path1, path2, path3):
     return temp.copy()
 
 def write_tags_to_text_file(input_string, file_path):
-    print(f"input_string:\t{input_string}")
-    print(f"file_path:\t{file_path}")
+    verbose_print(f"input_string:\t{input_string}")
+    verbose_print(f"file_path:\t{file_path}")
     with open(file_path, 'w', encoding="utf-8") as file:
         file.write(input_string)
     file.close()
@@ -341,7 +341,7 @@ def get_href_links(url):
 
         return href_links
     else:
-        print(f"Request to {url} failed with status code: {response.status_code}")
+        verbose_print(f"Request to {url} failed with status code: {response.status_code}")
         return []
 
 def extract_time_and_href(url):
@@ -370,7 +370,7 @@ def extract_time_and_href(url):
 
         return sorted_results
     else:
-        print(f"Request to {url} failed with status code: {response.status_code}")
+        verbose_print(f"Request to {url} failed with status code: {response.status_code}")
         return []
 
 model_download_options = ["Fluffusion", "FluffyRock"]
@@ -411,7 +411,7 @@ def extract_time_and_href_github(api_url):
             temp_list = []
             temp_list.append(release['tag_name'])
 
-            print(f"Release: {release['tag_name']} - {release['html_url']}")
+            verbose_print(f"Release: {release['tag_name']} - {release['html_url']}")
             # Add source code archives to download URLs
             download_urls = [release['zipball_url']]
             assets_url = release['assets_url']
@@ -422,18 +422,18 @@ def extract_time_and_href_github(api_url):
                 download_urls.extend(asset_download_urls)
                 temp_list.append(download_urls)
                 for url in download_urls:
-                    print(f"Download URL: {url}")
+                    verbose_print(f"Download URL: {url}")
             else:
-                print(
+                verbose_print(
                     f"Failed to fetch assets for release {release['tag_name']}. Status code: {assets_response.status_code}")
-                print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")
+                verbose_print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")
                 temp_list.append([])
-            print()  # Add an empty line for better readability
+            verbose_print()  # Add an empty line for better readability
             release_list.append(temp_list)
             counter += 1
     else:
-        print("Failed to fetch the releases. Status code:", response.status_code)
-        print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")
+        verbose_print("Failed to fetch the releases. Status code:", response.status_code)
+        verbose_print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")
     return copy.deepcopy(release_list)
 
 def download_negative_tags_file():
@@ -589,7 +589,7 @@ def copy_over_imgs(src, dst, image_mode_choice_state):
                     # create a new file & assumes NO tags
                     f = open(os.path.join(dst, file_name), 'w')
                     f.close()
-    print("Images are copied successfully")
+    verbose_print("Images are copied successfully")
 
 def copy_over_tags(src, dst, image_mode_choice_state):
     temp = '\\' if is_windows() else '/'
@@ -603,7 +603,7 @@ def copy_over_tags(src, dst, image_mode_choice_state):
         for file_name in files:
             if '.txt' in file_name:
                 shutil.copy(os.path.join(src, file_name), os.path.join(dst, file_name))
-    print("Files are copied successfully")
+    verbose_print("Files are copied successfully")
 
 def check_requirements():
     requirements_list = ['torch', 'onnxruntime', 'onnxruntime-gpu', 'protobuf==3.20']
@@ -613,7 +613,7 @@ def check_requirements():
             command_str = f"{command_str}{requirement}"
             for line in execute(command_str.split(" ")):
                 verbose_print(line)
-    print('done')
+    verbose_print('done')
 
 def full_model_download_link(name, file_name):
     verbose_print(f"file_name:\t{file_name}")
@@ -865,7 +865,7 @@ def get_full_text_path(download_folder_type, img_name, cwd):
 #             if data.columns.str.contains('Unnamed').any():
 #                 data = pd.read_csv(settings_json["csv_custom_path"], header=None, skiprows=1)
 #         except pd.errors.ParserError:
-#             print("File not found or is not a CSV")
+#             verbose_print("File not found or is not a CSV")
 #
 #         # take first three columns and name them
 #         data = data.iloc[:, :3]
@@ -879,7 +879,7 @@ def get_full_text_path(download_folder_type, img_name, cwd):
 #             # load
 #             data = pd.read_csv(current_list_of_csvs[0], usecols=['name', 'category', 'post_count'])
 #         except pd.errors.ParserError:
-#             print("File not found or is not a CSV")
+#             verbose_print("File not found or is not a CSV")
 #
 #     # Convert 'name' column to string type
 #     data['name'] = data['name'].astype(str)
@@ -940,7 +940,7 @@ def preprocess_csv(proxy_url=None, settings_json=None, all_tags_ever_dict=None, 
             if data.columns.str.contains('Unnamed').any():
                 data = pd.read_csv(settings_json["csv_custom_path"], header=None, skiprows=1)
         except pd.errors.ParserError:
-            print("File not found or is not a CSV")
+            verbose_print("File not found or is not a CSV")
 
         # take first three columns and name them
         data = data.iloc[:, :3]
@@ -958,7 +958,7 @@ def preprocess_csv(proxy_url=None, settings_json=None, all_tags_ever_dict=None, 
             # load
             data = pd.read_csv(current_list_of_csvs[0], usecols=['name', 'category', 'post_count'])
         except pd.errors.ParserError:
-            print("File not found or is not a CSV")
+            verbose_print("File not found or is not a CSV")
 
     # Data type conversions
     data['name'] = data['name'].astype(str)
@@ -979,15 +979,14 @@ def load_tags_csv_fast():
     data = pd.read_parquet('preprocessed_tags.parquet')
     # all_tags_ever_dict = data.set_index('name')[['category', 'post_count']].T.to_dict('list')
     all_tags_ever_dict = parallel_dataframe_to_dict(data, mp.cpu_count()) # use all available threads
-    print("Done Loading Tags!")
+    verbose_print("Done Loading Tags!")
     del data
     return all_tags_ever_dict
 
 def load_trie(trie, all_tags_ever_dict):
-    print("Starting Trie Tree Construction!")
+    verbose_print("Starting Trie Tree Construction!")
     # Add data to the trie with a progress bar
     for tag in tqdm(all_tags_ever_dict.keys(), desc="Loading Trie"):
-        print(f"tag:{tag}")
         trie[tag] = all_tags_ever_dict[tag][1]
-    print("Done constructing Trie tree!")
+    verbose_print("Done constructing Trie tree!")
 

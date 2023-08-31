@@ -29,7 +29,6 @@ else
         # Check and clone the GitHub repository if not already cloned
         if [ ! -d "Dataset-Curation-Tool" ]; then
             git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
-            git checkout tags/v4.2.0
         else
             echo "Repository already exists. Skipping clone."
         fi
@@ -39,6 +38,14 @@ else
     fi
     # Store the current path for future use
     echo "$PWD" > "$PATHFILE"
+fi
+
+# Check the current tag
+CURRENT_TAG=$(git describe --tags --exact-match 2> /dev/null)
+if [ "$CURRENT_TAG" != "v4.2.0" ]; then
+    git checkout tags/v4.2.0
+else
+    echo "Already on tag v4.2.0."
 fi
 
 # Check if the conda environment already exists

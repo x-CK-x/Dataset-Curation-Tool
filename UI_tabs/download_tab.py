@@ -1130,14 +1130,15 @@ class Download_tab:
                     with gr.Column(min_width=50, scale=1):
                         tag_sep = gr.Textbox(lines=1, label='Tag Separator/Delimeter', value=self.settings_json["tag_sep"])
                     with gr.Column(min_width=50, scale=2):
+                        prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=self.settings_json["prepend_tags"])
+                    with gr.Column(min_width=50, scale=2):
+                        append_tags = gr.Textbox(lines=1, label='Append Tags', value=self.settings_json["append_tags"])
+                with gr.Row():
+                    with gr.Column(min_width=500, scale=10):
                         tag_order_format = gr.Dropdown(multiselect=True, interactive=True, label='Tag ORDER',
                                                        choices=self.image_board.valid_categories,
                                                        value=self.image_board.tag_order
                                                        )
-                    with gr.Column(min_width=50, scale=2):
-                        prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=self.settings_json["prepend_tags"])
-                    with gr.Column(min_width=50, scale=2):
-                        append_tags = gr.Textbox(lines=1, label='Append Tags', value=self.settings_json["append_tags"])
                 with gr.Row():
                     with gr.Column():
                         img_ext = gr.Dropdown(choices=self.img_extensions, label='Image Extension', value=self.settings_json["img_ext"])
