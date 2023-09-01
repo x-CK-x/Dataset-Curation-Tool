@@ -163,11 +163,10 @@ class AutoTag:
 
                 help.verbose_print(f"found_tags:\t{found_tags}")
 
-                # remove tags not in csv or not a valid category type
-                found_tags = [tag for tag in found_tags if (tag[0] in all_tags_ever_dict) and
-                              (self.image_board.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
                 # filter out invalid
-                found_tags = [pair for pair in found_tags if (self.image_board.categories_map[all_tags_ever_dict[pair[0]][0]] in self.valid_categories)]
+                # remove tags not in csv or not a valid category type
+                found_tags = [pair for pair in found_tags if (pair[0] in all_tags_ever_dict) and
+                              (self.image_board.categories_map[all_tags_ever_dict[pair[0]][0]] in self.valid_categories)]
 
                 # set predictions for the UI
                 for element in found_tags:
@@ -183,15 +182,10 @@ class AutoTag:
                 # convert to list
                 found_tags = found_tags.values.tolist()
 
-
+                # filter out invalid
                 # remove tags not in csv or not a valid category type
                 found_tags = [pair for pair in found_tags if (pair[0] in all_tags_ever_dict) and
                               (self.image_board.categories_map[all_tags_ever_dict[pair[0]][0]] in self.valid_categories)]
-
-
-                # filter out invalid
-                found_tags = [pair for pair in found_tags if (self.image_board.categories_map[all_tags_ever_dict[pair[0]][0]] in self.valid_categories)]
-
 
                 # user selected categories filter (optional)
                 if self.filter_in_checkbox:
@@ -219,6 +213,8 @@ class AutoTag:
                 help.verbose_print(f"existing_tags:\t{existing_tags}")
 
                 # filter out invalid
+                existing_tags = [tag for tag in existing_tags if (tag in all_tags_ever_dict)]
+                # remove tags not in csv or not a valid category type
                 existing_tags = [tag for tag in existing_tags if (self.image_board.categories_map[all_tags_ever_dict[tag][0]] in self.valid_categories)]
 
                 # sort by category
@@ -540,6 +536,8 @@ class AutoTag:
             help.verbose_print(f"existing_tags:\t{existing_tags}")
 
             # filter out invalid
+            existing_tags = [tag for tag in existing_tags if (tag in all_tags_ever_dict)]
+            # remove tags not in csv or not a valid category type
             existing_tags = [tag for tag in existing_tags if (self.image_board.categories_map[all_tags_ever_dict[tag][0]] in self.valid_categories)]
 
             # sort by category
