@@ -42,7 +42,8 @@ class AutoTag:
         self.image_paths = None
 
         self.image_board = image_board
-        self.valid_categories = {name: i for i, name in enumerate(image_board.valid_categories)}
+        self.valid_categories = {name: i for i, name in enumerate(self.image_board.valid_categories)}
+        help.verbose_print(f"self.valid_categories:\t{self.valid_categories}")
 
     def set_crop_image_size(self, crop_image_size):
         if '.onnx' in self.model_name:
@@ -114,6 +115,7 @@ class AutoTag:
             temp = '\\' if help.is_windows() else '/'
             self.image_paths = [path for path in self.train_data_dir if
                                    (path.split(temp)[-1]).split('.')[-1] == 'png' or (path.split(temp)[-1]).split('.')[-1] == 'jpg']
+        self.image_paths = [path for path in self.image_paths if not (".txt" in path)]
 
     def glob_images_pathlib(self, dir_path, extension_list):
         image_paths = []
@@ -159,11 +161,13 @@ class AutoTag:
                 found_tags = self.label_names[self.label_names["probs"] > float(0)][["name", "probs"]]
                 found_tags = found_tags.values.tolist()
 
-                # help.verbose_print(f"found_tags:\t{found_tags}")
+                help.verbose_print(f"found_tags:\t{found_tags}")
 
                 # remove tags not in csv or not a valid category type
                 found_tags = [tag for tag in found_tags if (tag[0] in all_tags_ever_dict) and
                               (self.image_board.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
+                # filter out invalid
+                found_tags = [pair for pair in found_tags if (self.image_board.categories_map[all_tags_ever_dict[pair[0]][0]] in self.valid_categories)]
 
                 # set predictions for the UI
                 for element in found_tags:
@@ -178,13 +182,21 @@ class AutoTag:
                     raise ValueError("batch use tag operation NOT set")
                 # convert to list
                 found_tags = found_tags.values.tolist()
+
+
                 # remove tags not in csv or not a valid category type
-                found_tags = [tag for tag in found_tags if (tag[0] in all_tags_ever_dict) and
-                              (self.image_board.categories_map[all_tags_ever_dict[tag[0]][0]] in self.valid_categories)]
+                found_tags = [pair for pair in found_tags if (pair[0] in all_tags_ever_dict) and
+                              (self.image_board.categories_map[all_tags_ever_dict[pair[0]][0]] in self.valid_categories)]
+
+
+                # filter out invalid
+                found_tags = [pair for pair in found_tags if (self.image_board.categories_map[all_tags_ever_dict[pair[0]][0]] in self.valid_categories)]
+
 
                 # user selected categories filter (optional)
                 if self.filter_in_checkbox:
                     found_tags = [tag for tag in found_tags if (self.image_board.categories_map[all_tags_ever_dict[tag[0]][0]]) in self.filter_in_categories]
+
 
                 # set predictions for the UI
                 for element in found_tags:
@@ -194,6 +206,7 @@ class AutoTag:
                 sorted_list = sorted(found_tags, key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x[0]][0]]])
                 sorted_list = [pair[0] for pair in sorted_list] # get just the tags
 
+
                 # Load image tags from file and sort them into the same kind of this sorted by category
                 existing_tags = []
                 if os.path.exists(temp_src_tags_path): # extract tags
@@ -202,8 +215,16 @@ class AutoTag:
                     # create a new file & assumes NO tags
                     f = open(temp_src_tags_path, 'w')
                     f.close()
+
+                help.verbose_print(f"existing_tags:\t{existing_tags}")
+
+                # filter out invalid
+                existing_tags = [tag for tag in existing_tags if (self.image_board.categories_map[all_tags_ever_dict[tag][0]] in self.valid_categories)]
+
                 # sort by category
                 sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+
+                help.verbose_print(f"sorted_existing_tags_list:\t{sorted_existing_tags_list}")
 
                 # remove duplicate tag/s in generated tag list
                 sorted_list1_set = set(sorted_existing_tags_list)
@@ -383,6 +404,7 @@ class AutoTag:
             del data
 
         if self.max_data_loader_n_workers is not None:
+            self.image_paths = [path for path in self.image_paths if not (".txt" in path)]
             self.dataset = image_data_loader.ImageLoadingPrepDataset(copy.deepcopy(self.image_paths))
 
             self.dataset.set_crop_image_size(self.crop_image_size)
@@ -493,12 +515,18 @@ class AutoTag:
             else:
                 raise ValueError("batch use tag operation NOT set")
 
+            help.verbose_print(f"any_selected_tags:\t{any_selected_tags}")
+
             # remove tags not in csv or not a valid category type
             any_selected_tags = [tag for tag in any_selected_tags if (tag in all_tags_ever_dict) and
                                  (self.image_board.categories_map[all_tags_ever_dict[tag][0]] in self.valid_categories)]
 
+            help.verbose_print(f"any_selected_tags:\t{any_selected_tags}")
+
             # sort by category
             sorted_list = sorted(any_selected_tags, key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+
+            help.verbose_print(f"sorted_list:\t{sorted_list}")
 
             # Load image tags from file and sort them into the same kind of this sorted by category
             existing_tags = []
@@ -508,8 +536,16 @@ class AutoTag:
                 # create a new file & assumes NO tags
                 f = open(temp_src_tags_path, 'w')
                 f.close()
+
+            help.verbose_print(f"existing_tags:\t{existing_tags}")
+
+            # filter out invalid
+            existing_tags = [tag for tag in existing_tags if (self.image_board.categories_map[all_tags_ever_dict[tag][0]] in self.valid_categories)]
+
             # sort by category
             sorted_existing_tags_list = sorted(existing_tags, key=lambda x: self.valid_categories[self.image_board.categories_map[all_tags_ever_dict[x][0]]])
+
+            help.verbose_print(f"sorted_existing_tags_list:\t{sorted_existing_tags_list}")
 
             # remove duplicate tag/s in generated tag list
             sorted_list1_set = set(sorted_existing_tags_list)

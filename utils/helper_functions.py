@@ -428,11 +428,11 @@ def extract_time_and_href_github(api_url):
                     f"Failed to fetch assets for release {release['tag_name']}. Status code: {assets_response.status_code}")
                 verbose_print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")
                 temp_list.append([])
-            verbose_print()  # Add an empty line for better readability
+            verbose_print("")  # Add an empty line for better readability
             release_list.append(temp_list)
             counter += 1
     else:
-        verbose_print("Failed to fetch the releases. Status code:", response.status_code)
+        verbose_print(f"Failed to fetch the releases. Status code:\t{response.status_code}")
         verbose_print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")
     return copy.deepcopy(release_list)
 

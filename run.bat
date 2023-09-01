@@ -45,10 +45,10 @@ git stash
 
 REM Check the current tag
 for /f "delims=" %%i in ('git describe --tags --exact-match 2^>nul') do set CURRENT_TAG=%%i
-if "%CURRENT_TAG%" NEQ "v4.2.4" (
-    git checkout tags/v4.2.4
+if "%CURRENT_TAG%" NEQ "v4.2.5" (
+    git checkout tags/v4.2.5
 ) else (
-    echo Already on tag v4.2.4.
+    echo Already on tag v4.2.5.
 )
 
 REM Apply stashed user changes

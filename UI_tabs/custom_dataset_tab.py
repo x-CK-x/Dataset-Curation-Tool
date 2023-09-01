@@ -8,6 +8,8 @@ from PIL import Image
 from utils import md_constants as md_, helper_functions as help
 from utils.features.video_splitter import Video2Frames as vid2frames
 from utils.features.captioning import autotag
+from utils.features.video_splitter.Video2Audio import Video2Audio
+
 
 class Custom_dataset_tab:
     def __init__(self, image_board, cwd, download_tab_manager, gallery_tab_manager, image_mode_choice_state, autotagmodel,
@@ -24,6 +26,7 @@ class Custom_dataset_tab:
         self.image_editor_tab_manager = None
 
         self.auto_tag_models = []
+        self.converter = Video2Audio()
 
 
     def generate_all_dirs(self):
@@ -136,6 +139,9 @@ class Custom_dataset_tab:
         self.generate_all_dirs()
 
         all_paths = self.autotagmodel.get_dataset().get_image_paths()
+        if all_paths is not None:
+            all_paths = [path for path in all_paths if not (".txt" in path)]
+
         images_path = all_paths
         if (image_with_tag_path_textbox is None or not len(image_with_tag_path_textbox) > 0 or (
                 images_path is None or not len(images_path) > 0)):
@@ -450,6 +456,9 @@ class Custom_dataset_tab:
                         glob.glob(os.path.join(image_with_tag_path_textbox, f"*.png")) + \
                         glob.glob(os.path.join(image_with_tag_path_textbox, f"*.gif"))
 
+        if all_paths is not None:
+            all_paths = [path for path in all_paths if not (".txt" in path)]
+
         images_path = all_paths
         if (image_with_tag_path_textbox is None or not len(image_with_tag_path_textbox) > 0 or (
                 images_path is None or not len(images_path) > 0)):
@@ -746,6 +755,24 @@ class Custom_dataset_tab:
                                 video_frames_gallery = gr.Gallery(label=f"Video Frame/s Gallery", interactive=False,
                                                                   visible=True, columns=3, object_fit="contain",
                                                                   height=780)
+                    with gr.Tab("Video to Audio Splitter"):
+                        gr.Markdown("""
+                            FFMPEG is required to run this feature!
+                            (linux) can be installed as part of the run button via a pop-up window that will appear
+                            (macos & windows) users are advised to go to the Official Website to download \'ffmpeg\': https://ffmpeg.org/download.html
+                        """)
+                        with gr.Column():
+                            video2audio_input = gr.File()
+                            video2audio_input_button = gr.UploadButton(label="Click to Upload a Video",
+                                                                 file_types=["file"], file_count="single")
+                            video2audio_clear_button = gr.ClearButton(label="Clear")
+                            with gr.Row():
+                                video2audio_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
+                                                              value=os.getcwd())
+                                convert_video2audio_button = gr.Button(value="Convert Video", variant='primary')
+                        with gr.Accordion(label="Audio Preview", visible=True, open=False):
+                            with gr.Column():
+                                audio_waveform = gr.Audio(label="Audio Data", type="filepath", source="upload", value=None, interactive=False)
                     # with gr.Tab("UMAP Viewer"):
                     #     with gr.Column():
                     #         gr.Textbox(label="Testing", value="")
@@ -792,6 +819,12 @@ class Custom_dataset_tab:
         self.ext_choices = ext_choices
         self.ext_selection = ext_selection
         self.merge_tag_opts_dropdown = merge_tag_opts_dropdown
+        self.video2audio_input = video2audio_input
+        self.video2audio_input_button = video2audio_input_button
+        self.video2audio_clear_button = video2audio_clear_button
+        self.video2audio_output_dir = video2audio_output_dir
+        self.convert_video2audio_button = convert_video2audio_button
+        self.audio_waveform = audio_waveform
 
         return [
                 self.file_upload_button_single,
@@ -830,10 +863,29 @@ class Custom_dataset_tab:
                 self.remove_invalid_chars_button,
                 self.fix_files,
                 self.ext_selection,
-                self.merge_tag_opts_dropdown
+                self.merge_tag_opts_dropdown,
+                self.video2audio_input,
+                self.video2audio_input_button,
+                self.video2audio_clear_button,
+                self.video2audio_output_dir,
+                self.convert_video2audio_button,
+                self.audio_waveform
                 ]
 
     def get_event_listeners(self):
+
+
+        self.video2audio_input_button.upload(
+            fn=self.video_upload_path,
+            inputs=[self.video2audio_input_button],
+            outputs=[self.video2audio_input]
+        )
+        self.convert_video2audio_button.click(
+            fn=self.converter.extract_audio,
+            inputs=[self.video2audio_input, self.video2audio_output_dir],
+            outputs=[self.audio_waveform]
+        )
+        self.video2audio_clear_button.add(components=[self.audio_waveform, self.video2audio_input])
 
         self.merge_tag_opts_dropdown.select(
             fn=self.set_merge_tag_opts,

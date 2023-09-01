@@ -8,6 +8,8 @@ import copy
 class ImageLoadingPrepDataset(torch.utils.data.Dataset):
     def __init__(self, image_paths):
         self.images = image_paths
+        self.images = [path for path in self.images if not (".txt" in path)]
+
         self.crop_or_resize = 'resize'
         self.portrait_square_crop = None
         self.landscape_square_crop = None

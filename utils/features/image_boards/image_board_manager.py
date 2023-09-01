@@ -15,12 +15,15 @@ class Image_Board:
 
     def set_tag_order(self, tag_order):
         self.tag_order = tag_order
+        self.get_invalid_categories()
 
     def update_img_brd(self):
         help.update_JSON(settings=self.img_brd, temp_config_name=self.config_path)
+        self.get_invalid_categories()
 
     def get_invalid_categories(self):
-        return [category for category in self.categories_map.values() if not category in self.valid_categories]
+        self.invalid_categories = [category for category in self.categories_map.values() if not category in self.valid_categories]
+        return self.invalid_categories
 
     def reconstruct_keys(self, data):
         return {int(k): v for k, v in data.items()}
