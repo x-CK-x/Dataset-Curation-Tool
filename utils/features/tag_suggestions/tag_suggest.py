@@ -25,7 +25,7 @@ class Tag_Suggest:
             "lore": "black",
             "copyright": "black",
         }
-        return colors.get(self.download_tab_manager.categories_map[category])
+        return colors.get(self.download_tab_manager.image_board.categories_map[category])
 
     # Function to format the count
     def format_count(self, count):
@@ -45,7 +45,7 @@ class Tag_Suggest:
         color_coded_tags = []
         tag_categories = []
         for tag in suggested_tags:
-            category = self.download_tab_manager.categories_map[self.gallery_tab_manager.all_tags_ever_dict[tag][0]]  # gets category of already existing tag
+            category = self.download_tab_manager.image_board.categories_map[self.gallery_tab_manager.all_tags_ever_dict[tag][0]]  # gets category of already existing tag
             tag_categories.append(category)
             count = self.gallery_tab_manager.all_tags_ever_dict[tag][1]  # gets count of already existing tag
             count_str = self.format_count(count)
@@ -179,7 +179,7 @@ class Tag_Suggest:
         # Color code the tags by their categories and add the count
         color_coded_tags = []
         for tag in suggested_tags:
-            category = self.download_tab_manager.categories_map[self.gallery_tab_manager.all_tags_ever_dict[tag][0]]  # gets category of already existing tag
+            category = self.download_tab_manager.image_board.categories_map[self.gallery_tab_manager.all_tags_ever_dict[tag][0]]  # gets category of already existing tag
             tag_categories.append(category)
             count = self.gallery_tab_manager.all_tags_ever_dict[tag][1]  # gets count of already existing tag
             count_str = self.format_count(count)

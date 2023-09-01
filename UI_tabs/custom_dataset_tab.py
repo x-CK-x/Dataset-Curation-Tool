@@ -343,6 +343,9 @@ class Custom_dataset_tab:
         help.verbose_print(f"setting path to data origin")
         self.autotagmodel.set_image_with_tag_path_textbox(image_with_tag_path_textbox)
 
+        help.verbose_print(self.autotagmodel.image_with_tag_path_textbox)
+
+
     def set_copy_mode_ckbx(self, copy_mode_ckbx):
         if self.autotagmodel is None:
             folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
@@ -440,8 +443,13 @@ class Custom_dataset_tab:
                 #         glob.glob(os.path.join(image_with_tag_path_textbox, f"*.gif"))
 
         help.verbose_print(f"all image paths to save:\t{all_paths}")
-
         help.verbose_print(f"image_with_tag_path_textbox:\t{image_with_tag_path_textbox}")
+
+        if copy_mode_ckbx and all_paths is None: # default save option
+            all_paths = glob.glob(os.path.join(image_with_tag_path_textbox, f"*.jpg")) + \
+                        glob.glob(os.path.join(image_with_tag_path_textbox, f"*.png")) + \
+                        glob.glob(os.path.join(image_with_tag_path_textbox, f"*.gif"))
+
         images_path = all_paths
         if (image_with_tag_path_textbox is None or not len(image_with_tag_path_textbox) > 0 or (
                 images_path is None or not len(images_path) > 0)):
@@ -455,9 +463,13 @@ class Custom_dataset_tab:
             folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
 
             help.verbose_print(f"all_paths:\t{all_paths}")
-            help.verbose_print(f"image_mode_choice_state.lower():\t{image_mode_choice_state.lower()}")
+            help.verbose_print(f"image_mode_choice_state:\t{image_mode_choice_state}")
 
-            if image_mode_choice_state.lower() == 'single':
+            pick_mode = image_mode_choice_state.lower() if image_mode_choice_state is not None else ('batch' if len(images_path) > 1 else 'single')
+
+            help.verbose_print(f"image_mode_choice_state:\t{image_mode_choice_state}")
+
+            if pick_mode == 'single': ### this currently does not update the tag dictionaries csv files | only if they use the model will it do that
                 images_path = images_path[0]
                 name = (images_path).split(temp)[-1]
 
@@ -478,8 +490,8 @@ class Custom_dataset_tab:
         image_generated_tags = []
         image_preview_pil = None
         image_generated_tags_prompt_builder_textbox = ""
-        return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), gr.update(
-            value=image_preview_pil), gr.update(value=image_generated_tags_prompt_builder_textbox)
+        return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), \
+               gr.update(value=image_preview_pil), gr.update(value=image_generated_tags_prompt_builder_textbox)
 
     def video_upload_path(self, video_input_button):
         return gr.update(value=video_input_button.name)
