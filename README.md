@@ -6,7 +6,7 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ## Important Information
 
-- the most current **STABLE** build --> [v4.2.7](https://github.com/x-CK-x/Dataset-Curation-Tool/releases/tag/v4.2.7)
+- the most current **STABLE** build --> [v4.2.8](https://github.com/x-CK-x/Dataset-Curation-Tool/releases/tag/v4.2.8)
 - for new users, it's highly recommended to use releases instead of pulling from the main branch
 - in addition it is important to avoid using the **alpha** builds in the [releases](https://github.com/x-CK-x/Dataset-Curation-Tool/releases)
 - if an alpha build is present it will be labeled as a **pre-release** and the **main-branch** of the repo is also likely to contain those changes; as such please use the most recent stable build as denoted above
@@ -24,7 +24,14 @@ A tool for downloading from public image boards (which allow scraping) / preview
 - [X] .sh & .bat installer scripts for conda
 - [X] Image Board manager class object
 - [X] PNG Info & tag combination options
-- [ ] Add Aliases for tags suggestions in the textboxes **(Currently In Progress)**
+
+__NEW Features Paused as of (09/05/2023)__ :: unless there are willing contributors to develop any of the other features.
+
+__New image board specific tagging/captioning models will be supported as they are released__ :: (There is "no" current eta. on the progress of those models being developed by others)
+
+__Contributors are welcome to open a `Pull Request` for their developments & I will promptly review it to be added__
+
+- [ ] Add Aliases for tags suggestions in the textboxes
 - [ ] Add Support for *brand new* tag & captioning models & tag combining options
   - deepdanbooru
   - huggingface IDEFICS (api call)

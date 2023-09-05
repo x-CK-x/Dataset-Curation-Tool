@@ -43,11 +43,6 @@ class Download_tab:
         self.tag_ideas = None
         self.is_csv_loaded = False
 
-
-
-
-
-
     def set_tag_ideas(self, tag_ideas):
         self.tag_ideas = tag_ideas
 
@@ -80,8 +75,8 @@ class Download_tab:
         self.image_board.update_img_brd()
 
 
-        self.settings_json["prepend_tags"] = str(prepend_tags)
-        self.settings_json["append_tags"] = str(append_tags)
+        self.settings_json["prepend_tags"] = (self.settings_json["tag_sep"]).join(prepend_tags)
+        self.settings_json["append_tags"] = (self.settings_json["tag_sep"]).join(append_tags)
         self.settings_json["img_ext"] = str(img_ext)
         self.settings_json["method_tag_files"] = str(method_tag_files)
         self.settings_json["min_score"] = int(min_score)
@@ -382,8 +377,8 @@ class Download_tab:
         resized_img_folder = gr.update(value=self.settings_json["resized_img_folder"])
         tag_sep = gr.update(value=self.settings_json["tag_sep"])
         tag_order_format = gr.update(value=self.image_board.tag_order)
-        prepend_tags = gr.update(value=self.settings_json["prepend_tags"])
-        append_tags = gr.update(value=self.settings_json["append_tags"])
+        prepend_tags = gr.update(choices=self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"]), value=self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"]))
+        append_tags = gr.update(choices=self.settings_json["append_tags"].split(self.settings_json["tag_sep"]), value=self.settings_json["append_tags"].split(self.settings_json["tag_sep"]))
         img_ext = gr.update(value=self.settings_json["img_ext"])
         method_tag_files = gr.update(value=self.settings_json["method_tag_files"])
         min_score = gr.update(value=self.settings_json["min_score"])
@@ -503,8 +498,8 @@ class Download_tab:
         resized_img_folder = gr.update(value=self.settings_json["resized_img_folder"])
         tag_sep = gr.update(value=self.settings_json["tag_sep"])
         tag_order_format = gr.update(value=self.image_board.tag_order)
-        prepend_tags = gr.update(value=self.settings_json["prepend_tags"])
-        append_tags = gr.update(value=self.settings_json["append_tags"])
+        prepend_tags = gr.update(choices=self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"]), value=self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"]))
+        append_tags = gr.update(choices=self.settings_json["append_tags"].split(self.settings_json["tag_sep"]), value=self.settings_json["append_tags"].split(self.settings_json["tag_sep"]))
         img_ext = gr.update(value=self.settings_json["img_ext"])
         method_tag_files = gr.update(value=self.settings_json["method_tag_files"])
         min_score = gr.update(value=self.settings_json["min_score"])
@@ -1094,14 +1089,9 @@ class Download_tab:
         all_json_files_checkboxgroup = gr.update(choices=all_json_files_checkboxgroup, value=[])
         return all_json_files_checkboxgroup
 
-
-
-
-
-
-
-
-
+    def set_tag(self, tags, text):
+        tags.append(text)
+        return gr.update(choices=tags, value=tags), gr.update(value="")
 
     def render_tab(self):
         with gr.Tab("Downloading Image/s"):
@@ -1129,16 +1119,31 @@ class Download_tab:
                         proxy_url_textbox = gr.Textbox(lines=1, label='(Optional Proxy URL)', value=self.settings_json["proxy_url"])
                     with gr.Column(min_width=50, scale=1):
                         tag_sep = gr.Textbox(lines=1, label='Tag Separator/Delimeter', value=self.settings_json["tag_sep"])
-                    with gr.Column(min_width=50, scale=2):
-                        prepend_tags = gr.Textbox(lines=1, label='Prepend Tags', value=self.settings_json["prepend_tags"])
-                    with gr.Column(min_width=50, scale=2):
-                        append_tags = gr.Textbox(lines=1, label='Append Tags', value=self.settings_json["append_tags"])
-                with gr.Row():
-                    with gr.Column(min_width=500, scale=10):
+                    with gr.Column(min_width=50, scale=5):
                         tag_order_format = gr.Dropdown(multiselect=True, interactive=True, label='Tag ORDER',
                                                        choices=self.image_board.valid_categories,
                                                        value=self.image_board.tag_order
                                                        )
+                with gr.Row():
+                    with gr.Column(min_width=50, scale=1):
+                        prepend_tags_textbox = gr.Textbox(lines=1, label='Enter Tag', value=None)
+                    with gr.Column(min_width=50, scale=4):
+                        prepend_tags_text = []
+                        if len(self.settings_json["prepend_tags"]) > 0:
+                            prepend_tags_text = self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"])
+
+                        prepend_tags = gr.Dropdown(multiselect=True, interactive=True, label='Prepend Tags',
+                                                   choices=prepend_tags_text, value=prepend_tags_text)
+                    with gr.Column(min_width=50, scale=1):
+                        append_tags_textbox = gr.Textbox(lines=1, label='Enter Tag', value=None)
+                    with gr.Column(min_width=50, scale=4):
+                        append_tags_text = []
+                        if len(self.settings_json["append_tags"]) > 0:
+                            append_tags_text = self.settings_json["append_tags"].split(self.settings_json["tag_sep"])
+
+                        append_tags = gr.Dropdown(multiselect=True, interactive=True, label='Append Tags',
+                                                  choices=append_tags_text, value=append_tags_text)
+
                 with gr.Row():
                     with gr.Column():
                         img_ext = gr.Dropdown(choices=self.img_extensions, label='Image Extension', value=self.settings_json["img_ext"])
@@ -1452,9 +1457,8 @@ class Download_tab:
         self.fast_create_json_button_blacklist = fast_create_json_button_blacklist
         self.entry_load_button_required = entry_load_button_required
         self.entry_load_button_blacklist = entry_load_button_blacklist
-        ########################################################################################################################
-        ########################################################################################################################
-        ########################################################################################################################
+        self.prepend_tags_textbox = prepend_tags_textbox
+        self.append_tags_textbox = append_tags_textbox
 
         return [
                 self.config_save_var,
@@ -1555,10 +1559,23 @@ class Download_tab:
                 self.remove_entry_button_blacklist,
                 self.fast_create_json_button_blacklist,
                 self.entry_load_button_required,
-                self.entry_load_button_blacklist
-                ]########################################################################################################################
+                self.entry_load_button_blacklist,
+                self.prepend_tags_textbox,
+                self.append_tags_textbox
+                ]
 
     def get_event_listeners(self):
+        self.prepend_tags_textbox.submit(
+            fn=self.set_tag,
+            inputs=[self.prepend_tags, self.prepend_tags_textbox],
+            outputs=[self.prepend_tags, self.prepend_tags_textbox]
+        )
+        self.append_tags_textbox.submit(
+            fn=self.set_tag,
+            inputs=[self.append_tags, self.append_tags_textbox],
+            outputs=[self.append_tags, self.prepend_tags_textbox]
+        )
+
         self.entry_load_button_required.click(
             fn=self.load_single_tag_json,
             inputs=[self.entry_selection_required, self.required_tags_group_var, self.tag_json_fast_proto_required,

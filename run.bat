@@ -31,6 +31,7 @@ if exist "%PATHFILE%" (
             cd Dataset-Curation-Tool
         ) ELSE (
             echo Repository already exists. Please move to a different directory to clone again.
+            timeout /t 10 /nobreak  REM Pauses the script for 10 seconds without any key interruption
             exit /b 1
         )
     )
@@ -49,10 +50,10 @@ git stash
 
 REM Check the current tag
 for /f "delims=" %%i in ('git describe --tags --exact-match 2^>nul') do set CURRENT_TAG=%%i
-if NOT "%CURRENT_TAG%"=="v4.2.7" (
-    git checkout tags/v4.2.7
+if NOT "%CURRENT_TAG%"=="v4.2.8" (
+    git checkout tags/v4.2.8
 ) else (
-    echo Already on tag v4.2.7.
+    echo Already on tag v4.2.8.
 )
 
 REM Apply stashed user changes

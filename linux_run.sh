@@ -34,6 +34,7 @@ else
             cd Dataset-Curation-Tool
         else
             echo "Repository already exists. Please move to a different directory to clone again."
+            sleep 10  # Pauses the script for 10 seconds
             exit 1
         fi
     fi
@@ -52,10 +53,10 @@ git stash
 
 # Check the current tag
 CURRENT_TAG=$(git describe --tags --exact-match 2> /dev/null)
-if [ "$CURRENT_TAG" != "v4.2.7" ]; then
-    git checkout tags/v4.2.7
+if [ "$CURRENT_TAG" != "v4.2.8" ]; then
+    git checkout tags/v4.2.8
 else
-    echo "Already on tag v4.2.7."
+    echo "Already on tag v4.2.8."
 fi
 
 # Apply stashed user changes
