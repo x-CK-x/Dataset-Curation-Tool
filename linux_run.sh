@@ -25,22 +25,26 @@ if [ -f "$PATHFILE" ]; then
     cd "$STORED_PATH"
 else
     # Check if the current directory is "Dataset-Curation-Tool"
-    if [ "$(basename "$PWD")" != "Dataset-Curation-Tool" ]; then
+    if [ "$(basename "$PWD")" == "Dataset-Curation-Tool" ]; then
+        echo "Already in 'Dataset-Curation-Tool' directory."
+    else
         # Check and clone the GitHub repository if not already cloned
         if [ ! -d "Dataset-Curation-Tool" ]; then
             git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
+            cd Dataset-Curation-Tool
         else
-            echo "Repository already exists. Skipping clone."
+            echo "Repository already exists. Please move to a different directory to clone again."
+            exit 1
         fi
-        cd Dataset-Curation-Tool
-    else
-        echo "Already in 'Dataset-Curation-Tool' directory."
     fi
     # Store the current path for future use
     echo "$PWD" > "$PATHFILE"
 fi
 
-# Fetch latest changes and tags from remote
+# Delete the specified files
+rm -f linux_run.sh mac_run.sh run.bat
+
+# Fetch the latest changes and tags
 git fetch
 
 # Stash any user changes
@@ -48,10 +52,10 @@ git stash
 
 # Check the current tag
 CURRENT_TAG=$(git describe --tags --exact-match 2> /dev/null)
-if [ "$CURRENT_TAG" != "v4.2.6" ]; then
-    git checkout tags/v4.2.6
+if [ "$CURRENT_TAG" != "v4.2.7" ]; then
+    git checkout tags/v4.2.7
 else
-    echo "Already on tag v4.2.6."
+    echo "Already on tag v4.2.7."
 fi
 
 # Apply stashed user changes
@@ -62,7 +66,8 @@ conda info --envs | grep data-curation > /dev/null
 if [ $? -ne 0 ]; then
     conda env create -f environment.yml
 else
-    echo "Conda environment 'data-curation' already exists. Skipping environment creation."
+    echo "Conda environment 'data-curation' already exists. Checking for updates..."
+    conda env update -n data-curation -f environment.yml
 fi
 
 # Activate the conda environment

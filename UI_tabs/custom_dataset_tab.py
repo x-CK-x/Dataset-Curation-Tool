@@ -66,6 +66,9 @@ class Custom_dataset_tab:
                 and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
                 and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
             self.auto_tag_models.append('Fluffusion-AutoTag')
+
+        self.auto_tag_models.append("PNG Info")
+
         model_choice_dropdown = gr.update(choices=self.auto_tag_models)
         return model_choice_dropdown
 
@@ -177,12 +180,17 @@ class Custom_dataset_tab:
         if "Z3D" in event_data.value:
             model_path = os.path.join(os.getcwd(), 'Z3D-E621-Convnext')
             model_name = "Z3D-E621-Convnext.onnx"
+            self.autotagmodel.set_run_option("model")
+            self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
         elif "fluff" in (event_data.value).lower():
             model_path = os.path.join(os.getcwd(), 'Fluffusion-AutoTag')
             model_name = "Fluffusion-AutoTag.pb"
-
-        self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
-        help.verbose_print(f"model loaded using cpu={use_cpu}")
+            self.autotagmodel.set_run_option("model")
+            self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
+        elif "info" in (event_data.value).lower():
+            self.autotagmodel.set_run_option("info")
+        help.verbose_print(f"selected option is:\t{event_data.value}")
+        help.verbose_print(f"selected loaded using cpu={use_cpu}")
 
     # def re_load_model(model_name, use_cpu):
     #     global self.autotagmodel
@@ -616,11 +624,13 @@ class Custom_dataset_tab:
                     and os.path.exists(
                 os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
                 self.auto_tag_models.append('Z3D-E621-Convnext')
+                self.auto_tag_models.append("PNG Info")
             if not "Fluffusion-AutoTag" in self.auto_tag_models and os.path.exists(
                     os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
                     and os.path.exists(
                 os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
                 self.auto_tag_models.append('Fluffusion-AutoTag')
+                self.auto_tag_models.append("PNG Info")
 
             write_tag_opts = ['Overwrite', 'Merge', 'Pre-pend', 'Append']
             merge_tag_opts = ['Union', 'Intersection', 'New-Original', 'Original-New']
