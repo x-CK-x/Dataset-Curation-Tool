@@ -1610,7 +1610,7 @@ class Gallery_tab:
                         img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                         img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                         img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
-                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", columns=3, object_fit="contain", height=1032)
+                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", columns=3, object_fit="contain", height=1356)
 
         self.refresh_aspect_btn = refresh_aspect_btn
         self.download_folder_type = download_folder_type

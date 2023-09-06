@@ -53,10 +53,10 @@ git stash
 
 # Check the current tag
 CURRENT_TAG=$(git describe --tags --exact-match 2> /dev/null)
-if [ "$CURRENT_TAG" != "v4.2.8" ]; then
-    git checkout tags/v4.2.8
+if [ "$CURRENT_TAG" != "v4.3.0" ]; then
+    git checkout tags/v4.3.0
 else
-    echo "Already on tag v4.2.8."
+    echo "Already on tag v4.3.0."
 fi
 
 # Apply stashed user changes

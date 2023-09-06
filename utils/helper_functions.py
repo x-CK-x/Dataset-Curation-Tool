@@ -990,3 +990,16 @@ def load_trie(trie, all_tags_ever_dict):
         trie[tag] = all_tags_ever_dict[tag][1]
     verbose_print("Done constructing Trie tree!")
 
+def get_batch_name(f_name):
+    settings_file = load_session_config(f_name)
+    return settings_file["batch_folder"]
+
+def get_batch_names(paths):
+    names = []
+    for path in paths:
+        names.append(get_batch_name(path))
+    return names
+
+def map_batches_to_files(f_names, b_names):
+    return {b_name: f_name for f_name, b_name in zip(f_names, b_names)}
+

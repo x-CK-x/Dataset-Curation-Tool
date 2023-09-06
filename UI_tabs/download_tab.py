@@ -150,12 +150,15 @@ class Download_tab:
         # Update json
         help.update_JSON(self.settings_json, self.config_name)
 
+        # get file names & create dictionary mappings to batch file names
         temp = '\\' if help.is_windows() else '/'
-        all_json_files_checkboxgroup = gr.update(choices=sorted(
-            [(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]),
-                                                 value=[])
-        quick_json_select = gr.update(choices=sorted(
-            [(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]))
+        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+        batch_names = help.get_batch_names(json_names_full_paths)
+        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+
+        all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
+        quick_json_select = gr.update(choices=batch_names)
 
         return all_json_files_checkboxgroup, quick_json_select
 
@@ -241,6 +244,7 @@ class Download_tab:
 
         progress(0, desc="Starting...")
         for setting in progress.tqdm(run_button_batch, desc="Tracking Total Progress"):
+            setting = self.batch_to_json_map[setting]
             path = os.path.join(self.cwd, setting)
             if not ".json" in path:
                 path += ".json"
@@ -323,6 +327,8 @@ class Download_tab:
     def change_config_batch_run(self, json_name_list, file_path):
         temp = '\\' if help.is_windows() else '/'
         name = json_name_list[-1]
+        name = self.batch_to_json_map[name]
+
         settings_path = None
 
         if name != self.config_name:
@@ -377,8 +383,17 @@ class Download_tab:
         resized_img_folder = gr.update(value=self.settings_json["resized_img_folder"])
         tag_sep = gr.update(value=self.settings_json["tag_sep"])
         tag_order_format = gr.update(value=self.image_board.tag_order)
-        prepend_tags = gr.update(choices=self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"]), value=self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"]))
-        append_tags = gr.update(choices=self.settings_json["append_tags"].split(self.settings_json["tag_sep"]), value=self.settings_json["append_tags"].split(self.settings_json["tag_sep"]))
+
+        prepend_tags_text = []
+        if len(self.settings_json["prepend_tags"]) > 0:
+            prepend_tags_text = self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"])
+        append_tags_text = []
+        if len(self.settings_json["append_tags"]) > 0:
+            append_tags_text = self.settings_json["append_tags"].split(self.settings_json["tag_sep"])
+
+        prepend_tags = gr.update(choices=prepend_tags_text, value=prepend_tags_text)
+        append_tags = gr.update(choices=append_tags_text, value=append_tags_text)
+
         img_ext = gr.update(value=self.settings_json["img_ext"])
         method_tag_files = gr.update(value=self.settings_json["method_tag_files"])
         min_score = gr.update(value=self.settings_json["min_score"])
@@ -424,14 +439,15 @@ class Download_tab:
 
         self.is_csv_loaded = False
 
-        all_json_files_checkboxgroup = gr.update(
-            choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]),
-            value=[]
-        )
-        quick_json_select = gr.update(
-            choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]),
-            value=name
-        )
+        # get file names & create dictionary mappings to batch file names
+        temp = '\\' if help.is_windows() else '/'
+        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+        batch_names = help.get_batch_names(json_names_full_paths)
+        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+
+        all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
+        quick_json_select = gr.update(choices=batch_names, value=help.get_batch_name(self.config_name))
 
         return batch_folder, resized_img_folder, tag_sep, tag_order_format, prepend_tags, append_tags, img_ext, method_tag_files, min_score, min_fav_count, min_year, min_month, \
                min_day, min_area, top_n, min_short_side, collect_checkbox_group_var, download_checkbox_group_var, resize_checkbox_group_var, required_tags_group_var, \
@@ -442,13 +458,16 @@ class Download_tab:
 
     # load a different config
     def change_config(self, selected: gr.SelectData, file_path):
+        selected = selected.value
+        selected = self.batch_to_json_map[selected]
+
         temp = '\\' if help.is_windows() else '/'
 
         settings_path = None
 
-        if selected.value != self.config_name:
-            self.settings_json = help.load_session_config(os.path.join(self.cwd, selected.value))
-            self.config_name = os.path.join(self.cwd, selected.value)
+        if selected != self.config_name:
+            self.settings_json = help.load_session_config(os.path.join(self.cwd, selected))
+            self.config_name = os.path.join(self.cwd, selected)
             settings_path = gr.update(value=self.config_name)
         else:
             if temp in file_path:
@@ -498,8 +517,17 @@ class Download_tab:
         resized_img_folder = gr.update(value=self.settings_json["resized_img_folder"])
         tag_sep = gr.update(value=self.settings_json["tag_sep"])
         tag_order_format = gr.update(value=self.image_board.tag_order)
-        prepend_tags = gr.update(choices=self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"]), value=self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"]))
-        append_tags = gr.update(choices=self.settings_json["append_tags"].split(self.settings_json["tag_sep"]), value=self.settings_json["append_tags"].split(self.settings_json["tag_sep"]))
+
+        prepend_tags_text = []
+        if len(self.settings_json["prepend_tags"]) > 0:
+            prepend_tags_text = self.settings_json["prepend_tags"].split(self.settings_json["tag_sep"])
+        append_tags_text = []
+        if len(self.settings_json["append_tags"]) > 0:
+            append_tags_text = self.settings_json["append_tags"].split(self.settings_json["tag_sep"])
+
+        prepend_tags = gr.update(choices=prepend_tags_text, value=prepend_tags_text)
+        append_tags = gr.update(choices=append_tags_text, value=append_tags_text)
+
         img_ext = gr.update(value=self.settings_json["img_ext"])
         method_tag_files = gr.update(value=self.settings_json["method_tag_files"])
         min_score = gr.update(value=self.settings_json["min_score"])
@@ -545,11 +573,15 @@ class Download_tab:
 
         self.is_csv_loaded = False
 
-        all_json_files_checkboxgroup = gr.update(choices=sorted(
-            [(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]),
-                                                 value=[])
-        quick_json_select = gr.update(choices=sorted(
-            [(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]))
+        # get file names & create dictionary mappings to batch file names
+        temp = '\\' if help.is_windows() else '/'
+        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+        batch_names = help.get_batch_names(json_names_full_paths)
+        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+
+        all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
+        quick_json_select = gr.update(choices=batch_names)
 
         return batch_folder, resized_img_folder, tag_sep, tag_order_format, prepend_tags, append_tags, img_ext, method_tag_files, min_score, min_fav_count, min_year, min_month, \
                min_day, min_area, top_n, min_short_side, collect_checkbox_group_var, download_checkbox_group_var, resize_checkbox_group_var, required_tags_group_var, \
@@ -1020,8 +1052,8 @@ class Download_tab:
         # entry dropdown update
         dropdown = gr.update(choices=list(json.keys()), value=[])
         # current checkbox group clear
-        checkbox_group = gr.update(choices=[], value=[])
-        return json_update, dropdown, checkbox_group, json_update, dropdown
+        # checkbox_group = gr.update(choices=[], value=[])
+        return json_update, dropdown, json_update, dropdown#checkbox_group
 
     def reset_json_proto_entry(self, json, json_key, selected):
         selected = [selected] if not isinstance(selected, list) else selected
@@ -1030,10 +1062,10 @@ class Download_tab:
             json[entry_number][json_key] = []
         json_update = gr.update(value=json)
         # current checkbox group clear
-        checkbox_group = gr.update(choices=[], value=[])
-        return json_update, checkbox_group, json_update
+        # checkbox_group = gr.update(choices=[], value=[])
+        return json_update, json_update#checkbox_group
 
-    def add_to_json_proto_entry(self, json, json_key, selected, checkbox_group):
+    def add_to_json_proto_entry(self, json, json_key, selected, checkbox_group):#checkbox_group_choices
         selected = [selected] if not isinstance(selected, list) else selected
         for entry_number in selected:
             # json update
@@ -1044,9 +1076,11 @@ class Download_tab:
             help.verbose_print(f"json status [{entry_number}]:\t{json[entry_number][json_key]}")
             help.verbose_print(f"json:\t{json}")
         json_update = gr.update(value=json)
-        # current checkbox group clear
-        checkbox_group = gr.update(choices=[], value=[])
-        return json_update, checkbox_group, json_update
+        # current checkbox group remove selected tags
+        # checkbox_group = list(set(checkbox_group_choices)-set(checkbox_group))
+        # help.verbose_print(f"checkbox_group:\t{checkbox_group}")
+        # checkbox_group = gr.update(choices=checkbox_group, value=[])
+        return json_update, json_update#checkbox_group
 
     def remove_json_proto_entry(self, json, selected):
         selected = [selected] if not isinstance(selected, list) else selected
@@ -1057,8 +1091,8 @@ class Download_tab:
         # entry dropdown update
         dropdown = gr.update(choices=list(json.keys()), value=[])
         # current checkbox group clear
-        checkbox_group = gr.update(choices=[], value=[])
-        return json_update, dropdown, checkbox_group, json_update, dropdown
+        # checkbox_group = gr.update(choices=[], value=[])
+        return json_update, dropdown, json_update, dropdown#checkbox_group
 
     def create_all_setting_configs(self, json, settings_path):
         settings_copy = copy.deepcopy(self.settings_json)
@@ -1082,16 +1116,70 @@ class Download_tab:
                 new_path = os.path.join(path, f"settings_{number}.json")
             # save with path
             help.update_JSON(settings_copy, new_path)
+
+        # get file names & create dictionary mappings to batch file names
         temp = '\\' if help.is_windows() else '/'
-        all_json_files_checkboxgroup = sorted(
-            [(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]
-        )
-        all_json_files_checkboxgroup = gr.update(choices=all_json_files_checkboxgroup, value=[])
+        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+        batch_names = help.get_batch_names(json_names_full_paths)
+        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+
+        all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
         return all_json_files_checkboxgroup
 
     def set_tag(self, tags, text):
         tags.append(text)
         return gr.update(choices=tags, value=tags), gr.update(value="")
+
+    def convert_tags_to_entries(self, json, json_key, checkbox_group):
+        next_entry_key = str((max([int(key) for key in json.keys()]) + 1) if (len(list(json.keys())) > 0) else 0)
+
+        for i, tag in enumerate(checkbox_group):
+            json[str(i+int(next_entry_key))] = {"required": {}, "blacklist": {}}
+            json[str(i+int(next_entry_key))][json_key] = []
+            # json update
+            json[str(i+int(next_entry_key))][json_key].append(checkbox_group[i])
+            help.verbose_print(f"entry_number:\t{str(i+int(next_entry_key))}")
+            help.verbose_print(f"json_key:\t{json_key}")
+            help.verbose_print(f"checkbox_group:\t{checkbox_group}")
+            help.verbose_print(f"json status [{str(i+int(next_entry_key))}]:\t{json[str(i+int(next_entry_key))][json_key]}")
+            help.verbose_print(f"json:\t{json}")
+        json_update = gr.update(value=json)
+        # current checkbox group remove selected tags
+        # checkbox_group = list(set(checkbox_group_choices)-set(checkbox_group))
+        # help.verbose_print(f"checkbox_group:\t{checkbox_group}")
+        # checkbox_group = gr.update(choices=checkbox_group, value=[])
+
+        dropdown = gr.update(choices=list(json.keys()), value=[])
+        return json_update, json_update, dropdown, dropdown#checkbox_group
+
+    def remove_json_files(self, selected):
+        for name in selected:
+            path = self.batch_to_json_map[name]
+            path = os.path.join(self.cwd, path)
+            if os.path.isfile(path):
+                os.remove(path)
+
+        # get file names & create dictionary mappings to batch file names
+        temp = '\\' if help.is_windows() else '/'
+        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+        batch_names = help.get_batch_names(json_names_full_paths)
+        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+
+        all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
+        quick_json_select = gr.update(choices=batch_names)
+
+        return all_json_files_checkboxgroup, quick_json_select
+
+
+
+
+
+
+
+
+
 
     def render_tab(self):
         with gr.Tab("Downloading Image/s"):
@@ -1152,9 +1240,17 @@ class Download_tab:
                     with gr.Column():
                         settings_path = gr.Textbox(lines=1, label='Path/Name to \"NEW\" JSON (REQUIRED)', value=self.config_name)
                     create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
+
+                    # get file names & create dictionary mappings to batch file names
                     temp = '\\' if help.is_windows() else '/'
-                    quick_json_select = gr.Dropdown(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]), label='JSON Select',
-                                          value=self.config_name, interactive=True)
+                    json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+                    json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+                    batch_names = help.get_batch_names(json_names_full_paths)
+                    self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+
+                    quick_json_select = gr.Dropdown(choices=batch_names, label='JSON Select', value=self.settings_json["batch_folder"],
+                                                    interactive=True)
+
             with gr.Accordion("Edit Requirements for Image Stat/s", visible=True, open=False):
                 gr.Markdown(md_.stats_config)
                 with gr.Row():
@@ -1221,18 +1317,22 @@ class Download_tab:
                                                                choices=list(tag_json_fast_proto_settings.keys()),
                                                                multiselect=True, interactive=True)
                         entry_load_button_required = gr.Button(value="Load Entry", variant='secondary')
-                with gr.Row():
-                    # split into setting_(NUMBER).json files
-                    fast_create_json_button_required = gr.Button(value="Split to Setting Files", variant='primary',
-                                                                 info="Converts json file to auto create setting_(NUMBER).json files")
-                    # add new entry w/ incrementing (numbers) designating the new potential configs >>>> (defaults to that entry when creating it)
-                    new_entry_button_required = gr.Button(value="New Entry", variant='secondary')
-                    # reset json button
-                    reset_entry_button_required = gr.Button(value="Reset Entry", variant='secondary')
-                    # add tags to current entry button
-                    add_to_entry_button_required = gr.Button(value="Add Tag/s to Entry", variant='secondary')
-                    # remove tags to current entry button
-                    remove_entry_button_required = gr.Button(value="Remove Entry", variant='secondary')
+                        # add new entry w/ incrementing (numbers) designating the new potential configs >>>> (defaults to that entry when creating it)
+                        new_entry_button_required = gr.Button(value="New Entry", variant='secondary')
+                        # reset json button
+                        reset_entry_button_required = gr.Button(value="Reset Entry", variant='secondary')
+                        # add tags to current entry button
+                        add_to_entry_button_required = gr.Button(value="Add Tag/s to Entry", variant='secondary')
+                        # remove tags to current entry button
+                        remove_entry_button_required = gr.Button(value="Remove Entry", variant='secondary')
+
+                        # split checkbox group into different entries
+                        create_entries_from_checkboxgroup_button_required = gr.Button(value="Create Entry/s from Tag/s", variant='primary')
+
+                        # split into setting_(NUMBER).json files
+                        fast_create_json_button_required = gr.Button(value="Split to Setting Files", variant='primary',
+                                                                     info="Converts json file to auto create setting_(NUMBER).json files")
+
             with gr.Accordion("Edit Requirements for Blacklist Tags", visible=True, open=False):
                 with gr.Row():
                     with gr.Column():
@@ -1258,18 +1358,22 @@ class Download_tab:
                                                                 choices=list(tag_json_fast_proto_settings.keys()),
                                                                 multiselect=True, interactive=True)
                         entry_load_button_blacklist = gr.Button(value="Load Entry", variant='secondary')
-                with gr.Row():
-                    # split into setting_(NUMBER).json files
-                    fast_create_json_button_blacklist = gr.Button(value="Split to Setting Files", variant='primary',
-                                                                  info="Converts json file to auto create setting_(NUMBER).json files")
-                    # add new entry w/ incrementing (numbers) designating the new potential configs >>>> (defaults to that entry when creating it)
-                    new_entry_button_blacklist = gr.Button(value="New Entry", variant='secondary')
-                    # reset json button
-                    reset_entry_button_blacklist = gr.Button(value="Reset Entry", variant='secondary')
-                    # add tags to current entry button
-                    add_to_entry_button_blacklist = gr.Button(value="Add Tag/s to Entry", variant='secondary')
-                    # remove tags to current entry button
-                    remove_entry_button_blacklist = gr.Button(value="Remove Tag/s to Entry", variant='secondary')
+                        # add new entry w/ incrementing (numbers) designating the new potential configs >>>> (defaults to that entry when creating it)
+                        new_entry_button_blacklist = gr.Button(value="New Entry", variant='secondary')
+                        # reset json button
+                        reset_entry_button_blacklist = gr.Button(value="Reset Entry", variant='secondary')
+                        # add tags to current entry button
+                        add_to_entry_button_blacklist = gr.Button(value="Add Tag/s to Entry", variant='secondary')
+                        # remove tags to current entry button
+                        remove_entry_button_blacklist = gr.Button(value="Remove Tag/s to Entry", variant='secondary')
+
+                        # split checkbox group into different entries
+                        create_entries_from_checkboxgroup_button_blacklist = gr.Button(value="Create Entry/s from Tag/s", variant='primary')
+
+                        # split into setting_(NUMBER).json files
+                        fast_create_json_button_blacklist = gr.Button(value="Split to Setting Files", variant='primary',
+                                                                      info="Converts json file to auto create setting_(NUMBER).json files")
+
             with gr.Accordion("Edit Requirements for Advanced Configuration", visible=True, open=False):
                 gr.Markdown(md_.add_comps_config)
                 with gr.Row():
@@ -1338,7 +1442,6 @@ class Download_tab:
                     images_full_change_dict_textbox = gr.Textbox(lines=1, label='Path to Image Full Change Log JSON (Optional)',
                                                              value=os.path.join(self.auto_config_path, f"auto_complete_{self.settings_json['batch_folder']}.json"))
                     images_full_change_dict_run_button = gr.Button(value="(POST-PROCESSING only) Apply Auto-Config Update Changes", variant='secondary')
-
             with gr.Row():
                 run_button = gr.Button(value="Run", variant='primary')
             with gr.Row():
@@ -1349,10 +1452,10 @@ class Download_tab:
                 progress_bar_textbox_resize = gr.Textbox(interactive=False, visible=False)
             with gr.Accordion("Batch Run", visible=True, open=False):
                 with gr.Row():
-                    temp = '\\' if help.is_windows() else '/'
-                    all_json_files_checkboxgroup = gr.CheckboxGroup(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(self.cwd, f"*.json"))]),
+                    all_json_files_checkboxgroup = gr.CheckboxGroup(choices=list(self.batch_to_json_map.keys()),
                                                                 label='Select to Run', value=[])
                 with gr.Row():
+                    remove_json_batch_buttton = gr.Button(value="Batch Remove JSON", variant='secondary')
                     run_button_batch = gr.Button(value="Batch Run", variant='primary')
                 with gr.Row():
                     progress_run_batch = gr.Textbox(interactive=False, visible=False)
@@ -1459,6 +1562,9 @@ class Download_tab:
         self.entry_load_button_blacklist = entry_load_button_blacklist
         self.prepend_tags_textbox = prepend_tags_textbox
         self.append_tags_textbox = append_tags_textbox
+        self.create_entries_from_checkboxgroup_button_required = create_entries_from_checkboxgroup_button_required
+        self.create_entries_from_checkboxgroup_button_blacklist = create_entries_from_checkboxgroup_button_blacklist
+        self.remove_json_batch_buttton = remove_json_batch_buttton
 
         return [
                 self.config_save_var,
@@ -1561,10 +1667,31 @@ class Download_tab:
                 self.entry_load_button_required,
                 self.entry_load_button_blacklist,
                 self.prepend_tags_textbox,
-                self.append_tags_textbox
+                self.append_tags_textbox,
+                self.create_entries_from_checkboxgroup_button_required,
+                self.create_entries_from_checkboxgroup_button_blacklist,
+                self.remove_json_batch_buttton
                 ]
 
     def get_event_listeners(self):
+        self.remove_json_batch_buttton.click(
+            fn=self.remove_json_files,
+            inputs=[self.all_json_files_checkboxgroup],
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+        )
+
+        self.create_entries_from_checkboxgroup_button_required.click(
+            fn=self.convert_tags_to_entries,
+            inputs=[self.tag_json_fast_proto_required, gr.State("required"), self.required_tags_group_var],
+            outputs=[self.tag_json_fast_proto_required, self.tag_json_fast_proto_blacklist,
+                     self.entry_selection_required, self.entry_selection_blacklist]
+        )
+        self.create_entries_from_checkboxgroup_button_blacklist.click(
+            fn=self.convert_tags_to_entries,
+            inputs=[self.tag_json_fast_proto_blacklist, gr.State("blacklist"), self.blacklist_tags_group_var],
+            outputs=[self.tag_json_fast_proto_required, self.tag_json_fast_proto_blacklist,
+                     self.entry_selection_required, self.entry_selection_blacklist]
+        )
         self.prepend_tags_textbox.submit(
             fn=self.set_tag,
             inputs=[self.prepend_tags, self.prepend_tags_textbox],
@@ -1575,7 +1702,6 @@ class Download_tab:
             inputs=[self.append_tags, self.append_tags_textbox],
             outputs=[self.append_tags, self.prepend_tags_textbox]
         )
-
         self.entry_load_button_required.click(
             fn=self.load_single_tag_json,
             inputs=[self.entry_selection_required, self.required_tags_group_var, self.tag_json_fast_proto_required,
@@ -1588,7 +1714,7 @@ class Download_tab:
             outputs=[
                 self.tag_json_fast_proto_required,
                 self.entry_selection_required,
-                self.required_tags_group_var,
+                # self.required_tags_group_var,
                 self.tag_json_fast_proto_blacklist,
                 self.entry_selection_blacklist
             ]
@@ -1598,7 +1724,7 @@ class Download_tab:
             inputs=[self.tag_json_fast_proto_required, gr.State("required"), self.entry_selection_required],
             outputs=[
                 self.tag_json_fast_proto_required,
-                self.required_tags_group_var,
+                # self.required_tags_group_var,
                 self.tag_json_fast_proto_blacklist
             ]
         )
@@ -1609,10 +1735,11 @@ class Download_tab:
                 gr.State("required"),
                 self.entry_selection_required,
                 self.required_tags_group_var
+                # gr.State(self.required_tags_group_var.choices)
             ],
             outputs=[
                 self.tag_json_fast_proto_required,
-                self.required_tags_group_var,
+                # self.required_tags_group_var,
                 self.tag_json_fast_proto_blacklist
             ]
         )
@@ -1622,7 +1749,7 @@ class Download_tab:
             outputs=[
                 self.tag_json_fast_proto_required,
                 self.entry_selection_required,
-                self.required_tags_group_var,
+                # self.required_tags_group_var,
                 self.tag_json_fast_proto_blacklist,
                 self.entry_selection_blacklist
             ]
@@ -1644,7 +1771,7 @@ class Download_tab:
             outputs=[
                 self.tag_json_fast_proto_blacklist,
                 self.entry_selection_blacklist,
-                self.blacklist_tags_group_var,
+                # self.blacklist_tags_group_var,
                 self.tag_json_fast_proto_required,
                 self.entry_selection_required
             ]
@@ -1654,7 +1781,7 @@ class Download_tab:
             inputs=[self.tag_json_fast_proto_blacklist, gr.State("blacklist"), self.entry_selection_blacklist],
             outputs=[
                 self.tag_json_fast_proto_blacklist,
-                self.blacklist_tags_group_var,
+                # self.blacklist_tags_group_var,
                 self.tag_json_fast_proto_required
             ]
         )
@@ -1665,10 +1792,11 @@ class Download_tab:
                 gr.State("blacklist"),
                 self.entry_selection_blacklist,
                 self.blacklist_tags_group_var
+                # gr.State(self.blacklist_tags_group_var.choices)
             ],
             outputs=[
                 self.tag_json_fast_proto_blacklist,
-                self.blacklist_tags_group_var,
+                # self.blacklist_tags_group_var,
                 self.tag_json_fast_proto_required
             ]
         )
@@ -1678,7 +1806,7 @@ class Download_tab:
             outputs=[
                 self.tag_json_fast_proto_blacklist,
                 self.entry_selection_blacklist,
-                self.blacklist_tags_group_var,
+                # self.blacklist_tags_group_var,
                 self.tag_json_fast_proto_required,
                 self.entry_selection_required
             ]
@@ -1887,52 +2015,6 @@ class Download_tab:
             ]
         )
         self.run_button_batch.click(
-            fn=self.config_save_button,
-            inputs=[
-                self.batch_folder,
-                self.resized_img_folder,
-                self.tag_sep,
-                self.tag_order_format,
-                self.prepend_tags,
-                self.append_tags,
-                self.img_ext,
-                self.method_tag_files,
-                self.min_score,
-                self.min_fav_count,
-                self.min_area,
-                self.top_n,
-                self.min_short_side,
-                self.skip_posts_file,
-                self.skip_posts_type,
-                self.collect_from_listed_posts_file,
-                self.collect_from_listed_posts_type,
-                self.apply_filter_to_listed_posts,
-                self.save_searched_list_type,
-                self.save_searched_list_path,
-                self.downloaded_posts_folder,
-                self.png_folder,
-                self.jpg_folder,
-                self.webm_folder,
-                self.gif_folder,
-                self.swf_folder,
-                self.save_filename_type,
-                self.remove_tags_list,
-                self.replace_tags_list,
-                self.tag_count_list_folder,
-                self.min_month,
-                self.min_day,
-                self.min_year,
-                self.collect_checkbox_group_var,
-                self.download_checkbox_group_var,
-                self.resize_checkbox_group_var,
-                self.create_new_config_checkbox,
-                self.settings_path,
-                self.proxy_url_textbox,
-                self.custom_csv_path_textbox,
-                self.use_csv_custom_checkbox
-            ],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
-        ).then(
             fn=self.make_run_visible,
             inputs=[],
             outputs=[self.progress_run_batch]).then(
