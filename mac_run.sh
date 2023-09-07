@@ -6,6 +6,8 @@ PATHFILE="dataset_curation_path.txt"
 command -v conda >/dev/null 2>&1
 if [ $? -eq 0 ]; then
     echo "Miniconda is already installed."
+    # Add Miniconda to PATH
+    export PATH="$HOME/miniconda/bin:$PATH"
 else
     echo "Miniconda is not installed. Installing now..."
     # Downloading Miniconda3 for macOS
@@ -51,12 +53,16 @@ git fetch
 # Stash any user changes
 git stash
 
-# Check the current tag
+# Fetch the latest tag from the remote
+LATEST_TAG=$(git for-each-ref refs/tags --sort=-creatordate --format '%(refname:short)' --count=1)
+
+# Get the current tag of the local repository
 CURRENT_TAG=$(git describe --tags --exact-match 2> /dev/null)
-if [ "$CURRENT_TAG" != "v4.3.0" ]; then
-    git checkout tags/v4.3.0
+
+if [ "$CURRENT_TAG" != "$LATEST_TAG" ]; then
+    git checkout tags/$LATEST_TAG
 else
-    echo "Already on tag v4.3.0."
+    echo "Already on tag $LATEST_TAG."
 fi
 
 # Apply stashed user changes

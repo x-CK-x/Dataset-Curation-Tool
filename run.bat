@@ -6,6 +6,8 @@ SET PATHFILE=dataset_curation_path.txt
 echo Check if conda command is available
 IF EXIST "%UserProfile%\Miniconda3\Scripts\conda.exe" (
     echo Miniconda is already installed.
+	REM Add Miniconda to the current session's PATH
+	SET PATH=!UserProfile!\Miniconda3;!UserProfile!\Miniconda3\Scripts;!PATH!
 ) ELSE (
     echo Miniconda is not installed. Installing now...
     REM Downloading Miniconda3 for Windows
@@ -48,11 +50,14 @@ echo Stash any user changes
 git stash
 
 echo Check the current tag
-for /f "delims=" %%i in ('git describe --tags --exact-match 2^>nul') do set CURRENT_TAG=%%i
-if NOT "%CURRENT_TAG%"=="v4.3.0" (
-    git checkout tags/v4.3.0
-) else (
-    echo Already on tag v4.3.0.
+FOR /F "delims=" %%i IN ('git for-each-ref refs/tags --sort=-creatordate --format "%%(refname:short)" --count=1') DO SET LATEST_TAG=%%i
+FOR /F "delims=" %%i IN ('git describe --tags --exact-match 2^>nul') DO SET CURRENT_TAG=%%i
+IF NOT "%CURRENT_TAG%"=="%LATEST_TAG%" (
+	echo currently on %CURRENT_TAG%.
+	echo checking out to %LATEST_TAG%.
+    git checkout tags/%LATEST_TAG%
+) ELSE (
+    echo Already on tag %LATEST_TAG%.
 )
 
 echo Apply stashed user changes
