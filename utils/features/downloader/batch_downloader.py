@@ -349,7 +349,11 @@ class E6_Downloader:
             help.verbose_print(f"db_export_file_path:\t{db_export_file_path}")
 
             if shutil.which('curl') is not None:
-                subprocess.check_output(f'curl https://e621.net/db_export/ -o {db_export_file_path}', shell=True)
+                prev_dir = os.getcwd()
+                os.chdir(base_folder)
+                cmd = 'curl https://e621.net/db_export/ -o db_export.html'  
+                subprocess.check_output(cmd, shell=True)
+                os.chdir(prev_dir)
             with open(db_export_file_path) as f:
                 contents = f.read()
 
