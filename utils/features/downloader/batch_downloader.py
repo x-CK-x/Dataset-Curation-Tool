@@ -346,10 +346,12 @@ class E6_Downloader:
                keep_db=False):
         if all((posts_csv == '', e621_posts_list_filename == '')) or all((tags_csv == '', e621_tags_list_filename == '')):
             db_export_file_path = os.path.join(base_folder, 'db_export.html')
+            db_export_file_path = f'\"{db_export_file_path}\"' if " " in base_folder else db_export_file_path
             help.verbose_print(f"db_export_file_path:\t{db_export_file_path}")
 
             if shutil.which('curl') is not None:
                 subprocess.check_output(f'curl https://e621.net/db_export/ -o {db_export_file_path}', shell=True)
+            db_export_file_path = db_export_file_path.replace('\"', '')
             with open(db_export_file_path) as f:
                 contents = f.read()
 
