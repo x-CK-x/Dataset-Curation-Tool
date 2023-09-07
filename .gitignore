@@ -1,0 +1,51 @@
+# Ignore all directories
+*/
+
+# Whitelist (un-ignore) the directories you want and their contents
+!UI_tabs/
+!utils/
+!wiki_assets/
+
+# Whitelist the specific files
+!LICENSE
+!README.md
+!environment.yml
+!linux_run.sh
+!mac_run.sh
+!requirements.txt
+!run.bat
+!webui.py
+
+# The previous rules you wanted
+# Ignore __pycache__ directories
+__pycache__/
+
+# Ignore .pyc files
+*.pyc
+
+# Ignore auto_configs/ directory
+auto_configs/
+
+# Ignore specific file
+dataset_curation_path.txt
+
+# Ignore fast_downloader_config/ directory
+fast_downloader_config/
+
+# Ignore all .csv files
+*.csv
+
+# Ignore all .parquet files
+*.parquet
+
+# Ignore all .html files
+*.html
+
+# Ignore all .json files globally
+*.json
+
+# Allow settings.json
+!settings.json
+
+# Allow .json files in utils/features/image_boards
+!utils/features/image_boards/*.json
