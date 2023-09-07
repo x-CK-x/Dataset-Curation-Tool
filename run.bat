@@ -2,8 +2,10 @@
 SETLOCAL ENABLEDELAYEDEXPANSION
 
 SET PATHFILE=dataset_curation_path.txt
+SET UPDATE_ENV=0
 
 echo Check if conda command is available
+
 IF EXIST "%UserProfile%\Miniconda3\Scripts\conda.exe" (
     echo Miniconda is already installed.
 	REM Add Miniconda to the current session's PATH
@@ -30,10 +32,11 @@ if exist "%PATHFILE%" (
         IF NOT EXIST Dataset-Curation-Tool (
             git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git
             cd Dataset-Curation-Tool
+
+			SET UPDATE_ENV=1
         ) ELSE (
             echo Repository already exists. Please move to a different directory to clone again.
-            timeout /t 10 /nobreak  REM Pauses the script for 10 seconds without any key interruption
-            exit /b 1
+			cd Dataset-Curation-Tool
         )
     )
     echo Store the current path for future use
@@ -46,30 +49,35 @@ DEL /Q /F linux_run.sh mac_run.sh run.bat
 echo Fetch the latest changes and tags
 git fetch
 
-echo Stash any user changes
-git stash
-
 echo Check the current tag
 FOR /F "delims=" %%i IN ('git for-each-ref refs/tags --sort=-creatordate --format "%%(refname:short)" --count=1') DO SET LATEST_TAG=%%i
 FOR /F "delims=" %%i IN ('git describe --tags --exact-match 2^>nul') DO SET CURRENT_TAG=%%i
 IF NOT "%CURRENT_TAG%"=="%LATEST_TAG%" (
 	echo currently on %CURRENT_TAG%.
+
+	echo Stash any user changes
+	git stash
+
 	echo checking out to %LATEST_TAG%.
     git checkout tags/%LATEST_TAG%
+
+	echo Apply stashed user changes
+	git stash apply
+
+	SET UPDATE_ENV=1
 ) ELSE (
     echo Already on tag %LATEST_TAG%.
 )
-
-echo Apply stashed user changes
-git stash apply
 
 echo Check if the conda environment already exists
 call conda info --envs | findstr /C:"data-curation" >nul
 if %errorlevel% neq 0 (
     call conda env create -f environment.yml
 ) else (
-    echo Conda environment 'data-curation' already exists. Checking for updates...
-    call conda env update -n data-curation -f environment.yml
+	IF "%UPDATE_ENV%"=="1" (
+		echo Conda environment 'data-curation' already exists. Checking for updates...
+		call conda env update -n data-curation -f environment.yml
+	)
 )
 
 echo Activate the conda environment
@@ -77,5 +85,10 @@ call activate data-curation
 
 echo Run the python program with the passed arguments
 python webui.py %*
+
+IF ERRORLEVEL 1 (
+    echo Error encountered. Press any key to exit.
+    pause >nul
+)
 
 ENDLOCAL
