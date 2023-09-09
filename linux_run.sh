@@ -60,8 +60,16 @@ LATEST_TAG=$(git for-each-ref refs/tags --sort=-creatordate --format '%(refname:
 CURRENT_TAG=$(git describe --tags --exact-match 2> /dev/null)
 
 if [ "$CURRENT_TAG" != "$LATEST_TAG" ]; then
+    echo "Currently on $CURRENT_TAG."
+    
+    git reset HEAD linux_run.sh mac_run.sh run.bat
+	  git checkout -- linux_run.sh mac_run.sh run.bat
+
     # Stash any user changes
     git stash
+
+    find . -name "__pycache__" -type d -exec rm -r {} +
+    find . -name "*.pyc" -exec rm -f {} +
 
     git checkout tags/$LATEST_TAG
 

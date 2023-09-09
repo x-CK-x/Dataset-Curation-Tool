@@ -609,6 +609,10 @@ def check_requirements():
     requirements_list = ['torch', 'onnxruntime', 'onnxruntime-gpu', 'protobuf==3.20']
     for requirement in requirements_list:
         if not is_installed(requirement):
+
+            verbose_print(f"package ( {requirement} ) is NOT installed!!!")
+            verbose_print(f"internet connection NEEDED to install")
+
             command_str = "pip install "
             command_str = f"{command_str}{requirement}"
             for line in execute(command_str.split(" ")):

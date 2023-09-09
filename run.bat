@@ -53,10 +53,16 @@ echo Check the current tag
 FOR /F "delims=" %%i IN ('git for-each-ref refs/tags --sort=-creatordate --format "%%(refname:short)" --count=1') DO SET LATEST_TAG=%%i
 FOR /F "delims=" %%i IN ('git describe --tags --exact-match 2^>nul') DO SET CURRENT_TAG=%%i
 IF NOT "%CURRENT_TAG%"=="%LATEST_TAG%" (
-	echo currently on %CURRENT_TAG%.
+	echo Currently on %CURRENT_TAG%.
+
+    git reset HEAD linux_run.sh mac_run.sh run.bat
+	git checkout -- linux_run.sh mac_run.sh run.bat
 
 	echo Stash any user changes
 	git stash
+
+    FOR /R . %%i IN (__pycache__) DO IF EXIST "%%i" RD /S /Q "%%i"
+    FOR /R . %%i IN (*.pyc) DO IF EXIST "%%i" DEL /Q "%%i"
 
 	echo checking out to %LATEST_TAG%.
     git checkout tags/%LATEST_TAG%

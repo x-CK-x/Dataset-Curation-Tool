@@ -799,239 +799,6 @@ class Download_tab:
         else:
             raise ValueError('no path name specified | no config created | config empty')
 
-    def remove_from_all(self, file_path, apply_to_all_type_select_checkboxgroup):
-        # gather the tags
-        all_tags = help.get_text_file_data(file_path, 1)
-        all_tags = [x.rstrip('\n') for x in all_tags]
-        help.verbose_print(f"all_tags:\t{all_tags}")
-
-        # load the csvs if not already loaded and the image dictionaries
-        self.gallery_tab_manager.load_images_and_csvs()
-
-        all_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict.keys())
-        search_flag = False
-        all_keys_temp.remove("searched")
-        if "searched" in apply_to_all_type_select_checkboxgroup:
-            search_flag = True
-
-        # update the csvs and global dictionaries
-        searched_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"].keys())
-        for tag in all_tags:
-            category_key = self.gallery_tab_manager.get_category_name(tag)
-            if category_key:
-                # help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}")
-                # edit csv dictionaries
-                self.gallery_tab_manager.remove_to_csv_dictionaries(category_key, tag)  # remove
-            # update all the image text files
-            searched_ids_list = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"].keys())
-            for img_type in all_keys_temp:
-                searched_img_id_keys_temp = None
-                if img_type in searched_ids_list:
-                    searched_img_id_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type].keys())
-                else:
-                    searched_img_id_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type].keys())
-
-                for every_image in list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type].keys()):
-                    if tag in self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image]:
-                        while tag in self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image]:
-                            self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image].remove(tag)
-                            if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                                if img_type in searched_ids_list:
-                                    self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type][every_image].remove(tag)
-
-                            if not every_image in self.auto_complete_config[img_type]:
-                                self.auto_complete_config[img_type][every_image] = []
-                            self.auto_complete_config[img_type][every_image].append(['-', tag])
-        # persist changes
-        self.gallery_tab_manager.csv_persist_to_disk()
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                           self.settings_json["downloaded_posts_folder"])
-
-        for ext in all_keys_temp:
-            for img_id in list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[ext].keys()):
-                full_path_gallery_type = os.path.join(full_path_downloads, self.settings_json[f"{ext}_folder"])
-                full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ",".join(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[ext][img_id])
-                help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
-
-        self.gallery_tab_manager.add_current_images()
-        self.auto_config_path = os.path.join(self.cwd, "auto_configs")
-        temp_config_path = os.path.join(self.auto_config_path, self.gallery_tab_manager.auto_complete_config_name)
-        help.update_JSON(self.auto_complete_config, temp_config_path)
-
-        help.verbose_print("Done")
-
-    def replace_from_all(self, file_path, apply_to_all_type_select_checkboxgroup):
-        # gather the (keyword, tag/s) pairs
-        all_tags = help.get_text_file_data(file_path, 2)
-
-        for i in range(0, len(all_tags)):
-            all_tags[i][0] = all_tags[i][0].rstrip('\n')
-            for j in range(0, len(all_tags[i][1])):
-                all_tags[i][1][j] = all_tags[i][1][j].rstrip('\n')
-
-        help.verbose_print(f"all_tags:\t{all_tags}")
-
-        # load the csvs if not already loaded and the image dictionaries
-        self.gallery_tab_manager.load_images_and_csvs()
-
-        all_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict.keys())
-        search_flag = False
-        all_keys_temp.remove("searched")
-        if "searched" in apply_to_all_type_select_checkboxgroup:
-            search_flag = True
-
-        # update the csvs
-        searched_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"].keys())
-        for tag, replacement_tags in all_tags:
-            category_key = self.gallery_tab_manager.get_category_name(tag)
-            if category_key:
-                help.verbose_print(
-                    f"category_key:\t{category_key}\tand\ttag:\t{tag}\tand\treplacement_tags:\t{replacement_tags}")
-                # edit csv dictionaries
-                self.gallery_tab_manager.remove_to_csv_dictionaries(category_key, tag)  # remove
-            for replacement_tag in replacement_tags:
-                category_key = self.gallery_tab_manager.get_category_name(replacement_tag)
-                # "SKIP" (do not add into csvs) if None
-                if category_key:
-                    self.gallery_tab_manager.add_to_csv_dictionaries(category_key, replacement_tag)  # add
-            # update all the image text files
-            searched_ids_list = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"].keys())
-            for img_type in all_keys_temp:
-                searched_img_id_keys_temp = None
-                if img_type in searched_ids_list:
-                    searched_img_id_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type].keys())
-                else:
-                    searched_img_id_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type].keys())
-
-                for every_image in list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type].keys()):
-                    if tag in self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image]:
-                        # get index of keyword
-                        index = (self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image]).index(tag)
-                        self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image].remove(tag)  ############ consider repeats present
-                        if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                            if img_type in searched_ids_list:
-                                self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type][every_image].remove(tag)
-
-                        if not every_image in self.auto_complete_config[img_type]:
-                            self.auto_complete_config[img_type][every_image] = []
-                        self.auto_complete_config[img_type][every_image].append(['-', tag])
-
-                        for i in range(0, len(replacement_tags)):
-                            self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image].insert((index + i), replacement_tags[i])
-                            if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                                if img_type in searched_ids_list:
-                                    self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type][every_image].insert((index + i),
-                                                                                              replacement_tags[i])
-
-                            if not every_image in self.auto_complete_config[img_type]:
-                                self.auto_complete_config[img_type][every_image] = []
-                            self.auto_complete_config[img_type][every_image].append(['+', replacement_tags[i], (index + i)])
-        # persist changes
-        self.gallery_tab_manager.csv_persist_to_disk()
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                           self.settings_json["downloaded_posts_folder"])
-        for ext in all_keys_temp:
-            for img_id in list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[ext].keys()):
-                full_path_gallery_type = os.path.join(full_path_downloads, self.settings_json[f"{ext}_folder"])
-                full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ",".join(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[ext][img_id])
-                help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
-
-        self.gallery_tab_manager.add_current_images()
-        self.auto_config_path = os.path.join(self.cwd, "auto_configs")
-        temp_config_path = os.path.join(self.auto_config_path, self.gallery_tab_manager.auto_complete_config_name)
-        help.update_JSON(self.auto_complete_config, temp_config_path)
-
-        help.verbose_print("Done")
-
-    def prepend_with_keyword(self, keyword_search_text, prepend_text, prepend_option, apply_to_all_type_select_checkboxgroup):
-        if not prepend_text or prepend_text == "":
-            raise ValueError('REPLACEMENT TEXT and/or TAG/S MUST BE SPECIFIED!\n'
-                             'tags can be removed with the text file and/or manually in the preview gallery tab.')
-
-        prepend_tags = (prepend_text.replace(" ", "")).split(",")
-
-        # load the csvs if not already loaded and the image dictionaries
-        self.gallery_tab_manager.load_images_and_csvs()
-
-        all_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict.keys())
-        search_flag = False
-        all_keys_temp.remove("searched")
-        if "searched" in apply_to_all_type_select_checkboxgroup:
-            search_flag = True
-
-        # update the csvs
-        if keyword_search_text and not keyword_search_text == "":
-            category_key = self.gallery_tab_manager.get_category_name(keyword_search_text)
-            if category_key:
-                help.verbose_print(
-                    f"category_key:\t{category_key}\tand\tkeyword_search_text:\t{keyword_search_text}\tand\tprepend_tags:\t{prepend_tags}")
-                # edit csv dictionaries
-                # add_to_csv_dictionaries(category_key, keyword_search_text) # add
-        for prepend_tag in prepend_tags:
-            category_key = self.gallery_tab_manager.get_category_name(prepend_tag)
-            # "SKIP" (do not add into csvs) if None
-            if category_key:
-                self.gallery_tab_manager.add_to_csv_dictionaries(category_key, prepend_tag)  # add
-        # update all the image text files
-        searched_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"].keys())
-        for img_type in all_keys_temp:
-            searched_img_id_keys_temp = list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type].keys())
-            for every_image in list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type].keys()):
-                if keyword_search_text and not keyword_search_text == "":
-                    if keyword_search_text in self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image]:
-                        # get index of keyword
-                        index = (self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image]).index(keyword_search_text)
-                        if prepend_option == "End":
-                            index += 1
-                        for i in range(0, len(prepend_tags)):
-                            self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image].insert((index + i), prepend_tags[i])
-                            if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                                self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type][every_image].insert((index + i), prepend_tags[i])
-
-                            if not every_image in self.auto_complete_config[img_type]:
-                                self.auto_complete_config[img_type][every_image] = []
-                            self.auto_complete_config[img_type][every_image].append(['+', prepend_tags[i], (index + i)])
-                else:
-                    if prepend_option == "Start":
-                        for i in range(0, len(prepend_tags)):
-                            self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image].insert(i, prepend_tags[i])
-                            if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                                self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type][every_image].insert(i, prepend_tags[i])
-
-                            if not every_image in self.auto_complete_config[img_type]:
-                                self.auto_complete_config[img_type][every_image] = []
-                            self.auto_complete_config[img_type][every_image].append(['+', prepend_tags[i], (i)])
-                    else:
-                        for i in range(0, len(prepend_tags)):
-                            self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image].append(prepend_tags[i])
-                            if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
-                                self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict["searched"][img_type][every_image].append(prepend_tags[i])
-
-                            if not every_image in self.auto_complete_config[img_type]:
-                                self.auto_complete_config[img_type][every_image] = []
-                            self.auto_complete_config[img_type][every_image].append(
-                                ['+', prepend_tags[i], (self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[img_type][every_image]) - 1])
-        # persist changes
-        self.gallery_tab_manager.csv_persist_to_disk()
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.settings_json["batch_folder"]),
-                                           self.settings_json["downloaded_posts_folder"])
-        for ext in all_keys_temp:
-            for img_id in list(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[ext].keys()):
-                full_path_gallery_type = os.path.join(full_path_downloads, self.settings_json[f"{ext}_folder"])
-                full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ",".join(self.gallery_tab_manager.self.gallery_tab_manager.all_images_dict[ext][img_id])
-                help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
-
-        self.gallery_tab_manager.add_current_images()
-        self.auto_config_path = os.path.join(self.cwd, "auto_configs")
-        temp_config_path = os.path.join(self.auto_config_path, self.gallery_tab_manager.auto_complete_config_name)
-        help.update_JSON(self.auto_complete_config, temp_config_path)
-
-        help.verbose_print("Done")
-
-
     def load_single_tag_json(self, selected, existing_tags, json, json_key):
         selected = [selected] if not isinstance(selected, list) else selected
         tags = None
@@ -1408,18 +1175,8 @@ class Download_tab:
                     gen_tags_diff_list_button = gr.Button(value="Generate Tag/s Diff List", variant='secondary')
                 with gr.Row():
                     save_filename_type = gr.Radio(choices=["id","md5"], label='Select Filename Type', value=self.settings_json["save_filename_type"])
-                    remove_tags_list = gr.Textbox(lines=1, label='Path to remove tags file', value=self.settings_json["remove_tags_list"])
-                    replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value=self.settings_json["replace_tags_list"])
-                    tag_count_list_folder = gr.Textbox(lines=1, label='Path to tag count file', value=self.settings_json["tag_count_list_folder"])
-                with gr.Row():
-                    remove_now_button = gr.Button(value="Remove Now", variant='primary')
-                    replace_now_button = gr.Button(value="Replace Now", variant='primary')
-                with gr.Row():
-                    keyword_search_text = gr.Textbox(lines=1, label='Keyword/Tag to Search (Optional)')
-                    prepend_text = gr.Textbox(lines=1, label='Text to Prepend')
-                    prepend_option = gr.Radio(choices=["Start", "End"], label='Prepend/Append Text To:', value="Start")
-                with gr.Row():
-                    prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
+                    tag_count_list_folder = gr.Textbox(lines=1, label='Path to tag count file',
+                                                       value=self.settings_json["tag_count_list_folder"])
             with gr.Accordion("Edit Requirements for Run Configuration", visible=True, open=False):
                 gr.Markdown(md_.run)
                 with gr.Row():
@@ -1516,15 +1273,7 @@ class Download_tab:
         self.gen_tags_list_button = gen_tags_list_button
         self.gen_tags_diff_list_button = gen_tags_diff_list_button
         self.save_filename_type = save_filename_type
-        self.remove_tags_list = remove_tags_list
-        self.replace_tags_list = replace_tags_list
         self.tag_count_list_folder = tag_count_list_folder
-        self.remove_now_button = remove_now_button
-        self.replace_now_button = replace_now_button
-        self.keyword_search_text = keyword_search_text
-        self.prepend_text = prepend_text
-        self.prepend_option = prepend_option
-        self.prepend_now_button = prepend_now_button
         self.basefolder = basefolder
         self.numcpu = numcpu
         self.phaseperbatch = phaseperbatch
@@ -1543,7 +1292,6 @@ class Download_tab:
         self.all_json_files_checkboxgroup = all_json_files_checkboxgroup
         self.run_button_batch = run_button_batch
         self.progress_run_batch = progress_run_batch
-
         self.tag_json_fast_proto_required = tag_json_fast_proto_required
         self.entry_selection_required = entry_selection_required
         self.new_entry_button_required = new_entry_button_required
@@ -1623,15 +1371,7 @@ class Download_tab:
                 self.gen_tags_list_button,
                 self.gen_tags_diff_list_button,
                 self.save_filename_type,
-                self.remove_tags_list,
-                self.replace_tags_list,
                 self.tag_count_list_folder,
-                self.remove_now_button,
-                self.replace_now_button,
-                self.keyword_search_text,
-                self.prepend_text,
-                self.prepend_option,
-                self.prepend_now_button,
                 self.basefolder,
                 self.numcpu,
                 self.phaseperbatch,
@@ -1828,7 +1568,7 @@ class Download_tab:
                      self.collect_from_listed_posts_type, self.apply_filter_to_listed_posts,
                      self.save_searched_list_type, self.save_searched_list_path, self.downloaded_posts_folder,
                      self.png_folder, self.jpg_folder, self.webm_folder, self.gif_folder, self.swf_folder,
-                     self.save_filename_type, self.remove_tags_list, self.replace_tags_list,
+                     self.save_filename_type, self.gallery_tab_manager.remove_tags_list, self.gallery_tab_manager.replace_tags_list,
                      self.tag_count_list_folder, self.all_json_files_checkboxgroup, self.quick_json_select,
                      self.proxy_url_textbox, self.settings_path,  self.custom_csv_path_textbox,
                      self.use_csv_custom_checkbox]
@@ -1894,8 +1634,8 @@ class Download_tab:
                 self.gif_folder,
                 self.swf_folder,
                 self.save_filename_type,
-                self.remove_tags_list,
-                self.replace_tags_list,
+                self.gallery_tab_manager.remove_tags_list,
+                self.gallery_tab_manager.replace_tags_list,
                 self.tag_count_list_folder,
                 self.min_month,
                 self.min_day,
@@ -1945,8 +1685,8 @@ class Download_tab:
                 self.gif_folder,
                 self.swf_folder,
                 self.save_filename_type,
-                self.remove_tags_list,
-                self.replace_tags_list,
+                self.gallery_tab_manager.remove_tags_list,
+                self.gallery_tab_manager.replace_tags_list,
                 self.tag_count_list_folder,
                 self.min_month,
                 self.min_day,
@@ -2030,7 +1770,7 @@ class Download_tab:
                      self.required_tags_group_var,self.blacklist_tags_group_var,self.skip_posts_file,self.skip_posts_type,
                      self.collect_from_listed_posts_file,self.collect_from_listed_posts_type,self.apply_filter_to_listed_posts,
                      self.save_searched_list_type,self.save_searched_list_path,self.downloaded_posts_folder,self.png_folder,self.jpg_folder,
-                     self.webm_folder,self.gif_folder,self.swf_folder,self.save_filename_type,self.remove_tags_list,self.replace_tags_list,
+                     self.webm_folder,self.gif_folder,self.swf_folder,self.save_filename_type,self.gallery_tab_manager.remove_tags_list,self.gallery_tab_manager.replace_tags_list,
                      self.tag_count_list_folder,self.all_json_files_checkboxgroup,self.quick_json_select,self.proxy_url_textbox,
                      self.settings_path, self.custom_csv_path_textbox, self.use_csv_custom_checkbox]
         ).then(
@@ -2155,19 +1895,4 @@ class Download_tab:
             fn=self.auto_config_apply,
             inputs=[self.images_full_change_dict_textbox],
             outputs=[self.progress_bar_textbox_collect]
-        )
-        self.remove_now_button.click(
-            fn=self.remove_from_all,
-            inputs=[self.remove_tags_list, self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup],
-            outputs=[]
-        )
-        self.replace_now_button.click(
-            fn=self.replace_from_all,
-            inputs=[self.replace_tags_list, self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup],
-            outputs=[]
-        )
-        self.prepend_now_button.click(
-            fn=self.prepend_with_keyword,
-            inputs=[self.keyword_search_text, self.prepend_text, self.prepend_option, self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup],
-            outputs=[]
         )

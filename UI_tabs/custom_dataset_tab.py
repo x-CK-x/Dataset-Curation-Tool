@@ -66,8 +66,8 @@ class Custom_dataset_tab:
                 and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
                 and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
             self.auto_tag_models.append('Fluffusion-AutoTag')
-
-        self.auto_tag_models.append("PNG Info")
+        if not "PNG Info" in self.auto_tag_models:
+            self.auto_tag_models.append("PNG Info")
 
         model_choice_dropdown = gr.update(choices=self.auto_tag_models)
         return model_choice_dropdown
@@ -136,7 +136,8 @@ class Custom_dataset_tab:
                     image_generated_tags_prompt_builder_textbox.update(value=", ".join(sorted_list))
         return image_generated_tags_prompt_builder_textbox
 
-    def save_custom_tags(self, image_mode_choice_state, image_with_tag_path_textbox, any_selected_tags):
+    def save_custom_tags(self, image_mode_choice_state, image_with_tag_path_textbox, any_selected_tags,
+                         include_invalid_tags_ckbx):
         self.download_tab_manager.is_csv_loaded = False
 
         self.generate_all_dirs()
@@ -153,10 +154,12 @@ class Custom_dataset_tab:
 
         if image_mode_choice_state.lower() == 'single':
             self.autotagmodel.save_tags(single_image=True, any_selected_tags=any_selected_tags,
-                                   all_tags_ever_dict=self.gallery_tab_manager.all_tags_ever_dict)
+                                   all_tags_ever_dict=self.gallery_tab_manager.all_tags_ever_dict,
+                                        include_invalid_tags_ckbx=include_invalid_tags_ckbx)
         elif image_mode_choice_state.lower() == 'batch':
             self.autotagmodel.save_tags(single_image=False, any_selected_tags=any_selected_tags,
-                                   all_tags_ever_dict=self.gallery_tab_manager.all_tags_ever_dict)
+                                   all_tags_ever_dict=self.gallery_tab_manager.all_tags_ever_dict,
+                                        include_invalid_tags_ckbx=include_invalid_tags_ckbx)
 
         image_confidence_values = {}
         image_generated_tags = []
@@ -373,7 +376,7 @@ class Custom_dataset_tab:
         help.verbose_print(f"set copy")
 
     def interrogate_images(self, image_mode_choice_state, confidence_threshold_slider, category_filter_dropdown,
-                           category_filter_batch_checkbox, gallery_images_batch):
+                           category_filter_batch_checkbox, gallery_images_batch, include_invalid_tags_ckbx):
         self.download_tab_manager.is_csv_loaded = False
 
         self.generate_all_dirs()
@@ -395,12 +398,14 @@ class Custom_dataset_tab:
         if 'single' == image_mode_choice_state.lower():
             self.autotagmodel.interrogate(single_image=True, all_tags_ever_dict=self.gallery_tab_manager.all_tags_ever_dict,
                                      filter_in_categories=category_filter_dropdown,
-                                     filter_in_checkbox=category_filter_batch_checkbox)
+                                     filter_in_checkbox=category_filter_batch_checkbox,
+                                          include_invalid_tags_ckbx=include_invalid_tags_ckbx)
             image_confidence_values, image_generated_tags, image_preview_pil = self.autotagmodel.get_predictions(True)
         else:
             self.autotagmodel.interrogate(single_image=False, all_tags_ever_dict=self.gallery_tab_manager.all_tags_ever_dict,
                                      filter_in_categories=category_filter_dropdown,
-                                     filter_in_checkbox=category_filter_batch_checkbox)
+                                     filter_in_checkbox=category_filter_batch_checkbox,
+                                          include_invalid_tags_ckbx=include_invalid_tags_ckbx)
             _, _, _ = self.autotagmodel.get_predictions(False)
 
         if image_confidence_values is None and image_generated_tags is None and image_preview_pil is None:
@@ -441,7 +446,7 @@ class Custom_dataset_tab:
         return gr.update(value=temp_confids), gr.update(choices=sorted_list), image_preview_pil, gallery_images_batch
 
     # also creates an empty tag file for the image file if there isn't one already
-    def save_custom_images(self, image_mode_choice_state, image_with_tag_path_textbox, copy_mode_ckbx):
+    def save_custom_images(self, image_mode_choice_state, image_with_tag_path_textbox, copy_mode_ckbx, include_invalid_tags_ckbx):
         self.download_tab_manager.is_csv_loaded = False
 
         self.generate_all_dirs()
@@ -611,7 +616,28 @@ class Custom_dataset_tab:
         help.verbose_print(onlyfiles)
         help.verbose_print("Complete!")
 
+    def replace_text_in_tags(self, folder_path, text_to_replace, text_replacement):
+        # Get all .txt files in the folder
+        txt_files = [f for f in os.listdir(folder_path) if f.endswith('.txt')]
 
+        for file_name in txt_files:
+            with open(os.path.join(folder_path, file_name), 'r') as f:
+                content = f.read()
+
+            # Split content into tags
+            tags = content.split(", ")
+
+            # Replace the text in each tag if it contains the text_to_replace
+            modified = False
+            for i, tag in enumerate(tags):
+                if text_to_replace in tag:
+                    tags[i] = tag.replace(text_to_replace, text_replacement)
+                    modified = True
+
+            # If changes were made, write the modified content back to the file
+            if modified:
+                with open(os.path.join(folder_path, file_name), 'w') as f:
+                    f.write(", ".join(tags))
 
 
 
@@ -619,18 +645,17 @@ class Custom_dataset_tab:
         with gr.Tab("Add Custom Dataset"):
             gr.Markdown(md_.custom)
             image_modes = ['Single', 'Batch']
+            self.auto_tag_models.append("PNG Info")
             if not "Z3D-E621-Convnext" in self.auto_tag_models and os.path.exists(
                     os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
                     and os.path.exists(
                 os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
                 self.auto_tag_models.append('Z3D-E621-Convnext')
-                self.auto_tag_models.append("PNG Info")
             if not "Fluffusion-AutoTag" in self.auto_tag_models and os.path.exists(
                     os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
                     and os.path.exists(
                 os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
                 self.auto_tag_models.append('Fluffusion-AutoTag')
-                self.auto_tag_models.append("PNG Info")
 
             write_tag_opts = ['Overwrite', 'Merge', 'Pre-pend', 'Append']
             merge_tag_opts = ['Union', 'Intersection', 'New-Original', 'Original-New']
@@ -710,6 +735,9 @@ class Custom_dataset_tab:
                         with gr.Row():
                             with gr.Column(min_width=50, scale=1):
                                 copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
+                            with gr.Column(min_width=50, scale=1):
+                                include_invalid_tags_ckbx = gr.Checkbox(label="Keep Invalid", info="Include Invalid tag/s")
+                        with gr.Row():
                             with gr.Column(min_width=50, scale=2):
                                 save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
                             with gr.Column(min_width=50, scale=2):
@@ -719,10 +747,17 @@ class Custom_dataset_tab:
                             merge_tag_opts_dropdown = gr.Dropdown(label="Merge Tag Options", choices=merge_tag_opts, multiselect=True, visible=False, interactive=True)
                             use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
                     with gr.Accordion(label="Tag/s Options", visible=True, open=True):
-                        image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="",
-                                                                                 visible=True, interactive=False)
-                        image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True,
-                                                                interactive=True)
+                        with gr.Row():
+                            text_to_replace_textbox = gr.Textbox(label="Text to Replace", interactive=True)
+                            replacement_text_textbox = gr.Textbox(label="Replacement Text", interactive=True)
+                            replace_text_button = gr.Button(value="Replace Text",
+                                                            info='Replaces all text in every tag in all .txt files in the path specified',
+                                                            variant='primary')
+                        with gr.Column():
+                            image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="",
+                                                                                     visible=True, interactive=False)
+                            image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True,
+                                                                    interactive=True)
                         with gr.Row():
                             with gr.Column(min_width=50, scale=3):
                                 tag_effects_dropdown = gr.Dropdown(label="Tag Selector Effect/s",
@@ -835,6 +870,10 @@ class Custom_dataset_tab:
         self.video2audio_output_dir = video2audio_output_dir
         self.convert_video2audio_button = convert_video2audio_button
         self.audio_waveform = audio_waveform
+        self.include_invalid_tags_ckbx = include_invalid_tags_ckbx
+        self.text_to_replace_textbox = text_to_replace_textbox
+        self.replacement_text_textbox = replacement_text_textbox
+        self.replace_text_button = replace_text_button
 
         return [
                 self.file_upload_button_single,
@@ -879,11 +918,24 @@ class Custom_dataset_tab:
                 self.video2audio_clear_button,
                 self.video2audio_output_dir,
                 self.convert_video2audio_button,
-                self.audio_waveform
+                self.audio_waveform,
+                self.include_invalid_tags_ckbx,
+                self.text_to_replace_textbox,
+                self.replacement_text_textbox,
+                self.replace_text_button
                 ]
 
     def get_event_listeners(self):
+        # batch interrogate and batch interrogate non-interact need option for self.include_invalid_tags_ckbx
+        # and saving tag/s & images need self.include_invalid_tags_ckbx
+        # a warning message for user that images copied to tag editor which are invalid may get deleted in the editor or cause error/s; proceed at their own risk!
 
+
+        self.replace_text_button.click(
+            fn=self.replace_text_in_tags,
+            inputs=[self.image_with_tag_path_textbox, self.text_to_replace_textbox, self.replacement_text_textbox],
+            outputs=[]
+        )
 
         self.video2audio_input_button.upload(
             fn=self.video_upload_path,
@@ -946,13 +998,15 @@ class Custom_dataset_tab:
         )
         self.save_custom_tags_button.click(
             fn=self.save_custom_tags,
-            inputs=[self.image_mode_choice_state, self.image_with_tag_path_textbox, self.image_generated_tags],
+            inputs=[self.image_mode_choice_state, self.image_with_tag_path_textbox, self.image_generated_tags,
+                    self.include_invalid_tags_ckbx],
             outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil,
                      self.image_generated_tags_prompt_builder_textbox]
         )
         self.save_custom_images_button.click(
             fn=self.save_custom_images,
-            inputs=[self.image_mode_choice_state, self.image_with_tag_path_textbox, self.copy_mode_ckbx],
+            inputs=[self.image_mode_choice_state, self.image_with_tag_path_textbox, self.copy_mode_ckbx,
+                    self.include_invalid_tags_ckbx],
             outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil,
                      self.image_generated_tags_prompt_builder_textbox]
         )
@@ -971,7 +1025,7 @@ class Custom_dataset_tab:
         ).then(
             fn=self.interrogate_images,
             inputs=[self.image_mode_choice_state, self.confidence_threshold_slider, self.category_filter_dropdown,
-                    self.category_filter_batch_checkbox, self.gallery_images_batch],
+                    self.category_filter_batch_checkbox, self.gallery_images_batch, self.include_invalid_tags_ckbx],
             outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil, self.gallery_images_batch],
             show_progress=True
         ).then(
