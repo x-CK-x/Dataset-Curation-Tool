@@ -1,5 +1,5 @@
-from PIL import Image
 import cv2
+from PIL import Image, ImageEnhance, ImageOps, ImageFilter
 import numpy as np
 import torch
 import math
@@ -10,7 +10,20 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         self.images = image_paths
         self.images = [path for path in self.images if not (".txt" in path)]
 
-        self.crop_or_resize = 'resize'
+        self.operation_choices = ["Crop", "Zoom", "Resize", "Rotate", "Scale", "Translation",
+                                  "Brightness", "Contrast", "Saturation", "Noise", "Shear",
+                                  "Horizontal Flip", "Vertical Flip"]
+        self.preprocess_options = ['resize']
+        self.zoom_value = 1.0
+        self.rotate_slider = 0
+        self.scale_slider = 1
+        self.dx_slider = 0
+        self.dy_slider = 0
+        self.brightness_slider = 1
+        self.contrast_slider = 1
+        self.saturation_slider = 1
+        self.noise_slider = 0
+        self.shear_slider = 0
         self.portrait_square_crop = None
         self.landscape_square_crop = None
         self.global_images_list = []
@@ -35,8 +48,36 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
     def set_crop_image_size(self, crop_image_size):
         self.crop_image_size = crop_image_size
 
-    def set_crop_or_resize(self, crop_or_resize):
-        self.crop_or_resize = crop_or_resize
+    def set_preprocess_options(self, preprocess_options):
+        self.preprocess_options = preprocess_options
+
+    def set_zoom_value(self, zoom_value):
+        self.zoom_value = zoom_value
+
+    def set_rotate_slider(self, rotate_slider):
+        self.rotate_slider = rotate_slider
+    def set_scale_slider(self, scale_slider):
+        self.scale_slider = scale_slider
+    def set_dx_slider(self, dx_slider):
+        self.dx_slider = dx_slider
+    def set_dy_slider(self, dy_slider):
+        self.dy_slider = dy_slider
+    def set_brightness_slider(self, brightness_slider):
+        self.brightness_slider = brightness_slider
+    def set_contrast_slider(self, contrast_slider):
+        self.contrast_slider = contrast_slider
+    def set_saturation_slider(self, saturation_slider):
+        self.saturation_slider = saturation_slider
+    def set_noise_slider(self, noise_slider):
+        self.noise_slider = noise_slider
+    def set_shear_slider(self, shear_slider):
+        self.shear_slider = shear_slider
+
+
+
+
+
+
 
     def set_portrait_square_crop(self, portrait_square_crop):
         self.portrait_square_crop = portrait_square_crop
@@ -81,54 +122,36 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         interp = cv2.INTER_AREA if original_max_length > self.crop_image_size else cv2.INTER_LANCZOS4
         image = cv2.resize(image, (self.crop_image_size, self.crop_image_size),
                            interpolation=interp)  # width, height
-        image = (image.astype(np.float32))# / 255.0
+        # image = (image.astype(np.float32))# / 255.0
         return image
 
-    def crop_portrait(self, image, width, height, landscape_square_crop):
-        img_fragment_text = ["top", "mid", "bottom"]
-        mid_upper = math.ceil(height / 3)
-        crop_dims = None
-        if mid_upper < self.crop_image_size:
-            print('crop portrait BACKUP')
-            crop_dims = [(0, 0, width, self.crop_image_size), (
-                0, ((int(height / 2)) - int(self.crop_image_size / 2)), width,
-                (int(height / 2) + int(self.crop_image_size / 2))),
-                         (0, height - self.crop_image_size, width, height)]
-        else:
-            print('crop portrait NORMAL')
-            mid_lower = mid_upper + math.ceil(height / 2)
-            crop_dims = [(0, 0, width, int(height / 2)), (0, mid_upper, width, mid_lower),
-                         (0, int(height / 2), width, height)]
+    def crop_portrait(self, image, vertical_crop):
+        height, width, _ = image.shape
+        one_third_height = height // 3
 
-        chosen_crop = crop_dims[img_fragment_text.index(landscape_square_crop)]
-        print(f"chosen crop:\t{chosen_crop}")
-        # crop image
-        image = image[chosen_crop[1]:chosen_crop[3], :, :]
-        print(f"new image dims:\t{image.shape}")
-        return image
+        if vertical_crop == "top":
+            start_y = 0
+        elif vertical_crop == "mid":
+            start_y = one_third_height
+        else:  # bottom
+            start_y = 2 * one_third_height
+        end_y = start_y + one_third_height
 
-    def crop_landscape(self, image, width, height, landscape_square_crop):
-        img_fragment_text = ["left", "mid", "right"]
-        mid_left = math.ceil(width / 3)
-        crop_dims = None
-        if mid_left < self.crop_image_size:
-            print('crop landscape BACKUP')
-            crop_dims = [(0, 0, self.crop_image_size, height), (
-                ((int(width / 2)) - int(self.crop_image_size / 2)), 0,
-                ((int(width / 2)) + int(self.crop_image_size / 2)), height),
-                         (width - self.crop_image_size, 0, width, height)]
-        else:
-            print('crop landscape NORMAL')
-            mid_right = mid_left + math.ceil(width / 2)
-            crop_dims = [(0, 0, int(width / 2), height), (mid_left, 0, mid_right, height),
-                         (int(width / 2), 0, width, height)]
+        return image[start_y:end_y, :, :]
 
-        chosen_crop = crop_dims[img_fragment_text.index(landscape_square_crop)]
-        print(f"chosen crop:\t{chosen_crop}")
-        # crop image
-        image = image[:, chosen_crop[0]:chosen_crop[2], :]
-        print(f"new image dims:\t{image.shape}")
-        return image
+    def crop_landscape(self, image, horizontal_crop):
+        height, width, _ = image.shape
+        one_third_width = width // 3
+
+        if horizontal_crop == "left":
+            start_x = 0
+        elif horizontal_crop == "mid":
+            start_x = one_third_width
+        else:  # right
+            start_x = 2 * one_third_width
+        end_x = start_x + one_third_width
+
+        return image[:, start_x:end_x, :]
 
     def crop_center(self, image, width, height):
         print('crop center')
@@ -150,67 +173,150 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         image = image[up:lp, ll:rl, :]
         print(f"chosen crop:\t{up}, {lp}, {ll}, {rl}")
         print(f"new image dims:\t{image.shape}")
-        if (image.shape)[0] == self.crop_image_size and (image.shape)[1] == self.crop_image_size:
-            return image
-        else:
-            return self.resize(image)
+        return image
+
+    def zoom_image(self, img, zoom_value):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+
+        # Calculate new dimensions based on zoom value
+        new_width = int(img.width * zoom_value)
+        new_height = int(img.height * zoom_value)
+
+        # Resize the image based on the new dimensions
+        zoomed_img = img.resize((new_width, new_height), Image.LANCZOS)
+
+        # Now, let's center the zoomed image in the original frame
+        result = Image.new("RGB", (img.width, img.height))
+        x_offset = (img.width - zoomed_img.width) // 2
+        y_offset = (img.height - zoomed_img.height) // 2
+        result.paste(zoomed_img, (x_offset, y_offset))
+        return np.array(result)
+
+    def flip_horizontal(self, img):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        result = img.transpose(Image.FLIP_LEFT_RIGHT)
+        return np.array(result)
+
+    def flip_vertical(self, img):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        result = img.transpose(Image.FLIP_TOP_BOTTOM)
+        return np.array(result)
+
+    def rotate(self, img, angle):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        result = img.rotate(angle)
+        return np.array(result)
+
+    def scale(self, img, factor): # consider using GANs & Diffusion models to increase resolution & denoise images as better approaches
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        width, height = img.size
+        result = img.resize((int(width * factor), int(height * factor)))
+        return np.array(result)
+
+    def translate(self, img, dx, dy):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        result = img.transform(img.size, Image.AFFINE, (1, 0, dx, 0, 1, dy))
+        return np.array(result)
+
+    def adjust_brightness(self, img, factor):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        enhancer = ImageEnhance.Brightness(img)
+        result = enhancer.enhance(factor)
+        return np.array(result)
+
+    def adjust_contrast(self, img, factor):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        enhancer = ImageEnhance.Contrast(img)
+        result = enhancer.enhance(factor)
+        return np.array(result)
+
+    def adjust_saturation(self, img, factor):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        enhancer = ImageEnhance.Color(img)
+        result = enhancer.enhance(factor)
+        return np.array(result)
+
+    def inject_noise(self, img, noise_level):
+        arr = np.asarray(img)
+        noise = np.random.normal(0, noise_level, arr.shape)
+        noisy_arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+        result = Image.fromarray(noisy_arr)
+        return np.array(result)
+
+    def shear(self, img, factor):
+        # Convert input to PIL Image if it's not already
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(np.uint8(img)).convert('RGB')  # Ensure it's RGB
+        width, height = img.size
+        m = factor
+        result = img.transform((width, height), Image.AFFINE, (1, m, -m * width / 2, 0, 1, 0))
+        return np.array(result)
 
     def partial_image_crop_button(self, image):
-        print(f'crop or resize:\t{self.crop_or_resize}')
+        print(f'options to run:\t{self.preprocess_options}')
         image = np.array(image)
-
-        # image = image[:, :, ::-1]  # RGB->BGR
-        width = image.shape[1]
-        height = image.shape[0]
-
         print(f"shape:\t{image.shape}")
 
-        if self.crop_or_resize.lower() == 'resize':
-            image = self.resize(image)
-            self.global_images_list.append(copy.deepcopy(image))
-            print(f"IMAGE WAS ADDED TO LIST")
-            # print(f"self.global_images_list:\t{self.global_images_list}")
-            print(f'numpy image HASH:\t{hash(image.tostring())}')
-            return image
-        if self.crop_or_resize.lower() == 'crop':
-            print(f'crop portrait_square_crop:\t{self.portrait_square_crop}')
-            print(f'crop landscape_square_crop:\t{self.landscape_square_crop}')
-            if (height > width):  # portrait
-                image = self.crop_portrait(image, width, height, self.portrait_square_crop)
-                if width > self.crop_image_size:
-                    # try another crop
-                    image = self.crop_landscape(image, width, height, self.landscape_square_crop)
-                width = image.shape[1]
-                height = image.shape[0]
-                if width > self.crop_image_size or height > self.crop_image_size:
-                    # try center crop
-                    image = self.crop_center(image, width, height)
-                image = (image.astype(np.float32))# / 255.0
-                self.global_images_list.append(copy.deepcopy(image))
-                print(f'numpy image HASH:\t{hash(image.tostring())}')
-                return image
-            elif (height < width):  # landscape
-                image = self.crop_landscape(image, width, height, self.landscape_square_crop)
-                if height > self.crop_image_size:
-                    # try another crop
-                    image = self.crop_portrait(image, width, height, self.portrait_square_crop)
-                width = image.shape[1]
-                height = image.shape[0]
-                if width > self.crop_image_size or height > self.crop_image_size:
-                    # try center crop
-                    image = self.crop_center(image, width, height)
-                image = (image.astype(np.float32))# / 255.0
-                self.global_images_list.append(copy.deepcopy(image))
-                print(f'numpy image HASH:\t{hash(image.tostring())}')
-                return image
-            else:  # square
-                width = image.shape[1]
-                height = image.shape[0]
-                if width > self.crop_image_size or height > self.crop_image_size:
-                    # try center crop
-                    image = self.crop_center(image, width, height)
-                image = (image.astype(np.float32))# / 255.0
-                self.global_images_list.append(copy.deepcopy(image))
-                print(f'numpy image HASH:\t{hash(image.tostring())}')
-                return image
+        for i, preprocess_op in enumerate(self.preprocess_options):
+            if preprocess_op.lower() == self.operation_choices[2].lower(): # resize
+                image = self.resize(image)
+            elif preprocess_op.lower() == self.operation_choices[0].lower(): # crop
+                print(f'crop portrait_square_crop:\t{self.portrait_square_crop}')
+                print(f'crop landscape_square_crop:\t{self.landscape_square_crop}')
+                # Check if both cropping parameters are set. If set, perform the respective cropping
+                if self.portrait_square_crop not in [None, "", "None"]:
+                    image = self.crop_portrait(image, self.portrait_square_crop)
+                if self.landscape_square_crop not in [None, "", "None"]:
+                    image = self.crop_landscape(image, self.landscape_square_crop)
+            elif preprocess_op.lower() == self.operation_choices[1].lower(): # zoom
+                image = self.zoom_image(image, self.zoom_value)
+            elif preprocess_op.lower() == self.operation_choices[3].lower(): # rotate
+                image = self.rotate(image, self.rotate_slider)
+            elif preprocess_op.lower() == self.operation_choices[4].lower(): # scale
+                image = self.scale(image, self.scale_slider)
+            elif preprocess_op.lower() == self.operation_choices[5].lower(): # translate
+                image = self.translate(image, self.dx_slider, self.dy_slider)
+            elif preprocess_op.lower() == self.operation_choices[6].lower(): # brightness
+                image = self.adjust_brightness(image, self.brightness_slider)
+            elif preprocess_op.lower() == self.operation_choices[7].lower(): # contrast
+                image = self.adjust_contrast(image, self.contrast_slider)
+            elif preprocess_op.lower() == self.operation_choices[8].lower(): # saturation
+                image = self.adjust_saturation(image, self.saturation_slider)
+            elif preprocess_op.lower() == self.operation_choices[9].lower(): # noise
+                image = self.inject_noise(image, self.noise_slider)
+            elif preprocess_op.lower() == self.operation_choices[10].lower(): # shear
+                image = self.shear(image, self.shear_slider)
+            elif preprocess_op.lower() == self.operation_choices[11].lower(): # Horizontal Flip
+                image = self.flip_horizontal(image)
+            elif preprocess_op.lower() == self.operation_choices[12].lower(): # Vertical Flip
+                image = self.flip_vertical(image)
 
+        if not 'resize' in self.preprocess_options[-1].lower():
+            image = self.resize(image)  # formats image to required size
+
+        # Convert to float32, if necessary
+        image = image.astype(np.float32)
+
+        # Add to the global image list and print the hash
+        self.global_images_list.append(copy.deepcopy(image))
+        print(f'numpy image HASH:\t{hash(image.tostring())}')
+
+        return image

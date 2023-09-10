@@ -56,16 +56,25 @@ def load_session_config(f_name):
                 json_file.close()
     return session_config
 
+
 def download_url(url, file_name):
     try:
         r = requests.get(url, stream=True)
-        r.raise_for_status()  # If the response was unsuccessful, this will raise a HTTPError
-        with open(file_name, 'wb') as file:
-            for chunk in r.iter_content(chunk_size=1024):
-                if chunk:  # Filter out keep-alive new chunks
-                    file.write(chunk)
+        r.raise_for_status()
+
+        # Get the total file size to set up tqdm
+        total_size = int(r.headers.get('content-length', 0))
+
+        # Initialize tqdm progress bar
+        with tqdm(total=total_size, unit='B', unit_scale=True, desc=file_name) as pbar:
+            with open(file_name, 'wb') as file:
+                for chunk in r.iter_content(chunk_size=1024):
+                    if chunk:  # Filter out keep-alive new chunks
+                        file.write(chunk)
+                        # Update tqdm progress bar with chunk size
+                        pbar.update(len(chunk))
     except requests.exceptions.RequestException as err:
-        verbose_print(f"Error occurred with {url}: {err}")
+        print(f"Error occurred with {url}: {err}")
 
 def grab_pre_selected(settings, all_checkboxes):
     pre_selected_checkboxes = []

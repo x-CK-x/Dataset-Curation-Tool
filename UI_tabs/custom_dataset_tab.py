@@ -253,12 +253,6 @@ class Custom_dataset_tab:
         elif (event_data.value).lower() == 'batch':
             return gr.update(label=f"{image_modes[0]} Image Mode", file_count="directory", interactive=True)
 
-    def make_menus_visible(self, crop_or_resize_radio):
-        if crop_or_resize_radio.lower() == 'crop':
-            return gr.update(visible=True), gr.update(visible=True)
-        else:
-            return gr.update(visible=False, value=None), gr.update(visible=False, value=None)
-
     def set_square_size(self, square_image_edit_slider):
         if self.autotagmodel is None:
             folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
@@ -271,7 +265,7 @@ class Custom_dataset_tab:
         self.autotagmodel.set_image_size(crop_size=square_image_edit_slider)
         help.verbose_print(f"new crop/resize dim/s set")
 
-    def set_crop_or_resize(self, crop_or_resize_radio):
+    def set_preprocess_options(self, operations_dropdown):
         if self.autotagmodel is None:
             folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
             folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
@@ -282,7 +276,7 @@ class Custom_dataset_tab:
             help.check_requirements()
         help.verbose_print(f"set crop or resize")
         if self.autotagmodel:
-            self.autotagmodel.set_crop_or_resize(crop_or_resize_radio)
+            self.autotagmodel.set_preprocess_options(operations_dropdown)
 
     def set_landscape_square_crop(self, landscape_crop_dropdown, event_data: gr.SelectData):
         if self.autotagmodel is None:
@@ -640,6 +634,179 @@ class Custom_dataset_tab:
                     f.write(", ".join(tags))
 
 
+    def set_zoom_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_zoom_slider(slider_value)
+
+
+    def make_menus_visible(self, operations_dropdown):
+        crop_horizontal_menu = None
+        crop_vertical_menu = None
+        zoom_slider = None
+        rotate_slider = None
+        scale_slider = None
+        dx_slider = None
+        dy_slider = None
+        brightness_slider = None
+        contrast_slider = None
+        saturation_slider = None
+        noise_slider = None
+        shear_slider = None
+        if self.operation_choices[0].lower() in [opt.lower() for opt in operations_dropdown]: # crop
+            crop_horizontal_menu = gr.update(visible=True)
+            crop_vertical_menu = gr.update(visible=True)
+        else:
+            crop_horizontal_menu = gr.update(visible=False, value=None)
+            crop_vertical_menu = gr.update(visible=False, value=None)
+        if self.operation_choices[1].lower() in [opt.lower() for opt in operations_dropdown]: # zoom
+            zoom_slider = gr.update(visible=True)
+        else:
+            zoom_slider = gr.update(visible=False)
+        if self.operation_choices[3].lower() in [opt.lower() for opt in operations_dropdown]: # rotate
+            rotate_slider = gr.update(visible=True)
+        else:
+            rotate_slider = gr.update(visible=False)
+        if self.operation_choices[4].lower() in [opt.lower() for opt in operations_dropdown]: # scale
+            scale_slider = gr.update(visible=True)
+        else:
+            scale_slider = gr.update(visible=False)
+        if self.operation_choices[5].lower() in [opt.lower() for opt in operations_dropdown]: # translate
+            dx_slider = gr.update(visible=True)
+            dy_slider = gr.update(visible=True)
+        else:
+            dx_slider = gr.update(visible=False)
+            dy_slider = gr.update(visible=False)
+        if self.operation_choices[6].lower() in [opt.lower() for opt in operations_dropdown]: # brightness
+            brightness_slider = gr.update(visible=True)
+        else:
+            brightness_slider = gr.update(visible=False)
+
+        if self.operation_choices[7].lower() in [opt.lower() for opt in operations_dropdown]: # contrast
+            contrast_slider = gr.update(visible=True)
+        else:
+            contrast_slider = gr.update(visible=False)
+        if self.operation_choices[8].lower() in [opt.lower() for opt in operations_dropdown]: # saturate
+            saturation_slider = gr.update(visible=True)
+        else:
+            saturation_slider = gr.update(visible=False)
+        if self.operation_choices[9].lower() in [opt.lower() for opt in operations_dropdown]:# noise
+            noise_slider = gr.update(visible=True)
+        else:
+            noise_slider = gr.update(visible=False)
+        if self.operation_choices[10].lower() in [opt.lower() for opt in operations_dropdown]: # shear
+            shear_slider = gr.update(visible=True)
+        else:
+            shear_slider = gr.update(visible=False)
+
+        return crop_horizontal_menu, crop_vertical_menu, zoom_slider, rotate_slider, scale_slider, dx_slider, dy_slider, brightness_slider, contrast_slider, saturation_slider, noise_slider, shear_slider
+
+    def set_rotate_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_rotate_slider(slider_value)
+    def set_scale_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_scale_slider(slider_value)
+    def set_dx_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_dx_slider(slider_value)
+    def set_dy_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_dy_slider(slider_value)
+    def set_brightness_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_brightness_slider(slider_value)
+    def set_contrast_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_contrast_slider(slider_value)
+    def set_saturation_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_saturation_slider(slider_value)
+    def set_noise_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_noise_slider(slider_value)
+    def set_shear_slider(self, slider_value):
+        if self.autotagmodel is None:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
+            help.check_requirements()
+        if self.autotagmodel:
+            self.autotagmodel.set_shear_slider(slider_value)
 
     def render_tab(self):
         with gr.Tab("Add Custom Dataset"):
@@ -688,10 +855,10 @@ class Custom_dataset_tab:
                         with gr.Row():
                             send_img_from_autotag_dropdown = gr.Dropdown(label="Image to Tab Selector",
                                                                      choices=tab_selection)
-                            ext_choices = ["png", "jpg", "gif", "webm", "webp", "mp3", "mp4", "jpeg", "swf", "mov", "tiff", "psd", "blend", "pdf", "txt", "zip", "rar"]
+                            self.ext_choices = ["png", "jpg", "gif", "webm", "webp", "mp3", "mp4", "jpeg", "swf", "mov", "tiff", "psd", "blend", "pdf", "txt", "zip", "rar"]
                             ext_selection = gr.Dropdown(info="Extension Type",
-                                                        value=ext_choices[0],
-                                                        choices=ext_choices,
+                                                        value=self.ext_choices[0],
+                                                        choices=self.ext_choices,
                                                         interactive=True,
                                                         show_label=False)
                         with gr.Row():
@@ -712,16 +879,31 @@ class Custom_dataset_tab:
                                 refresh_models_btn = gr.Button(value=refresh_symbol, variant="variant",
                                                                elem_id="refresh_models_btn")
                             model_choice_dropdown = gr.Dropdown(choices=self.auto_tag_models, label="Model Selection")
-                            crop_or_resize_radio = gr.Radio(label="Preprocess Options", choices=['Crop', 'Resize'],
-                                                            value='Resize')
+                            # Dropdown menu for selecting operations
+                            self.operation_choices = ["Crop", "Zoom", "Resize", "Rotate", "Scale", "Translation",
+                                                      "Brightness", "Contrast", "Saturation", "Noise", "Shear", "Horizontal Flip", "Vertical Flip"]
+                            operations_dropdown = gr.Dropdown(choices=self.operation_choices,
+                                                              multiselect=True, label="Preprocess Options",
+                                                              interactive=True, value=[])
                         with gr.Row():
-                            landscape_crop_dropdown = gr.Dropdown(choices=['left', 'mid', 'right'],
+                            landscape_crop_dropdown = gr.Dropdown(choices=['left', 'mid', 'right', None],
                                                                   label="Landscape Crop", info="Mandatory",
                                                                   visible=False)
-                            portrait_crop_dropdown = gr.Dropdown(choices=['top', 'mid', 'bottom'],
+                            portrait_crop_dropdown = gr.Dropdown(choices=['top', 'mid', 'bottom', None],
                                                                  label="Portrait Crop", info="Mandatory", visible=False)
-                        # with gr.Row():
-                        #     square_image_edit_slider = gr.Slider(minimum=0, maximum=3000, step=1, label='Crop/Resize Square Image Size', info='Length or Width', value=448, visible=True, interactive=True)
+                        with gr.Column():
+                            # Slider for zoom value (assuming you want to zoom between 0.5x to 3x)
+                            zoom_slider = gr.Slider(minimum=0.5, maximum=3.0, value=1.0, step=0.1,
+                                                           label=f"{self.operation_choices[1]} Value", visible=False)
+                            rotate_slider = gr.Slider(minimum=-180, maximum=180, step=1, value=0, visible=False, label=f"{self.operation_choices[3]} Value")  # Rotate angle
+                            scale_slider = gr.Slider(minimum=0.5, maximum=2, step=0.05, value=1, visible=False, label=f"{self.operation_choices[4]} Value")  # Scale factor
+                            dx_slider = gr.Slider(minimum=-100, maximum=100, step=1, value=0, visible=False, label=f"{self.operation_choices[5]}-X Value")  # dx for translation
+                            dy_slider = gr.Slider(minimum=-100, maximum=100, step=1, value=0, visible=False, label=f"{self.operation_choices[5]}-Y Value")  # dy for translation
+                            brightness_slider = gr.Slider(minimum=0.5, maximum=2, step=0.05, value=1, visible=False, label=f"{self.operation_choices[6]} Value")  # Brightness factor
+                            contrast_slider = gr.Slider(minimum=0.5, maximum=2, step=0.05, value=1, visible=False, label=f"{self.operation_choices[7]} Value")  # Contrast factor
+                            saturation_slider = gr.Slider(minimum=0.5, maximum=2, step=0.05, value=1, visible=False, label=f"{self.operation_choices[8]} Value")  # Saturation factor
+                            noise_slider = gr.Slider(minimum=0, maximum=100, step=1, value=0, visible=False, label=f"{self.operation_choices[9]} Value")  # Noise level
+                            shear_slider = gr.Slider(minimum=-0.5, maximum=0.5, step=0.05, value=0, visible=False, label=f"{self.operation_choices[10]} Value")  # Shear factor
                         with gr.Row():
                             confidence_threshold_slider = gr.Slider(minimum=0, maximum=100, step=1,
                                                                     label='Confidence Threshold', value=75,
@@ -836,7 +1018,17 @@ class Custom_dataset_tab:
         self.cpu_only_ckbx = cpu_only_ckbx
         self.refresh_models_btn = refresh_models_btn
         self.model_choice_dropdown = model_choice_dropdown
-        self.crop_or_resize_radio = crop_or_resize_radio
+        self.operations_dropdown = operations_dropdown
+        self.zoom_slider = zoom_slider
+        self.rotate_slider = rotate_slider
+        self.scale_slider = scale_slider
+        self.dx_slider = dx_slider
+        self.dy_slider = dy_slider
+        self.brightness_slider = brightness_slider
+        self.contrast_slider = contrast_slider
+        self.saturation_slider = saturation_slider
+        self.noise_slider = noise_slider
+        self.shear_slider = shear_slider
         self.landscape_crop_dropdown = landscape_crop_dropdown
         self.portrait_crop_dropdown = portrait_crop_dropdown
         self.confidence_threshold_slider = confidence_threshold_slider
@@ -861,7 +1053,6 @@ class Custom_dataset_tab:
         self.video_frames_gallery = video_frames_gallery
         self.remove_invalid_chars_button = remove_invalid_chars_button
         self.fix_files = fix_files
-        self.ext_choices = ext_choices
         self.ext_selection = ext_selection
         self.merge_tag_opts_dropdown = merge_tag_opts_dropdown
         self.video2audio_input = video2audio_input
@@ -885,7 +1076,17 @@ class Custom_dataset_tab:
                 self.cpu_only_ckbx,
                 self.refresh_models_btn,
                 self.model_choice_dropdown,
-                self.crop_or_resize_radio,
+                self.operations_dropdown,
+                self.zoom_slider,
+                self.rotate_slider,
+                self.scale_slider,
+                self.dx_slider,
+                self.dy_slider,
+                self.brightness_slider,
+                self.contrast_slider,
+                self.saturation_slider,
+                self.noise_slider,
+                self.shear_slider,
                 self.landscape_crop_dropdown,
                 self.portrait_crop_dropdown,
                 self.confidence_threshold_slider,
@@ -1026,17 +1227,20 @@ class Custom_dataset_tab:
             fn=self.interrogate_images,
             inputs=[self.image_mode_choice_state, self.confidence_threshold_slider, self.category_filter_dropdown,
                     self.category_filter_batch_checkbox, self.gallery_images_batch, self.include_invalid_tags_ckbx],
-            outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil, self.gallery_images_batch],
+            outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil,
+                     self.gallery_images_batch],
             show_progress=True
         ).then(
             fn=self.prompt_string_builder,
             inputs=[self.use_tag_opts_radio, self.image_generated_tags, self.confidence_threshold_slider],
             outputs=[self.image_generated_tags_prompt_builder_textbox]
         )
-        self.crop_or_resize_radio.change(
+        self.operations_dropdown.change(
             fn=self.make_menus_visible,
-            inputs=[self.crop_or_resize_radio],
-            outputs=[self.landscape_crop_dropdown, self.portrait_crop_dropdown]
+            inputs=[self.operations_dropdown],
+            outputs=[self.landscape_crop_dropdown, self.portrait_crop_dropdown, self.zoom_slider, self.rotate_slider,
+                     self.scale_slider, self.dx_slider, self.dy_slider, self.brightness_slider, self.contrast_slider,
+                     self.saturation_slider, self.noise_slider, self.shear_slider]
         )
         self.model_choice_dropdown.select(
             fn=self.load_model,
@@ -1063,11 +1267,69 @@ class Custom_dataset_tab:
             inputs=[self.file_upload_button_batch, self.image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )
-        self.crop_or_resize_radio.change(
-            fn=self.set_crop_or_resize,
-            inputs=[self.crop_or_resize_radio],
+        self.operations_dropdown.change(
+            fn=self.set_preprocess_options,
+            inputs=[self.operations_dropdown],
             outputs=[]
         )
+        self.zoom_slider.change(
+            fn=self.set_zoom_slider,
+            inputs=[self.zoom_slider],
+            outputs=[]
+        )
+        self.rotate_slider.change(
+            fn=self.set_rotate_slider,
+            inputs=[self.rotate_slider],
+            outputs=[]
+        )
+        self.scale_slider.change(
+            fn=self.set_scale_slider,
+            inputs=[self.scale_slider],
+            outputs=[]
+        )
+        self.dx_slider.change(
+            fn=self.set_dx_slider,
+            inputs=[self.dx_slider],
+            outputs=[]
+        )
+        self.dy_slider.change(
+            fn=self.set_dy_slider,
+            inputs=[self.dy_slider],
+            outputs=[]
+        )
+        self.brightness_slider.change(
+            fn=self.set_brightness_slider,
+            inputs=[self.brightness_slider],
+            outputs=[]
+        )
+        self.contrast_slider.change(
+            fn=self.set_contrast_slider,
+            inputs=[self.contrast_slider],
+            outputs=[]
+        )
+        self.saturation_slider.change(
+            fn=self.set_saturation_slider,
+            inputs=[self.saturation_slider],
+            outputs=[]
+        )
+        self.noise_slider.change(
+            fn=self.set_noise_slider,
+            inputs=[self.noise_slider],
+            outputs=[]
+        )
+        self.shear_slider.change(
+            fn=self.set_shear_slider,
+            inputs=[self.shear_slider],
+            outputs=[]
+        )
+
+
+
+
+
+
+
+
         self.landscape_crop_dropdown.select(
             fn=self.set_landscape_square_crop,
             inputs=[self.landscape_crop_dropdown],

@@ -24,7 +24,18 @@ class AutoTag:
         self.batch_size = batch_size
         self.max_data_loader_n_workers = max_data_loader_n_workers
         self.debug = debug
-        self.crop_or_resize = 'resize'
+        self.preprocess_options = ['resize']
+        self.zoom_value = 1.0
+        self.rotate_slider = 0
+        self.scale_slider = 1
+        self.dx_slider = 0
+        self.dy_slider = 0
+        self.brightness_slider = 1
+        self.contrast_slider = 1
+        self.saturation_slider = 1
+        self.noise_slider = 0
+        self.shear_slider = 0
+
         self.global_image_predictions_predictions = []
         self.landscape_square_crop = None
         self.portrait_square_crop = None
@@ -99,9 +110,53 @@ class AutoTag:
     def set_use_tag_opts(self, use_tag_opts_radio):
         self.use_tag_opts_radio = use_tag_opts_radio
 
-    def set_crop_or_resize(self, crop_or_resize='resize'):
-        self.crop_or_resize = crop_or_resize
-        print(f"is now:\t{self.crop_or_resize}")
+    def set_preprocess_options(self, preprocess_options):
+        if preprocess_options is None or len(preprocess_options) == 0:
+            preprocess_options = ['resize']
+        self.preprocess_options = preprocess_options
+        print(f"is now:\t{self.preprocess_options}")
+
+    def set_zoom_slider(self, zoom_value):
+        self.zoom_value = zoom_value
+        print(f"is now:\t{self.zoom_value}")
+
+    def set_rotate_slider(self, rotate_slider):
+        self.rotate_slider = rotate_slider
+        print(f"is now:\t{self.rotate_slider}")
+    def set_scale_slider(self, scale_slider):
+        self.scale_slider = scale_slider
+        print(f"is now:\t{self.scale_slider}")
+    def set_dx_slider(self, dx_slider):
+        self.dx_slider = dx_slider
+        print(f"is now:\t{self.dx_slider}")
+    def set_dy_slider(self, dy_slider):
+        self.dy_slider = dy_slider
+        print(f"is now:\t{self.dy_slider}")
+    def set_brightness_slider(self, brightness_slider):
+        self.brightness_slider = brightness_slider
+        print(f"is now:\t{self.brightness_slider}")
+    def set_contrast_slider(self, contrast_slider):
+        self.contrast_slider = contrast_slider
+        print(f"is now:\t{self.contrast_slider}")
+    def set_saturation_slider(self, saturation_slider):
+        self.saturation_slider = saturation_slider
+        print(f"is now:\t{self.saturation_slider}")
+    def set_noise_slider(self, noise_slider):
+        self.noise_slider = noise_slider
+        print(f"is now:\t{self.noise_slider}")
+    def set_shear_slider(self, shear_slider):
+        self.shear_slider = shear_slider
+        print(f"is now:\t{self.shear_slider}")
+
+
+
+
+
+
+
+
+
+
 
     def set_landscape_square_crop(self, landscape_square_crop=None):
         self.landscape_square_crop = landscape_square_crop
@@ -707,9 +762,20 @@ class AutoTag:
 
             self.dataset.set_crop_image_size(self.crop_image_size)
             print(f"self.dataset.crop_image_size is now:\t{self.dataset.crop_image_size}")
-            self.dataset.set_crop_or_resize(self.crop_or_resize)
-            print(f"self.crop_or_resize is now:\t{self.crop_or_resize}")
-            print(f"self.dataset.crop_or_resize is now:\t{self.dataset.crop_or_resize}")
+            self.dataset.set_preprocess_options(self.preprocess_options)
+            self.dataset.set_zoom_value(self.zoom_value)
+            self.dataset.set_rotate_slider(self.rotate_slider)
+            self.dataset.set_scale_slider(self.scale_slider)
+            self.dataset.set_dx_slider(self.dx_slider)
+            self.dataset.set_dy_slider(self.dy_slider)
+            self.dataset.set_brightness_slider(self.brightness_slider)
+            self.dataset.set_contrast_slider(self.contrast_slider)
+            self.dataset.set_saturation_slider(self.saturation_slider)
+            self.dataset.set_noise_slider(self.noise_slider)
+            self.dataset.set_shear_slider(self.shear_slider)
+
+            print(f"self.preprocess_options is now:\t{self.preprocess_options}")
+            print(f"self.dataset.preprocess_options is now:\t{self.dataset.preprocess_options}")
             self.dataset.set_portrait_square_crop(self.portrait_square_crop)
             self.dataset.set_landscape_square_crop(self.landscape_square_crop)
             print(f"self.dataset.portrait_square_crop is now:\t{self.dataset.portrait_square_crop}")
