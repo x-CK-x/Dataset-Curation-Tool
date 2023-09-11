@@ -16,6 +16,16 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 import utils.helper_functions as help
 
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import os
+import time
+import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
+
+
 class E6_Downloader:
     def check_param_batch_count(self, prms):
         batch_count = None
@@ -633,38 +643,51 @@ class E6_Downloader:
         # Shared counter and lock
         ctr = multiprocessing.Value('i', 0)
         lock = multiprocessing.Lock()
+
         def download_url(url, file_name):
-            print(f"url\t{url}")
-            print(f"file_name\t{file_name}")
+            print(f"url:\t{url}")
             nonlocal ctr
             try:
-                r = requests.get(url, stream=True)
-                r.raise_for_status()  # If the response was unsuccessful, this will raise a HTTPError
+                r = self.session.get(url, stream=True)  # Using the session object with retries.
+                if r.status_code != 200:
+                    print(f"Failed to fetch {url}. Status code: {r.status_code}. Response: {r.text[:100]}")
+                    return
+                r.raise_for_status()
 
-                with open(file_name, 'wb') as file:
-                    for chunk in r.iter_content(chunk_size=1024):
-                        if chunk:  # Filter out keep-alive new chunks
-                            file.write(chunk)
-                with lock:  # Ensure that updates to the counter are atomic
+                try:
+                    print(f"Attempting to write to: {file_name}")
+                    with open(file_name, 'wb') as file:
+                        for chunk in r.iter_content(chunk_size=1024):
+                            if chunk:
+                                file.write(chunk)
+                except (OSError, IOError) as e:  # Errors related to file operations
+                    print(f"File error with {file_name}: {e}")
+
+                with lock:
                     ctr.value += 1
                     elapsed = time.time() - start_time
-                    print(f'\r## Downloading: {ctr.value: >{padding}}/{length} | {f"{elapsed // 60:02.0f}:{elapsed % 60:02.0f}": >6}', end='')
+                    print(
+                        f'\r## Downloading: {ctr.value: >{padding}}/{length} | {f"{elapsed // 60:02.0f}:{elapsed % 60:02.0f}": >6}',
+                        end='')
             except requests.exceptions.RequestException as err:
                 print(f"Error occurred with {url}: {err}")
                 if url not in failed_downloads:
-                    failed_downloads[url] = {'filename': file_name, 'attempts': 1}  # Save for retry later
+                    failed_downloads[url] = {'filename': file_name, 'attempts': 1}
                 else:
                     failed_downloads[url]['attempts'] += 1
+
         with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
             for sublist in sublists:
-                image_id_w_ext = (sublist[2].replace('out=',''))
-                # Split the path into parts
-                parts = (sublist[1].replace('dir=','')).split('\\')
+                image_id_w_ext = (sublist[2].replace('out=', ''))
+                help.verbose_print(f"sublist:\t{sublist}")
+                parts = (sublist[1].replace('dir=', '')).split('\\')
                 parts = [subpart for part in parts for subpart in part.split('/')]
                 new_path = f'{help.get_OS_delimeter()}'.join(parts)
                 url = sublist[0]
-                executor.submit(download_url, url, os.path.join(new_path, image_id_w_ext)) # fn, url, path+file_name
-        # Retry failed downloads
+                new_path = os.path.join(new_path, image_id_w_ext)
+                help.verbose_print(f"new_path:\t{new_path}")
+                executor.submit(download_url, url, new_path)
+
         if failed_downloads:
             print("Retrying failed downloads...")
             with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
@@ -1240,6 +1263,8 @@ class E6_Downloader:
         print(f"tagsparquet\t{tagsparquet}")
         print("============================")
 
+        self.session = self._init_session()
+
         self.backend_conn = backend_conn
 
         self.failed_images = None
@@ -1369,3 +1394,16 @@ class E6_Downloader:
         self.close_PIPE()
 
         del self.cached_e621_posts
+    def _init_session(self):
+        session = requests.Session()
+        retries = Retry(total=5,
+                        backoff_factor=0.1,
+                        status_forcelist=[500, 502, 503, 504],
+                        allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
+                        raise_on_status=False
+                        )
+
+        adapter = HTTPAdapter(max_retries=retries)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session
