@@ -75,10 +75,21 @@ class Extras_tab:
                         nested_model_links_checkbox_group):
         self.custom_dataset_tab_manager.auto_tag_models = help.download_models(model_download_types, model_download_checkbox_group,
                                                tagging_model_download_types, nested_model_links_checkbox_group)
+
         model_download_types = gr.update(value=None)
         tagging_model_download_types = gr.update(value=None)
         nested_model_links_checkbox_group = gr.update(value=None)
-        return model_download_types, tagging_model_download_types, nested_model_links_checkbox_group
+
+        file_upload_button_single = None
+        file_upload_button_batch = None
+        gallery_images_batch = None
+        if tagging_model_download_types is not None and len(tagging_model_download_types) > 0:
+            file_upload_button_single = gr.update(value=None)
+            file_upload_button_batch = gr.update(value=None)
+            gallery_images_batch = gr.update(value=None)
+
+        return model_download_types, tagging_model_download_types, nested_model_links_checkbox_group, \
+               file_upload_button_single, file_upload_button_batch, gallery_images_batch
 
     def render_tab(self):
         with gr.Tab("Download Extra/s: Model/s & Code Repos"):
@@ -172,5 +183,8 @@ class Extras_tab:
             fn=self.download_models,
             inputs=[self.model_download_types, self.model_download_checkbox_group, self.tagging_model_download_types,
                     self.nested_model_links_checkbox_group],
-            outputs=[self.model_download_types, self.tagging_model_download_types, self.nested_model_links_checkbox_group]
+            outputs=[self.model_download_types, self.tagging_model_download_types, self.nested_model_links_checkbox_group,
+                     self.custom_dataset_tab_manager.file_upload_button_single,
+                     self.custom_dataset_tab_manager.file_upload_button_batch,
+                     self.custom_dataset_tab_manager.gallery_images_batch]
         )
