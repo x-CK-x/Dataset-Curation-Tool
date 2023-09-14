@@ -472,16 +472,34 @@ class Custom_dataset_tab:
             raise ValueError(
                 "Cannot complete Operation without completing fields: (write tag options / use tag options / path to files / images_path)")
 
+        temp = '\\' if help.is_windows() else '/'
+        folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
+
+        help.verbose_print(f"image_mode_choice_state:\t{image_mode_choice_state}")
+        pick_mode = image_mode_choice_state.lower() if image_mode_choice_state is not None else (
+            'batch' if len(images_path) > 1 else 'single')
+
+        new_single_image_file_comp = None
+        temp_new_path_single_image = None
+        if pick_mode == 'single':
+            # save image if augmented other than resize opt
+            images_path = images_path[0]
+            name = (images_path).split(temp)[-1]
+            new_single_image_file_comp = gr.update(value=os.path.join(image_with_tag_path_textbox, name))
+
+            temp_full_image_path = os.path.join(image_with_tag_path_textbox, name)
+            temp_new_path_single_image = self.autotagmodel.save_image(name=name, src=image_with_tag_path_textbox)
+            if temp_new_path_single_image is not None:
+                new_single_image_file_comp = gr.update(value=temp_new_path_single_image)
+                # setting the new file path to point to the saved augmented image
+                self.autotagmodel.set_data(train_data_dir=temp_new_path_single_image, single_image=True)
+                self.autotagmodel.dataset.set_image_paths(images=[temp_new_path_single_image])
+                help.verbose_print(f"self.autotagmodel.get_image_paths():\t{self.autotagmodel.get_image_paths()}")
+
         if copy_mode_ckbx:  # caches images for gallery tab & persists to disk where the others are located
-            temp = '\\' if help.is_windows() else '/'
-            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
-
             help.verbose_print(f"all_paths:\t{all_paths}")
-            help.verbose_print(f"image_mode_choice_state:\t{image_mode_choice_state}")
-
-            pick_mode = image_mode_choice_state.lower() if image_mode_choice_state is not None else ('batch' if len(images_path) > 1 else 'single')
 
             help.verbose_print(f"image_mode_choice_state:\t{image_mode_choice_state}")
 
@@ -491,23 +509,35 @@ class Custom_dataset_tab:
 
                 help.verbose_print(f"image name:\t{name}")
 
-                help.copy_over_imgs(
-                    src=os.path.join(image_with_tag_path_textbox, name),
-                    dst=os.path.join(folder_path, name),
-                    image_mode_choice_state='single'
-                )
-            else:
-                help.copy_over_imgs(
-                    src=image_with_tag_path_textbox,
-                    dst=folder_path,
-                    image_mode_choice_state='batch'
-                )
+                if temp_new_path_single_image is not None:
+                    # get new file name
+                    name = temp_new_path_single_image.split(temp)[-1]
+                    help.copy_over_imgs(
+                        src=temp_new_path_single_image,
+                        dst=os.path.join(folder_path, name),
+                        image_mode_choice_state='single'
+                    )
+                else:
+                    help.copy_over_imgs(
+                        src=os.path.join(image_with_tag_path_textbox, name),
+                        dst=os.path.join(folder_path, name),
+                        image_mode_choice_state='single'
+                    )
+
+            # else:
+            #     help.copy_over_imgs(
+            #         src=image_with_tag_path_textbox,
+            #         dst=folder_path,
+            #         image_mode_choice_state='batch'
+            #     )
         image_confidence_values = {}
         image_generated_tags = []
         image_preview_pil = None
         image_generated_tags_prompt_builder_textbox = ""
+
         return gr.update(value=image_confidence_values), gr.update(choices=image_generated_tags), \
-               gr.update(value=image_preview_pil), gr.update(value=image_generated_tags_prompt_builder_textbox)
+               gr.update(value=image_preview_pil), gr.update(value=image_generated_tags_prompt_builder_textbox), \
+               new_single_image_file_comp
 
     def video_upload_path(self, video_input_button):
         return gr.update(value=video_input_button.name)
@@ -1178,10 +1208,23 @@ class Custom_dataset_tab:
         )
         self.send_img_from_autotag_button.click(
             fn=self.image_editor_tab_manager.send_images_from_feature,
-            inputs=[self.send_img_from_autotag_dropdown, self.file_upload_button_single, gr.State(0), gr.State(None),
-                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.file_upload_button_single, self.image_editor_tab_manager.image_editor, self.image_editor_tab_manager.image_editor_crop, self.image_editor_tab_manager.image_editor_sketch,
-                     self.image_editor_tab_manager.image_editor_color_sketch, self.gallery_images_batch]
+            inputs=[self.send_img_from_autotag_dropdown,
+                    self.file_upload_button_single,
+                    gr.State(0),
+                    gr.State(None),
+                    gr.State(False),
+                    gr.State(None),
+                    gr.State(None),
+                    gr.State(None),
+                    gr.State(None)
+                    ],
+            outputs=[self.file_upload_button_single,
+                     self.image_editor_tab_manager.image_editor,
+                     self.image_editor_tab_manager.image_editor_crop,
+                     self.image_editor_tab_manager.image_editor_sketch,
+                     self.image_editor_tab_manager.image_editor_color_sketch,
+                     self.gallery_images_batch
+                     ]
         ).then(
             fn=self.load_images,
             inputs=[self.file_upload_button_single, self.image_editor_tab_manager.image_mode_choice_state],
@@ -1209,7 +1252,7 @@ class Custom_dataset_tab:
             inputs=[self.image_mode_choice_state, self.image_with_tag_path_textbox, self.copy_mode_ckbx,
                     self.include_invalid_tags_ckbx],
             outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil,
-                     self.image_generated_tags_prompt_builder_textbox]
+                     self.image_generated_tags_prompt_builder_textbox, self.file_upload_button_single]
         )
         self.interrogate_button.click(
             fn=self.unload_component,

@@ -1,9 +1,14 @@
+import shutil
+
 import cv2
 from PIL import Image, ImageEnhance, ImageOps, ImageFilter
 import numpy as np
 import torch
 import math
 import copy
+import os
+
+from utils import helper_functions as help
 
 class ImageLoadingPrepDataset(torch.utils.data.Dataset):
     def __init__(self, image_paths):
@@ -45,6 +50,50 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
     def get_image_paths(self):
         return self.images
 
+    def set_image_paths(self, images):
+        self.images = images
+
+    def save_image_data(self, src_name, src, is_augmented):
+        temp = '\\' if help.is_windows() else '/'
+        img_path = None
+        temp_names = [name.split(temp)[-1] for name in self.images]
+        name_w_type = None
+        for idx, name in enumerate(temp_names):
+            if src_name in name:
+                img_path = self.images[idx]
+                name_w_type = temp_names[idx]
+                break
+
+        print(f"img_path:\t{img_path}")
+        print(f"src:\t{src}")
+        print(f"is_augmented:\t{is_augmented}")
+
+        ext = name_w_type.split(".")[-1]
+        path_no_ext = '.'.join(os.path.join(src, name_w_type).split(".")[:-1])
+
+        try:
+            image = self.smart_imread(img_path)
+            tensor = torch.tensor(image)
+        except Exception as e:
+            print(f"Could not load image path: {img_path}, error: {e}")
+
+        img = self.augment_image(tensor)
+
+        if not is_augmented:
+            if not os.path.exists(f"{path_no_ext}.{ext}"):
+                cv2.imwrite(f"{path_no_ext}.{ext}", img)
+                help.verbose_print(f"Image:\t{path_no_ext}.{ext}\tSAVED!")
+                return f"{path_no_ext}.{ext}"
+            else:
+                return None
+        else:
+            counter = 0
+            while os.path.exists(f"{path_no_ext}_{counter}.{ext}"):
+                counter += 1
+            cv2.imwrite(f"{path_no_ext}_{counter}.{ext}", img)
+            help.verbose_print(f"Image:\t{path_no_ext}_{counter}.{ext}\tSAVED!")
+            return f"{path_no_ext}_{counter}.{ext}"
+
     def set_crop_image_size(self, crop_image_size):
         self.crop_image_size = crop_image_size
 
@@ -72,12 +121,6 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         self.noise_slider = noise_slider
     def set_shear_slider(self, shear_slider):
         self.shear_slider = shear_slider
-
-
-
-
-
-
 
     def set_portrait_square_crop(self, portrait_square_crop):
         self.portrait_square_crop = portrait_square_crop
@@ -318,5 +361,51 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         # Add to the global image list and print the hash
         self.global_images_list.append(copy.deepcopy(image))
         print(f'numpy image HASH:\t{hash(image.tostring())}')
+
+        return image
+
+
+
+    def augment_image(self, image):
+        print(f'options to run:\t{self.preprocess_options}')
+        image = np.array(image)
+        print(f"shape:\t{image.shape}")
+
+        for i, preprocess_op in enumerate(self.preprocess_options):
+            if preprocess_op.lower() == self.operation_choices[2].lower(): # resize
+                image = self.resize(image)
+            elif preprocess_op.lower() == self.operation_choices[0].lower(): # crop
+                print(f'crop portrait_square_crop:\t{self.portrait_square_crop}')
+                print(f'crop landscape_square_crop:\t{self.landscape_square_crop}')
+                # Check if both cropping parameters are set. If set, perform the respective cropping
+                if self.portrait_square_crop not in [None, "", "None"]:
+                    image = self.crop_portrait(image, self.portrait_square_crop)
+                if self.landscape_square_crop not in [None, "", "None"]:
+                    image = self.crop_landscape(image, self.landscape_square_crop)
+            elif preprocess_op.lower() == self.operation_choices[1].lower(): # zoom
+                image = self.zoom_image(image, self.zoom_value)
+            elif preprocess_op.lower() == self.operation_choices[3].lower(): # rotate
+                image = self.rotate(image, self.rotate_slider)
+            elif preprocess_op.lower() == self.operation_choices[4].lower(): # scale
+                image = self.scale(image, self.scale_slider)
+            elif preprocess_op.lower() == self.operation_choices[5].lower(): # translate
+                image = self.translate(image, self.dx_slider, self.dy_slider)
+            elif preprocess_op.lower() == self.operation_choices[6].lower(): # brightness
+                image = self.adjust_brightness(image, self.brightness_slider)
+            elif preprocess_op.lower() == self.operation_choices[7].lower(): # contrast
+                image = self.adjust_contrast(image, self.contrast_slider)
+            elif preprocess_op.lower() == self.operation_choices[8].lower(): # saturation
+                image = self.adjust_saturation(image, self.saturation_slider)
+            elif preprocess_op.lower() == self.operation_choices[9].lower(): # noise
+                image = self.inject_noise(image, self.noise_slider)
+            elif preprocess_op.lower() == self.operation_choices[10].lower(): # shear
+                image = self.shear(image, self.shear_slider)
+            elif preprocess_op.lower() == self.operation_choices[11].lower(): # Horizontal Flip
+                image = self.flip_horizontal(image)
+            elif preprocess_op.lower() == self.operation_choices[12].lower(): # Vertical Flip
+                image = self.flip_vertical(image)
+
+        # if not 'resize' in self.preprocess_options[-1].lower():
+        #     image = self.resize(image)  # formats image to required size
 
         return image

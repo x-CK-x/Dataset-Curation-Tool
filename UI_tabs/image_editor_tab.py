@@ -1,3 +1,5 @@
+import shutil
+
 import gradio as gr
 import copy
 import os
@@ -17,9 +19,25 @@ class Image_editor_tab:
         self.image_mode_choice_state = image_mode_choice_state
 
 
+    '''
+    new_feature             ::  dropdown menu option
+    data                    ::  image/s data being transferred to the component of interest
+    no_update_index         ::  (using an integer) to specify the component on the "mapping" list 
+                                i.e. ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
+    image_id                ::  use/s image id if sending from gallery
+    is_batch                ::  true if multiple images being sent
+    apply_type_select       ::  use/s file type selection checkboxgroup if sending from gallery
+    use_highlight           ::  use/s boolean determining if multiple images are highlighted if sending from gallery
+    highlight_select_data   ::  use/s multiple images that are highlighted if sending from gallery
+                                state of image mappings represented by index -> [ext, img_id]
+    highlight_select        ::  use/s multiple images that are highlighted if sending from gallery
+                                JSON list of image ids in the gallery
+    '''
+    def send_images_from_feature(self, new_feature, data, no_update_index, image_id, is_batch, apply_type_select,
+                                 use_highlight, highlight_select_data, highlight_select):
 
-    def send_images_from_feature(self, new_feature, data, no_update_index, image_id, is_batch,
-                                 apply_type_select, use_highlight, highlight_select_data, highlight_select):
+        help.verbose_print(f"data:\t{data}")
+
         if image_id is not None and len(image_id) > 0:
             image_id = str(image_id)
 
@@ -112,9 +130,6 @@ class Image_editor_tab:
             print(f"type:\t{type(data)}")
             data = data.name
 
-        tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor",
-                         "Image Color Sketch Editor"]
-
         # help.verbose_print(f"image:\t{image}")
 
         updates = [[None], [None], [None], [None], [None]]
@@ -138,7 +153,7 @@ class Image_editor_tab:
         # 2: crop
         # 3: sketch
         # 4: color
-        for i, tab_opt in enumerate(tab_selection):
+        for i, tab_opt in enumerate(self.tab_selection):
             if new_feature in tab_opt:
                 updates[i] = data
                 break
@@ -158,29 +173,57 @@ class Image_editor_tab:
                image_editor_color_sketch, gallery_images_batch
 
     def render_tab(self):
+        self.tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor",
+                              "Image Color Sketch Editor"]
         with gr.Tab("Image Editor"):
-            tab_selection = ["Auto-Tag Model", "Image Default Editor", "Image Crop Editor", "Image Sketch Editor", "Image Color Sketch Editor"]
             with gr.Tab("Image Editor Tool"):
+                with gr.Accordion("Add Image to Edit Here"):
+                    # other tabs need to also update this component now also!!!
+                    upload_button_single_edit = gr.File(label=f"Upload Image",
+                                                   file_count="single",
+                                                   interactive=True, file_types=["image"],
+                                                   visible=True, type="file")
+
                 image_editor = gr.Image(label=f"Image Default Editor", interactive=True, visible=True, tool="editor",
                                         source="upload", type="filepath", height=1028)
-                send_img_from_default_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                send_img_from_default_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=self.tab_selection)
                 send_img_from_default_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Crop Tool"):
+                with gr.Accordion("Add Image to Edit Here"):
+                    # other tabs need to also update this component now also!!!
+                    upload_button_single_crop = gr.File(label=f"Upload Image",
+                                                   file_count="single",
+                                                   interactive=True, file_types=["image"],
+                                                   visible=True, type="file")
+
                 image_editor_crop = gr.Image(label=f"Image Crop Editor", interactive=True, visible=True,
                                              tool="select", source="upload", type="filepath", height=1028)
-                send_img_from_crop_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                send_img_from_crop_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=self.tab_selection)
                 send_img_from_crop_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Sketch Tool"):
+                with gr.Accordion("Add Image to Edit Here"):
+                    # other tabs need to also update this component now also!!!
+                    upload_button_single_sketch = gr.File(label=f"Upload Image",
+                                                   file_count="single",
+                                                   interactive=True, file_types=["image"],
+                                                   visible=True, type="file")
+
                 image_editor_sketch = gr.Image(label=f"Image Sketch Editor", interactive=True, visible=True,
                                                tool="sketch", source="upload", type="filepath", height=1028)
-                send_img_from_sketch_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                send_img_from_sketch_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=self.tab_selection)
                 send_img_from_sketch_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Color Sketch Tool"):
+                with gr.Accordion("Add Image to Edit Here"):
+                    # other tabs need to also update this component now also!!!
+                    upload_button_single_color = gr.File(label=f"Upload Image",
+                                                   file_count="single",
+                                                   interactive=True, file_types=["image"],
+                                                   visible=True, type="file")
+
                 image_editor_color_sketch = gr.Image(label=f"Image Color Sketch Editor", interactive=True, visible=True,
                                                      tool="color-sketch", source="upload", type="filepath", height=1028)
-                send_img_from_color_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=tab_selection)
+                send_img_from_color_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=self.tab_selection)
                 send_img_from_color_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
-
 
         self.image_editor = image_editor
         self.send_img_from_default_editor_dropdown = send_img_from_default_editor_dropdown
@@ -194,6 +237,25 @@ class Image_editor_tab:
         self.image_editor_color_sketch = image_editor_color_sketch
         self.send_img_from_color_editor_dropdown = send_img_from_color_editor_dropdown
         self.send_img_from_color_editor_button = send_img_from_color_editor_button
+        self.upload_button_single_edit = upload_button_single_edit
+        self.upload_button_single_crop = upload_button_single_crop
+        self.upload_button_single_sketch = upload_button_single_sketch
+        self.upload_button_single_color = upload_button_single_color
+
+        self.upload_data_mapping = {
+            self.tab_selection[0]: self.custom_dataset_tab_manager.file_upload_button_single,
+            self.tab_selection[1]: self.upload_button_single_edit,
+            self.tab_selection[2]: self.upload_button_single_crop,
+            self.tab_selection[3]: self.upload_button_single_sketch,
+            self.tab_selection[4]: self.upload_button_single_color
+        }
+        self.editor_data_mapping = {
+            self.tab_selection[0]: self.custom_dataset_tab_manager.file_upload_button_single,
+            self.tab_selection[1]: self.image_editor,
+            self.tab_selection[2]: self.image_editor_crop,
+            self.tab_selection[3]: self.image_editor_sketch,
+            self.tab_selection[4]: self.image_editor_color_sketch
+        }
 
         return [
             self.image_editor,
@@ -207,51 +269,147 @@ class Image_editor_tab:
             self.send_img_from_sketch_editor_button,
             self.image_editor_color_sketch,
             self.send_img_from_color_editor_dropdown,
-            self.send_img_from_color_editor_button
+            self.send_img_from_color_editor_button,
+            self.upload_button_single_edit,
+            self.upload_button_single_crop,
+            self.upload_button_single_sketch,
+            self.upload_button_single_color
         ]
 
+    def set_editor_type(self, img_path):
+        if img_path is None:
+            return gr.update(value=None)
+        print(f"img_path.name:\t{img_path.name}")
+        return gr.update(value=img_path.name)
+
+    def save_image(self, upload_path, edited_data_path):
+        temp = '\\' if help.is_windows() else '/'
+
+        upload_path = upload_path.name
+        ext = upload_path.split(".")[-1]
+        path_w_name_no_ext = ".".join(upload_path.split(".")[:-1])
+
+        path_no_name_no_ext = temp.join(path_w_name_no_ext.split(temp)[:-1])
+        just_name = path_w_name_no_ext.split(temp)[-1]
+
+        # path_no_name_no_ext = os.getcwd() # add this in only if absolutely needed (since) it will automatically download to the dataset repo folder as it has no knowledge of where the source images are from
+
+        counter = 0
+        while os.path.exists(os.path.join(path_no_name_no_ext, f"{just_name}_{counter}.{ext}")):
+            counter += 1
+        help.verbose_print(f"Image:\t{os.path.join(path_no_name_no_ext, f'{just_name}_{counter}.{ext}')}\tSAVED!")
+        shutil.copy(edited_data_path, f"{os.path.join(path_no_name_no_ext, f'{just_name}_{counter}.{ext}')}")
+        return gr.update(value=f"{os.path.join(path_no_name_no_ext, f'{just_name}_{counter}.{ext}')}")
+
     def get_event_listeners(self):
+
+        self.upload_button_single_edit.change(
+            fn=self.set_editor_type,
+            inputs=[self.upload_button_single_edit],
+            outputs=[self.editor_data_mapping[self.tab_selection[1]]]
+        )
+        self.upload_button_single_crop.change(
+            fn=self.set_editor_type,
+            inputs=[self.upload_button_single_crop],
+            outputs=[self.editor_data_mapping[self.tab_selection[2]]]
+        )
+        self.upload_button_single_sketch.change(
+            fn=self.set_editor_type,
+            inputs=[self.upload_button_single_sketch],
+            outputs=[self.editor_data_mapping[self.tab_selection[3]]]
+        )
+        self.upload_button_single_color.change(
+            fn=self.set_editor_type,
+            inputs=[self.upload_button_single_color],
+            outputs=[self.editor_data_mapping[self.tab_selection[4]]]
+        )
+
+
         self.send_img_from_default_editor_button.click(
+            fn=self.save_image,
+            inputs=[self.upload_data_mapping[self.tab_selection[1]], self.editor_data_mapping[self.tab_selection[1]]],
+            outputs=[self.upload_data_mapping[self.tab_selection[1]]]
+        ).then(
             fn=self.send_images_from_feature,
-            inputs=[self.send_img_from_default_editor_dropdown, self.image_editor, gr.State(1), gr.State(None),
-                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
+            inputs=[self.send_img_from_default_editor_dropdown, 
+                    self.upload_data_mapping[self.tab_selection[1]],
+                    gr.State(1), gr.State(None), gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[self.upload_data_mapping[self.tab_selection[0]],
+                     self.upload_data_mapping[self.tab_selection[1]], 
+                     self.upload_data_mapping[self.tab_selection[2]], 
+                     self.upload_data_mapping[self.tab_selection[3]], 
+                     self.upload_data_mapping[self.tab_selection[4]], 
+                     self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.custom_dataset_tab_manager.load_images,
-            inputs=[self.custom_dataset_tab_manager.file_upload_button_single,self. image_mode_choice_state],
+            inputs=[self.upload_data_mapping[self.tab_selection[1]], self.image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )
+
+
         self.send_img_from_crop_editor_button.click(
+            fn=self.save_image,
+            inputs=[self.upload_data_mapping[self.tab_selection[2]], self.editor_data_mapping[self.tab_selection[2]]],
+            outputs=[self.upload_data_mapping[self.tab_selection[2]]]
+        ).then(
             fn=self.send_images_from_feature,
-            inputs=[self.send_img_from_crop_editor_dropdown, self.image_editor_crop, gr.State(2), gr.State(None),
-                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
+            inputs=[self.send_img_from_crop_editor_dropdown,
+                    self.upload_data_mapping[self.tab_selection[2]],
+                    gr.State(2), gr.State(None), gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[self.upload_data_mapping[self.tab_selection[0]],
+                     self.upload_data_mapping[self.tab_selection[1]], 
+                     self.upload_data_mapping[self.tab_selection[2]], 
+                     self.upload_data_mapping[self.tab_selection[3]], 
+                     self.upload_data_mapping[self.tab_selection[4]], 
+                     self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.custom_dataset_tab_manager.load_images,
-            inputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_mode_choice_state],
+            inputs=[self.upload_data_mapping[self.tab_selection[2]], self.image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )
+
+
+
         self.send_img_from_sketch_editor_button.click(
+            fn=self.save_image,
+            inputs=[self.upload_data_mapping[self.tab_selection[3]], self.editor_data_mapping[self.tab_selection[3]]],
+            outputs=[self.upload_data_mapping[self.tab_selection[3]]]
+        ).then(
             fn=self.send_images_from_feature,
-            inputs=[self.send_img_from_sketch_editor_dropdown, self.image_editor_sketch, gr.State(3), gr.State(None),
-                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
+            inputs=[self.send_img_from_sketch_editor_dropdown,
+                    self.upload_data_mapping[self.tab_selection[3]],
+                    gr.State(3), gr.State(None), gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[self.upload_data_mapping[self.tab_selection[0]],
+                     self.upload_data_mapping[self.tab_selection[1]], 
+                     self.upload_data_mapping[self.tab_selection[2]], 
+                     self.upload_data_mapping[self.tab_selection[3]], 
+                     self.upload_data_mapping[self.tab_selection[4]], 
+                     self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.custom_dataset_tab_manager.load_images,
-            inputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_mode_choice_state],
+            inputs=[self.upload_data_mapping[self.tab_selection[3]], self.image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )
+
+
+
         self.send_img_from_color_editor_button.click(
+            fn=self.save_image,
+            inputs=[self.upload_data_mapping[self.tab_selection[4]], self.editor_data_mapping[self.tab_selection[4]]],
+            outputs=[self.upload_data_mapping[self.tab_selection[4]]]
+        ).then(
             fn=self.send_images_from_feature,
-            inputs=[self.send_img_from_color_editor_dropdown, self.image_editor_color_sketch, gr.State(4), gr.State(None),
-                    gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
-            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor, self.image_editor_crop, self.image_editor_sketch,
-                     self.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
+            inputs=[self.send_img_from_color_editor_dropdown,
+                    self.upload_data_mapping[self.tab_selection[4]],
+                    gr.State(4), gr.State(None), gr.State(False), gr.State(None), gr.State(None), gr.State(None), gr.State(None)],
+            outputs=[self.upload_data_mapping[self.tab_selection[0]],
+                     self.upload_data_mapping[self.tab_selection[1]], 
+                     self.upload_data_mapping[self.tab_selection[2]], 
+                     self.upload_data_mapping[self.tab_selection[3]], 
+                     self.upload_data_mapping[self.tab_selection[4]], 
+                     self.custom_dataset_tab_manager.gallery_images_batch]
         ).then(
             fn=self.custom_dataset_tab_manager.load_images,
-            inputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_mode_choice_state],
+            inputs=[self.upload_data_mapping[self.tab_selection[4]], self.image_mode_choice_state],
             outputs=[self.image_mode_choice_state]
         )

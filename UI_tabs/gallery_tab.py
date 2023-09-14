@@ -1974,12 +1974,23 @@ class Gallery_tab:
         )
         self.send_img_from_gallery_button.click(
             fn=self.image_editor_tab_manager.send_images_from_feature,
-            inputs=[self.send_img_from_gallery_dropdown, self.gallery_comp, gr.State(-1), self.img_id_textbox,
-                    self.batch_send_from_gallery_checkbox, self.apply_to_all_type_select_checkboxgroup,
-                    self.multi_select_ckbx_state, self.only_selected_state_object, self.images_selected_state],
-            outputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.image_editor_tab_manager.image_editor,
-                     self.image_editor_tab_manager.image_editor_crop, self.image_editor_tab_manager.image_editor_sketch,
-                     self.image_editor_tab_manager.image_editor_color_sketch, self.custom_dataset_tab_manager.gallery_images_batch]
+            inputs=[self.send_img_from_gallery_dropdown,
+                    self.gallery_comp,
+                    gr.State(-1),
+                    self.img_id_textbox,
+                    self.batch_send_from_gallery_checkbox,
+                    self.apply_to_all_type_select_checkboxgroup,
+                    self.multi_select_ckbx_state,
+                    self.only_selected_state_object,
+                    self.images_selected_state
+                    ],
+            outputs=[self.custom_dataset_tab_manager.file_upload_button_single,
+                     self.image_editor_tab_manager.image_editor,
+                     self.image_editor_tab_manager.image_editor_crop,
+                     self.image_editor_tab_manager.image_editor_sketch,
+                     self.image_editor_tab_manager.image_editor_color_sketch,
+                     self.custom_dataset_tab_manager.gallery_images_batch
+                     ]
         ).then(
             fn=self.load_images_handler,
             inputs=[self.custom_dataset_tab_manager.file_upload_button_single, self.custom_dataset_tab_manager.gallery_images_batch, self.image_mode_choice_state,

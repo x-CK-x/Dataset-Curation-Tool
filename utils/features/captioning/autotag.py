@@ -416,8 +416,31 @@ class AutoTag:
 
                     # create tag string
                     tag_string = ', '.join(merged_list)
+
+
+                    # save NEW images if AUGMENTATION is involved other than the resize function
+                    temp_augment_opts = self.preprocess_options
+                    temp_augment_opts = [opt.lower() for opt in temp_augment_opts]
+                    temp_augment_opts = temp_augment_opts.remove('resize') if 'resize' in temp_augment_opts else temp_augment_opts
+                    if len(temp_augment_opts) > 0:
+                        new_image_path = self.dataset.save_image_data(image_name, src, True)
+                        # if not None then update the source path when the copy is taking place
+                        if new_image_path is not None:
+                            temp_src_image_path = new_image_path
+                            # remove ext temporarily
+                            new_temp_path_no_ext = ".".join(temp_src_image_path.split(".")[:-1])
+                            # get the new name without the extension
+                            temp_name_no_ext = new_temp_path_no_ext.split(temp)[-1]
+                            # set the remainder paths
+                            temp_src_tags_path = f"{new_temp_path_no_ext}.txt"
+                            temp_dst_image_path = os.path.join(dst, f"{temp_name_no_ext}.{image_ext}")
+                            temp_dst_tags_path = os.path.join(dst, f"{temp_name_no_ext}.txt")
+                        help.verbose_print(f"source image path updated for augmented image")
+
                     # save local
                     help.write_tags_to_text_file(tag_string, temp_src_tags_path)
+
+
                     if self.copy_mode_ckbx:  # copy to dataset directory
                         help.write_tags_to_text_file(tag_string, temp_dst_tags_path)
                         # copy image over
@@ -683,8 +706,29 @@ class AutoTag:
 
                     # create tag string
                     tag_string = ', '.join(merged_list)
+
+                    # save NEW images if AUGMENTATION is involved other than the resize function
+                    help.verbose_print(f"self.preprocess_options:\t{self.preprocess_options}")
+                    if (len(self.preprocess_options) > 1 and 'Resize' in self.preprocess_options) or \
+                            (len(self.preprocess_options) > 0 and not 'Resize' in self.preprocess_options):
+                        new_image_path = self.dataset.save_image_data(image_name, src, True)
+                        # if not None then update the source path when the copy is taking place
+                        if new_image_path is not None:
+                            temp_src_image_path = new_image_path
+                            # remove ext temporarily
+                            new_temp_path_no_ext = ".".join(temp_src_image_path.split(".")[:-1])
+                            # get the new name without the extension
+                            temp_name_no_ext = new_temp_path_no_ext.split(temp)[-1]
+                            # set the remainder paths
+                            temp_src_tags_path = f"{new_temp_path_no_ext}.txt"
+                            temp_dst_image_path = os.path.join(dst, f"{temp_name_no_ext}.{image_ext}")
+                            temp_dst_tags_path = os.path.join(dst, f"{temp_name_no_ext}.txt")
+                        help.verbose_print(f"source image path updated for augmented image")
+
                     # save local
                     help.write_tags_to_text_file(tag_string, temp_src_tags_path)
+
+
                     if self.copy_mode_ckbx: # copy to dataset directory
                         help.write_tags_to_text_file(tag_string, temp_dst_tags_path)
                         # copy image over
@@ -845,6 +889,24 @@ class AutoTag:
         else:
             return {}, [], None
 
+    def save_image(self, name, src):
+        # save NEW images if AUGMENTATION is involved other than the resize function
+        temp_augment_opts = self.preprocess_options
+        temp_augment_opts = [opt.lower() for opt in temp_augment_opts]
+        temp_augment_opts = temp_augment_opts.remove(
+            'resize') if 'resize' in temp_augment_opts else temp_augment_opts
+        if len(temp_augment_opts) > 0:
+            new_image_path = self.dataset.save_image_data(name, src, True)
+            return new_image_path
+        return None
+
+
+    ######################## consider when images are augmented to UPDATE THEIR FILE PRESENCE IN THE GRADIO FILE COMPONENT!!!!!!!!!!!
+    ###### BECAUSE IT WOULD OTHERWISE MAKE IT SO THAT THE TAG FILES CREATED FROM THEM ARE INVALID ---------- THIS SHOULD ONLY HAPPEN WHEN USING "SINGLE" IMAGE MODE
+    ########## OTHERWISE IT COULD HAVE A LOT OF CONSEQUENCES
+
+
+
     def save_tags(self, single_image, any_selected_tags, all_tags_ever_dict, include_invalid_tags_ckbx):
         if single_image:
             #self.global_image_predictions_predictions### gets a list of -> tag -> [prob, image_name.ext]
@@ -927,8 +989,6 @@ class AutoTag:
 
             # remove duplicate tag/s in generated tag list
             sorted_list1_set = set(sorted_existing_tags_list)
-
-#################################################################################################### user must make tags
 
             merged_list = []
             if self.write_tag_opts_dropdown == 'Merge':
@@ -1028,6 +1088,7 @@ class AutoTag:
 
             # save local
             help.write_tags_to_text_file(tag_string, temp_src_tags_path)
+
             if self.copy_mode_ckbx: # copy to dataset directory
                 help.write_tags_to_text_file(tag_string, temp_dst_tags_path)
 
