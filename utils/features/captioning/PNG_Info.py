@@ -62,14 +62,28 @@ class ImageMetadataExtractor:
                             tag = tag.split(":")[0]
 
                             tag = tag.replace(" ", "_")
+                            if "_\\(" or "_(" in tag:
+                                tag = tag.replace("_\\(", "+++++")
+                                tag = tag.replace("_(", "+++++")
+
                             tag = tag.replace("(", "")
                             tag = tag.replace(")", "")
+
+                            tag = tag.replace("{", "")
+                            tag = tag.replace("}", "")
                             tag = tag.replace("\\n", "")
                             tag = tag.replace("\n", "")
-                            tag = tag.replace("by_", "")
-                            tag = tag.replace("art_by_", "")
+                            tag = (tag.lower()).replace("by_", "") if "by_" in tag.lower() else tag
+                            tag = (tag.lower()).replace("art_by_", "") if "art_by_" in tag.lower() else tag
                             tag = tag.replace("<lora", "")
                             tag = tag.replace(">", "")
+                            tag = tag.replace("\\", "")
+                            tag = tag.replace("BREAK", "")
+
+                            if "+++++" in tag:
+                                tag = tag.replace("+++++", "_(")
+                                tag = f"{tag})"
+
                             # help.verbose_print(f"tag:\t{tag}")
                             tags.append(tag)
                     else:
@@ -79,14 +93,28 @@ class ImageMetadataExtractor:
                         tag = tag.split(":")[0]
 
                         tag = tag.replace(" ", "_")
+                        if "_\\(" or "_(" in tag:
+                            tag = tag.replace("_\\(", "+++++")
+                            tag = tag.replace("_(", "+++++")
+
                         tag = tag.replace("(", "")
                         tag = tag.replace(")", "")
+
+                        tag = tag.replace("{", "")
+                        tag = tag.replace("}", "")
                         tag = tag.replace("\\n", "")
                         tag = tag.replace("\n", "")
-                        tag = tag.replace("by_", "")
-                        tag = tag.replace("art_by_", "")
+                        tag = (tag.lower()).replace("by_", "") if "by_" in tag.lower() else tag
+                        tag = (tag.lower()).replace("art_by_", "") if "art_by_" in tag.lower() else tag
                         tag = tag.replace("<lora", "")
                         tag = tag.replace(">", "")
+                        tag = tag.replace("\\", "")
+                        tag = tag.replace("BREAK", "")
+
+                        if "+++++" in tag:
+                            tag = tag.replace("+++++", "_(")
+                            tag = f"{tag})"
+
                         # help.verbose_print(f"tag:\t{tag}")
                         tags.append(tag)
             all_tags.append(tags)
