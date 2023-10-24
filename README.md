@@ -81,6 +81,12 @@ sudo apt-get install unzip
 
 ## How to Run Program
 
+### "DO NOT" run the file with admin/sudo perms!
+### "DO NOT" put the manually downloaded run file from the (INSTALLATION STEP ^^^) in the Data-Curation-Tool folder!
+```
+The "DUPLICATE" run files (run.bat, mac_run.sh, linux_run.sh) residing in the Data-Curation-Tool folder, are intentionally deleted when the program is run.
+```
+
 > Double-Click file to run with (Default) settings
 
 ### Below are Several Run (additional) Options to choose from
