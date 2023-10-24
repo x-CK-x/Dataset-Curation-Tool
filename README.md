@@ -84,6 +84,7 @@ sudo apt-get install unzip
 ### "DO NOT" run the file with admin/sudo perms!
 ### "DO NOT" put the manually downloaded run file from the (INSTALLATION STEP ^^^) in the Data-Curation-Tool folder!
 ### "DO NOT" use the run file/s in the Data-Curation-Tool folder! (Use the manually downloaded run file, from the INSTALLATION STEP ^^^ to install and/or update the repo)
+### "DO NOT" move the generated "dataset_curation_path.txt" file out of the Data-Curation-Tool folder!
 ```
 The "DUPLICATE" run files (run.bat, mac_run.sh, linux_run.sh) residing in the Data-Curation-Tool folder, are intentionally deleted when the program is run.
 ```
