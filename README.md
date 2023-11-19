@@ -90,6 +90,10 @@ The "DUPLICATE" run files (run.bat, mac_run.sh, linux_run.sh) residing in the Da
 ```
 
 > Double-Click file to run with (Default) settings
+> Update dependencies i.e. in the yaml file with the following:
+```
+./RUN_FILE --update
+```
 
 ### Below are Several Run (additional) Options to choose from
 
