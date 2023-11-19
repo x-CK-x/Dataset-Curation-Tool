@@ -6,13 +6,16 @@ SET UPDATE_ENV=0
 
 echo Use    --update    on the command line with the run file to update the program!
 
+SET "OTHER_ARGS="
+
 REM Check each argument
-:loop
-IF "%~1"=="" GOTO endloop
-IF "%~1"=="--update" SET UPDATE_ENV=1 & SHIFT & GOTO loop
-SHIFT
-GOTO loop
-:endloop
+FOR %%a IN (%*) DO (
+    IF "%%a"=="--update" (
+        SET UPDATE_ENV=1
+    ) ELSE (
+        SET "OTHER_ARGS=!OTHER_ARGS! %%a"
+    )
+)
 
 echo Check if conda command is available
 
@@ -99,8 +102,8 @@ if %errorlevel% neq 0 (
 echo Activate the conda environment
 call activate data-curation
 
-echo Run the python program with the passed arguments
-python webui.py %*
+REM Run the python program without --update
+python webui.py%OTHER_ARGS%
 
 IF ERRORLEVEL 1 (
     echo Error encountered. Press any key to exit.

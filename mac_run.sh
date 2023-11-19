@@ -5,19 +5,15 @@ UPDATE_ENV=false
 
 echo "Use    --update    on the command line with the run file to update the program!"
 
-# Check for --update flag
+OTHER_ARGS=()
+
+# Check for --update flag and collect other arguments
 for arg in "$@"; do
     if [ "$arg" = "--update" ]; then
         UPDATE_ENV=true
-        break
+    else
+        OTHER_ARGS+=("$arg")  # Add to other arguments
     fi
-done
-
-# Remove --update from the argument list
-for i in "$@"; do
-    [ "$i" = "--update" ] && continue
-    set -- "$@" "$i"
-    shift
 done
 
 # Check if conda command is available
@@ -112,7 +108,7 @@ fi
 # Activate the conda environment
 conda activate data-curation
 
-# Run the python program with the passed arguments
-python webui.py "$@"
+# Run the python program with the other arguments
+python webui.py "${OTHER_ARGS[@]}"
 
 trap 'echo "Error encountered. Press any key to exit."; read -rsn1' ERR
