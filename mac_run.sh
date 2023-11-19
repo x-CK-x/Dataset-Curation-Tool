@@ -3,6 +3,23 @@
 PATHFILE="dataset_curation_path.txt"
 UPDATE_ENV=false
 
+echo "Use    --update    on the command line with the run file to update the program!"
+
+# Check for --update flag
+for arg in "$@"; do
+    if [ "$arg" = "--update" ]; then
+        UPDATE_ENV=true
+        break
+    fi
+done
+
+# Remove --update from the argument list
+for i in "$@"; do
+    [ "$i" = "--update" ] && continue
+    set -- "$@" "$i"
+    shift
+done
+
 # Check if conda command is available
 command -v conda >/dev/null 2>&1
 if [ $? -eq 0 ]; then

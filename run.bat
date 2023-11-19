@@ -4,6 +4,16 @@ SETLOCAL ENABLEDELAYEDEXPANSION
 SET PATHFILE=dataset_curation_path.txt
 SET UPDATE_ENV=0
 
+echo Use    --update    on the command line with the run file to update the program!
+
+REM Check each argument
+:loop
+IF "%~1"=="" GOTO endloop
+IF "%~1"=="--update" SET UPDATE_ENV=1 & SHIFT & GOTO loop
+SHIFT
+GOTO loop
+:endloop
+
 echo Check if conda command is available
 
 IF EXIST "%UserProfile%\Miniconda3\Scripts\conda.exe" (
