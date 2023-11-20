@@ -1,6 +1,8 @@
 name: data-curation
 
 channels:
+  - pytorch
+  - nvidia
   - conda-forge
   - nodefaults
 
@@ -9,17 +11,25 @@ dependencies:
   - ipython
   - datrie
   - pip
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - mkl-service
+  - Pillow
+  - libjpeg-turbo
+  - libpng
   - pip:
     - opencv-python
     - polars==0.16.18
     - requests
     - tqdm
     - pyarrow
-    - gradio
+    - gradio==3.50.2
     - beautifulsoup4
-    - Pillow
     - pandas
     - onnxruntime
-    - torch
     - onnxruntime-gpu
     - piexif
+    - timm
+    - chardet
