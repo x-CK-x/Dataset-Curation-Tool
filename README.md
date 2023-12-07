@@ -49,7 +49,7 @@ The "DUPLICATE" run files (run.bat, mac_run.sh, linux_run.sh) residing in the Da
 
 > Double-Click file to run with (Default) settings
 
-> Update dependencies i.e. in the yaml file with the following:
+> Update dependencies i.e. in the yaml file with the following (make sure to use the most recent yaml file in the repo: [https://raw.githubusercontent.com/x-CK-x/Dataset-Curation-Tool/main/environment.yml](https://raw.githubusercontent.com/x-CK-x/Dataset-Curation-Tool/main/environment.yml)):
 ```
 ./RUN_FILE --update
 ```
