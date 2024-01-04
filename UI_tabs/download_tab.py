@@ -1097,8 +1097,7 @@ class Download_tab:
                         create_entries_from_checkboxgroup_button_required = gr.Button(value="Create Entry/s from Tag/s", variant='primary')
 
                         # split into setting_(NUMBER).json files
-                        fast_create_json_button_required = gr.Button(value="Split to Setting Files", variant='primary',
-                                                                     info="Converts json file to auto create setting_(NUMBER).json files")
+                        fast_create_json_button_required = gr.Button(value="Split to Setting Files", variant='primary')
 
             with gr.Accordion("Edit Requirements for Blacklist Tags", visible=True, open=False):
                 with gr.Row():
