@@ -16,6 +16,8 @@ from zipfile import ZipFile
 import gzip
 import pandas as pd
 
+from utils.features.captioning.model_configs import model_configs as mc
+
 ops = {'+': operator.add, '-': operator.sub}
 
 '''
@@ -495,16 +497,6 @@ def download_all_e6_tags_csv(proxy_url=None):
 
     verbose_print("Done")
 
-def download_zack3d_model():
-    url = "https://pixeldrain.com/api/file/iNMyyi2w"
-    verbose_print(f"DOWNLOADING asset:\t{url}")
-    download_url(url, url.split('/')[-1])
-
-    # finally unzip the file
-    unzip_all()
-    delete_all_archives()
-    verbose_print("Done")
-
 def days_since(date_str: str) -> int:
     # Parse the input date string into a datetime object
     input_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -713,27 +705,39 @@ def download_models(model_download_types, model_download_checkbox_group, tagging
 
         # get full url path
         url_path = full_model_download_link(model_download_types, model_name)
+
         verbose_print(f"DOWNLOADING:\t{model_name}")
         download_url(url_path, url_path.split('/')[-1])
         verbose_print(f"Done")
 
     if tagging_model_download_types is not None and len(tagging_model_download_types) > 0:
-        # download zack3d's model
-        download_zack3d_model()
-        # add to new tagging feature
-        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
-                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
-            auto_tag_models.append('Z3D-E621-Convnext')
-        else:# linux didn't register the file extension
-            os.rename(src="iNMyyi2w", dst="iNMyyi2w.zip")
-            # finally unzip the file
-            unzip_all()
-            delete_all_archives()
-            auto_tag_models.append('Z3D-E621-Convnext')
-            verbose_print("Done")
-        if len(auto_tag_models)==0 and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
-                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
-            auto_tag_models.append('Fluffusion-AutoTag')
+        for each_model in tagging_model_download_types:
+            # download caption model
+            mc.download_caption_model(model_selection=each_model)
+
+            # add to new tagging feature
+            if os.path.exists(os.path.join(os.getcwd(), "Z3D-E621-Convnext")) \
+                    and os.path.exists(os.path.join(os.getcwd(), "Z3D-E621-Convnext", "Z3D-E621-Convnext.onnx")):
+                auto_tag_models.append("Z3D-E621-Convnext")
+            else:# linux didn't register the file extension
+                os.rename(src="iNMyyi2w", dst="iNMyyi2w.zip")
+                # finally unzip the file
+                unzip_all()
+                delete_all_archives()
+                auto_tag_models.append("Z3D-E621-Convnext")
+                verbose_print("Done")
+
+            if os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) \
+                    and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "model.onnx")):
+                auto_tag_models.append("eva02-clip-vit-large-7704")
+
+            if os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) \
+                    and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "model.pth")):
+                auto_tag_models.append("eva02-vit-large-448-8046")
+
+            if os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) \
+                    and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "model.pth")):
+                auto_tag_models.append("experimental_efficientnetv2_m_8035")
     return auto_tag_models
 
 
