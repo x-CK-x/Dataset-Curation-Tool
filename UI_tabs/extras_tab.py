@@ -105,11 +105,16 @@ class Extras_tab:
                 release_assets_checkbox_group = gr.CheckboxGroup(choices=[], label='Repository Release Downloads', value=[], visible=False)
                 repo_download_button = gr.Button(value="Download Repo/s", variant='primary')
             with gr.Column():
+                # SD model/s
                 model_download_options = ["Fluffusion", "FluffyRock"]
-                tagging_model_download_options = ["Zack3D AutoTagging Model"]
+                # Auto-Tag model/s
+                tagging_model_download_options = ["Zack3D AutoTagging Model",
+                                                  "eva02-clip-vit-large-7704",
+                                                  "eva02-vit-large-448-8046",
+                                                  "experimental_efficientnetv2_m_8035"]
 
                 model_download_types = gr.Dropdown(choices=model_download_options, label='Diffusion Model Selection')
-                tagging_model_download_types = gr.Dropdown(choices=tagging_model_download_options, label='AutoTagging Model Selection')
+                tagging_model_download_types = gr.Dropdown(choices=tagging_model_download_options, label='AutoTagging Model Selection', multiselect=True)
                 model_download_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Code Repositories to Download', value=[], visible=False)
                 nested_model_links_checkbox_group = gr.CheckboxGroup(choices=[], label='Specific Model Versions', value=[],
                                                                  visible=False)
