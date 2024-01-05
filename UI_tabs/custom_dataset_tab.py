@@ -61,7 +61,7 @@ class Custom_dataset_tab:
     def refresh_model_list(self):
         if not "Z3D-E621-Convnext" in self.auto_tag_models \
                 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
-                and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext', 'Z3D-E621-Convnext.onnx')):
+                and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext', 'model.onnx')):
             self.auto_tag_models.append('Z3D-E621-Convnext')
 
         if not "eva02-clip-vit-large-7704" in self.auto_tag_models \
@@ -193,9 +193,9 @@ class Custom_dataset_tab:
 
         model_path = ""
         model_name = ""
-        if "Z3D" in event_data.value:
-            model_path = os.path.join(os.getcwd(), 'Z3D-E621-Convnext')
-            model_name = "Z3D-E621-Convnext.onnx"
+        if "Z3D-E621-Convnext" in event_data.value:
+            model_path = os.path.join(os.getcwd(), "Z3D-E621-Convnext")
+            model_name = "model.onnx"
             self.autotagmodel.set_run_option("model")
             self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
 
@@ -885,7 +885,7 @@ class Custom_dataset_tab:
             if not "Z3D-E621-Convnext" in self.auto_tag_models and os.path.exists(
                     os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
                     and os.path.exists(
-                os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
+                os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'model.onnx')):
                 self.auto_tag_models.append('Z3D-E621-Convnext')
 
             if not "eva02-clip-vit-large-7704" in self.auto_tag_models \
