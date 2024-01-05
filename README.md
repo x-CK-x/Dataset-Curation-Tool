@@ -80,6 +80,13 @@ The "DUPLICATE" run files (run.bat, mac_run.sh, linux_run.sh) residing in the Da
 - in addition it is important to avoid using the **alpha** builds in the [releases](https://github.com/x-CK-x/Dataset-Curation-Tool/releases)
 - if an alpha build is present it will be labeled as a **pre-release** and the **main-branch** of the repo is also likely to contain those changes; as such please use the most recent stable build as denoted above
 
+## Bug Reporting & Troubleshooting
+
+Create a Support Ticket or Bug Report here: [https://github.com/x-CK-x/Dataset-Curation-Tool/issues](https://github.com/x-CK-x/Dataset-Curation-Tool/issues)
+
+## New Feature Requests
+
+Feel free to suggest new feature/s here: [https://github.com/x-CK-x/Dataset-Curation-Tool/discussions/categories/ideas](https://github.com/x-CK-x/Dataset-Curation-Tool/discussions/categories/ideas)
 
 ## Future Objectives/Features
 
