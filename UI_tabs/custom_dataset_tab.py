@@ -4,6 +4,7 @@ import copy
 import glob
 import numpy as np
 from PIL import Image
+import torch
 
 from utils import md_constants as md_, helper_functions as help
 from utils.features.video_splitter import Video2Frames as vid2frames
@@ -865,6 +866,16 @@ class Custom_dataset_tab:
         if self.autotagmodel:
             self.autotagmodel.set_shear_slider(slider_value)
 
+    def are_gpus_present(self, selected: gr.SelectData):
+        # Check if any GPU is available
+        gpu_available = torch.cuda.is_available()
+        help.verbose_print(f"Is GPU available:\t{gpu_available}")
+
+        # Get the number of GPUs
+        num_gpus = torch.cuda.device_count()
+        help.verbose_print(f"Number of GPUs detected:\t{num_gpus}")
+        return gr.update(value=(selected.value and gpu_available))
+
     def render_tab(self):
         with gr.Tab("Add Custom Dataset"):
             gr.Markdown(md_.custom)
@@ -940,7 +951,7 @@ class Custom_dataset_tab:
                     with gr.Accordion(label="Model Settings", visible=True, open=True):
                         with gr.Row():
                             with gr.Column(elem_id="trim_row_length"):
-                                cpu_only_ckbx = gr.Checkbox(label="cpu", info="Use cpu only", value=True)
+                                gpu_ckbx = gr.Checkbox(label="GPU", info="Use GPU", value=False)
                             with gr.Column(elem_id="trim_row_length"):
                                 gr.Markdown("""Refresh""", elem_id="trim_markdown_length")
                                 refresh_symbol = '\U0001f504'  # 🔄
@@ -1027,6 +1038,7 @@ class Custom_dataset_tab:
                         #         gr.Accordion(label="SAM-HQ Segmentation Crop", visible=True, open=False)
                         #         gr.Accordion(label="Upscale", visible=True, open=False)
                         #         gr.Accordion(label="Denoise/Unglaze", visible=True, open=False)
+                        #         gr.Accordion(label="Duplication Detection", visible=True, open=False)
                     with gr.Tab("Video to Frames Splitter"):
                         with gr.Accordion("Video to Frames Splitter", visible=True, open=False):
                             gr.Markdown("""
@@ -1083,7 +1095,7 @@ class Custom_dataset_tab:
         self.image_preview_pil = image_preview_pil
         self.send_img_from_autotag_dropdown = send_img_from_autotag_dropdown
         self.send_img_from_autotag_button = send_img_from_autotag_button
-        self.cpu_only_ckbx = cpu_only_ckbx
+        self.gpu_ckbx = gpu_ckbx
         self.refresh_models_btn = refresh_models_btn
         self.model_choice_dropdown = model_choice_dropdown
         self.operations_dropdown = operations_dropdown
@@ -1141,7 +1153,7 @@ class Custom_dataset_tab:
                 self.image_preview_pil,
                 self.send_img_from_autotag_dropdown,
                 self.send_img_from_autotag_button,
-                self.cpu_only_ckbx,
+                self.gpu_ckbx,
                 self.refresh_models_btn,
                 self.model_choice_dropdown,
                 self.operations_dropdown,
@@ -1325,10 +1337,32 @@ class Custom_dataset_tab:
         )
         self.model_choice_dropdown.select(
             fn=self.load_model,
-            inputs=[self.model_choice_dropdown, self.cpu_only_ckbx],
+            inputs=[self.model_choice_dropdown, self.gpu_ckbx],
             outputs=[]
         )
-        # cpu_only_ckbx.change(fn=re_load_model, inputs=[model_choice_dropdown, cpu_only_ckbx], outputs=[])
+
+
+
+
+
+
+
+
+        self.gpu_ckbx.select(
+            fn=self.are_gpus_present,
+            inputs=[self.gpu_ckbx],
+            outputs=[self.gpu_ckbx]
+        )#.then(fn=RELOAD_MODEL)
+        # self.gpu_ckbx.change(fn=re_load_model, inputs=[model_choice_dropdown, gpu_ckbx], outputs=[])########################################### i will need to re-load the model if this occurs
+
+
+
+
+
+
+
+
+
         self.confidence_threshold_slider.change(
             fn=self.set_threshold,
             inputs=[self.confidence_threshold_slider],
