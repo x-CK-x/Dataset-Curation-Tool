@@ -110,4 +110,6 @@ IF ERRORLEVEL 1 (
     pause >nul
 )
 
+start http://localhost:7860
+
 ENDLOCAL
