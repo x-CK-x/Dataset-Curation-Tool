@@ -60,12 +60,24 @@ class Custom_dataset_tab:
     def refresh_model_list(self):
         if not "Z3D-E621-Convnext" in self.auto_tag_models \
                 and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
-                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
+                and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext', 'Z3D-E621-Convnext.onnx')):
             self.auto_tag_models.append('Z3D-E621-Convnext')
-        if not "Fluffusion-AutoTag" in self.auto_tag_models \
-                and os.path.exists(os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
-                and os.path.exists(os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
-            self.auto_tag_models.append('Fluffusion-AutoTag')
+
+        if not "eva02-clip-vit-large-7704" in self.auto_tag_models \
+                and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) \
+                and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "model.onnx")):
+            self.auto_tag_models.append("eva02-clip-vit-large-7704")
+
+        if not "eva02-vit-large-448-8046" in self.auto_tag_models \
+                and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) \
+                and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "model.pth")):
+            self.auto_tag_models.append("eva02-vit-large-448-8046")
+
+        if not "experimental_efficientnetv2_m_8035" in self.auto_tag_models \
+                and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) \
+                and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "model.pth")):
+            self.auto_tag_models.append("experimental_efficientnetv2_m_8035")
+
         if not "PNG Info" in self.auto_tag_models:
             self.auto_tag_models.append("PNG Info")
 
@@ -185,13 +197,28 @@ class Custom_dataset_tab:
             model_name = "Z3D-E621-Convnext.onnx"
             self.autotagmodel.set_run_option("model")
             self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
-        elif "fluff" in (event_data.value).lower():
-            model_path = os.path.join(os.getcwd(), 'Fluffusion-AutoTag')
-            model_name = "Fluffusion-AutoTag.pb"
+
+        elif "eva02-clip-vit-large-7704" in (event_data.value).lower():
+            model_path = os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")
+            model_name = "model.onnx"
             self.autotagmodel.set_run_option("model")
             self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
+
+        elif "eva02-vit-large-448-8046" in (event_data.value).lower():
+            model_path = os.path.join(os.getcwd(), "eva02-vit-large-448-8046")
+            model_name = "model.pth"
+            self.autotagmodel.set_run_option("model")
+            self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
+
+        elif "experimental_efficientnetv2_m_8035" in (event_data.value).lower():
+            model_path = os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")
+            model_name = "model.pth"
+            self.autotagmodel.set_run_option("model")
+            self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
+
         elif "info" in (event_data.value).lower():
             self.autotagmodel.set_run_option("info")
+
         help.verbose_print(f"selected option is:\t{event_data.value}")
         help.verbose_print(f"selected loaded using cpu={use_cpu}")
 
@@ -843,16 +870,27 @@ class Custom_dataset_tab:
             gr.Markdown(md_.custom)
             image_modes = ['Single', 'Batch']
             self.auto_tag_models.append("PNG Info")
+
             if not "Z3D-E621-Convnext" in self.auto_tag_models and os.path.exists(
                     os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
                     and os.path.exists(
                 os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'Z3D-E621-Convnext.onnx')):
                 self.auto_tag_models.append('Z3D-E621-Convnext')
-            if not "Fluffusion-AutoTag" in self.auto_tag_models and os.path.exists(
-                    os.path.join(os.getcwd(), 'Fluffusion-AutoTag')) \
-                    and os.path.exists(
-                os.path.join(os.path.join(os.getcwd(), 'Fluffusion-AutoTag'), 'Fluffusion-AutoTag.pb')):
-                self.auto_tag_models.append('Fluffusion-AutoTag')
+
+            if not "eva02-clip-vit-large-7704" in self.auto_tag_models \
+                    and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) \
+                    and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "model.onnx")):
+                self.auto_tag_models.append("eva02-clip-vit-large-7704")
+
+            if not "eva02-vit-large-448-8046" in self.auto_tag_models \
+                    and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) \
+                    and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "model.pth")):
+                self.auto_tag_models.append("eva02-vit-large-448-8046")
+
+            if not "experimental_efficientnetv2_m_8035" in self.auto_tag_models \
+                    and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) \
+                    and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "model.pth")):
+                self.auto_tag_models.append("experimental_efficientnetv2_m_8035")
 
             write_tag_opts = ['Overwrite', 'Merge', 'Pre-pend', 'Append']
             merge_tag_opts = ['Union', 'Intersection', 'New-Original', 'Original-New']
