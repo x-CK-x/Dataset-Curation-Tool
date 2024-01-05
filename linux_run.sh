@@ -111,4 +111,17 @@ source activate data-curation
 # Run the python program with the other arguments
 python webui.py "${OTHER_ARGS[@]}"
 
+OS="`uname`"
+case $OS in
+  'Linux')
+    xdg-open http://localhost:7860
+    ;;
+  'Darwin') 
+    open http://localhost:7860
+    ;;
+  *)
+    echo "Unsupported OS: $OS"
+    ;;
+esac
+
 trap 'echo "Error encountered. Press any key to exit."; read -rsn1' ERR
