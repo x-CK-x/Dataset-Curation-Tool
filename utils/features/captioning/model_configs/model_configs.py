@@ -5,7 +5,7 @@ from utils import helper_functions as help
 
 # mapping
 model_info_map = {
-    "Zack3D AutoTagging Model":
+    "Z3D-E621-Convnext":
         {
             "info":
                 {
@@ -20,7 +20,11 @@ model_info_map = {
                     "use_mean_norm":
                         False,
                     "use_extend_output_dims":
-                        False
+                        False,
+                    "tags_csv_format":
+                        True,
+                    "use_column_number":
+                        1
                 },
             "urls":
                 [
@@ -32,7 +36,10 @@ model_info_map = {
                 ],
             "post-process":
                 [
-
+                    os.rename(os.path.join(os.getcwd(), "Z3D-E621-Convnext", "Z3D-E621-Convnext.onnx"),
+                                os.path.join(os.getcwd(), "Z3D-E621-Convnext", "model.onnx")),
+                    os.rename(os.path.join(os.getcwd(), "Z3D-E621-Convnext", "tags-selected.csv"),
+                                os.path.join(os.getcwd(), "Z3D-E621-Convnext", "tags.csv"))
                 ]
         },
     "eva02-clip-vit-large-7704":
@@ -72,7 +79,9 @@ model_info_map = {
                     "extend_output_dims_pos":
                         [
                             -1, -1, -1
-                        ]
+                        ],
+                    "tags_csv_format":
+                        False
                 },
             "urls":
                 [
@@ -130,7 +139,9 @@ model_info_map = {
                     "extend_output_dims_pos":
                         [
                             0, -1, -1, -1, -1
-                        ]
+                        ],
+                    "tags_csv_format":
+                        False
                 },
             "urls":
                 [
@@ -180,7 +191,9 @@ model_info_map = {
                     "extend_output_dims_pos":
                         [
                             -1
-                        ]
+                        ],
+                    "tags_csv_format":
+                        False
                 },
             "urls":
                 [
@@ -204,6 +217,9 @@ model_info_map = {
 
 
 
+
+
+
 def download_caption_model(model_selection: str):
     help.verbose_print(f"DOWNLOADING asset:\t{model_info_map[model_selection]}")
     # pre-process
@@ -220,3 +236,5 @@ def download_caption_model(model_selection: str):
     help.unzip_all()
     help.delete_all_archives()
     help.verbose_print("Done")
+
+
