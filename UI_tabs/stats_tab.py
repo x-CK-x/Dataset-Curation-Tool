@@ -36,7 +36,7 @@ class Stats_tab:
                 stats_run_button = gr.Button(value="Run Stats", variant='primary')
             with gr.Row():
                 stats_selected_data = gr.Dataframe(interactive=False, label="Dataframe Table", visible=False,
-                                               headers=["Tag Category", "Count"], datatype=["str", "number"], max_cols=2,
+                                               headers=["Tag Category", "Count"], datatype=["str", "number"], col_count=2,
                                                type="array")
 
         self.stats_run_options = stats_run_options

@@ -8,7 +8,7 @@ from utils import helper_functions as help
 
 
 class Image_editor_tab:
-    def __init__(self, gallery_tab_manager, download_tab_manager, cwd, image_mode_choice_state,
+    def __init__(self, gallery_tab_manager, download_tab_manager, cwd, image_mode_choice_state, 
                  custom_dataset_tab_manager):
         self.cwd = cwd
 
@@ -182,10 +182,10 @@ class Image_editor_tab:
                     upload_button_single_edit = gr.File(label=f"Upload Image",
                                                    file_count="single",
                                                    interactive=True, file_types=["image"],
-                                                   visible=True, type="file")
+                                                   visible=True, type="filepath")
 
-                image_editor = gr.Image(label=f"Image Default Editor", interactive=True, visible=True, tool="editor",
-                                        source="upload", type="filepath", height=1028)
+                image_editor = gr.ImageEditor(label=f"Image Default Editor", interactive=True, visible=True, value="imageeditor",
+                                        sources=["upload"], type="filepath", height=1028)
                 send_img_from_default_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=self.tab_selection)
                 send_img_from_default_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Crop Tool"):
@@ -194,10 +194,10 @@ class Image_editor_tab:
                     upload_button_single_crop = gr.File(label=f"Upload Image",
                                                    file_count="single",
                                                    interactive=True, file_types=["image"],
-                                                   visible=True, type="file")
+                                                   visible=True, type="filepath")
 
-                image_editor_crop = gr.Image(label=f"Image Crop Editor", interactive=True, visible=True,
-                                             tool="select", source="upload", type="filepath", height=1028)
+                image_editor_crop = gr.ImageEditor(label=f"Image Crop Editor", interactive=True, visible=True,
+                                             value="imagemask", sources=["upload"], type="filepath", height=1028)
                 send_img_from_crop_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=self.tab_selection)
                 send_img_from_crop_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Sketch Tool"):
@@ -206,10 +206,10 @@ class Image_editor_tab:
                     upload_button_single_sketch = gr.File(label=f"Upload Image",
                                                    file_count="single",
                                                    interactive=True, file_types=["image"],
-                                                   visible=True, type="file")
+                                                   visible=True, type="filepath")
 
-                image_editor_sketch = gr.Image(label=f"Image Sketch Editor", interactive=True, visible=True,
-                                               tool="sketch", source="upload", type="filepath", height=1028)
+                image_editor_sketch = gr.ImageEditor(label=f"Image Sketch Editor", interactive=True, visible=True,
+                                               value="sketchpad", sources=["upload"], type="filepath", height=1028)
                 send_img_from_sketch_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=self.tab_selection)
                 send_img_from_sketch_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
             with gr.Tab("Image Color Sketch Tool"):
@@ -218,10 +218,10 @@ class Image_editor_tab:
                     upload_button_single_color = gr.File(label=f"Upload Image",
                                                    file_count="single",
                                                    interactive=True, file_types=["image"],
-                                                   visible=True, type="file")
+                                                   visible=True, type="filepath")
 
-                image_editor_color_sketch = gr.Image(label=f"Image Color Sketch Editor", interactive=True, visible=True,
-                                                     tool="color-sketch", source="upload", type="filepath", height=1028)
+                image_editor_color_sketch = gr.ImageEditor(label=f"Image Color Sketch Editor", interactive=True, visible=True,
+                                                     value="paint", sources=["upload"], type="filepath", height=1028)
                 send_img_from_color_editor_dropdown = gr.Dropdown(label="Image to Tab Selector", choices=self.tab_selection)
                 send_img_from_color_editor_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
 

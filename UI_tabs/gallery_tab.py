@@ -2014,7 +2014,7 @@ class Gallery_tab:
             fn=None,
             inputs=[self.tag_search_suggestion_dropdown, self.relevant_search_categories],
             outputs=None,
-            _js=js_.js_set_colors_on_list_searchbar
+            js=js_.js_set_colors_on_list_searchbar
         )
         self.tag_search_suggestion_dropdown.select(
             fn=self.tag_ideas.dropdown_search_handler,
@@ -2049,7 +2049,7 @@ class Gallery_tab:
             fn=None,
             inputs=[self.tag_add_suggestion_dropdown, self.relevant_add_categories],
             outputs=None,
-            _js=js_.js_set_colors_on_list_add_tag
+            js=js_.js_set_colors_on_list_add_tag
         )
         self.tag_add_textbox.submit(
              fn=self.add_tag_changes,
@@ -2154,7 +2154,7 @@ class Gallery_tab:
             None,
             inputs=[self.images_selected_state, self.multi_select_ckbx_state],
             outputs=None,
-            _js=js_.js_do_everything
+            js=js_.js_do_everything
         )
         self.refresh_aspect_btn.click(
             fn=self.force_reload_show_gallery,

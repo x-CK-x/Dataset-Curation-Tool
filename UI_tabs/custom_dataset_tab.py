@@ -918,15 +918,15 @@ class Custom_dataset_tab:
                                 file_upload_button_single = gr.File(label=f"{image_modes[0]} Image Mode",
                                                                     file_count="single",
                                                                     interactive=True, file_types=["image"],
-                                                                    visible=True, type="file")
+                                                                    visible=True, type="filepath")
                             with gr.Tab("Batch"):
                                 file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode",
                                                                    file_count="directory",
-                                                                   interactive=True, visible=True, type="file")
+                                                                   interactive=True, visible=True, type="filepath")
                             with gr.Tab("Non-Interact Batch"):
                                 gallery_images_batch = gr.File(label=f"(Non-Interact) {image_modes[1]} Image Mode",
                                                                file_count="multiple",
-                                                               interactive=False, visible=True, type="file")
+                                                               interactive=False, visible=True, type="filepath")
                             with gr.Tab("Image Preview"):
                                 with gr.Column():
                                     image_preview_pil = gr.Image(label=f"Image Preview", interactive=False,
@@ -943,8 +943,7 @@ class Custom_dataset_tab:
                         with gr.Row():
                             send_img_from_autotag_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
                             remove_invalid_chars_button = gr.Button(value="Remove Bad Filename Chars",
-                                                                variant='secondary',
-                                                                info="Uses the path provided to resolve all files")
+                                                                variant='secondary') # info="Uses the path provided to resolve all files"
                             fix_files = gr.Button(value="Resolve File Extesions",
                                                   variant="secondary")
 
@@ -1011,9 +1010,7 @@ class Custom_dataset_tab:
                         with gr.Row():
                             text_to_replace_textbox = gr.Textbox(label="Text to Replace", interactive=True)
                             replacement_text_textbox = gr.Textbox(label="Replacement Text", interactive=True)
-                            replace_text_button = gr.Button(value="Replace Text",
-                                                            info='Replaces all text in every tag in all .txt files in the path specified',
-                                                            variant='primary')
+                            replace_text_button = gr.Button(value="Replace Text", variant='primary') # info='Replaces all text in every tag in all .txt files in the path specified'
                         with gr.Column():
                             image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="",
                                                                                      visible=True, interactive=False)
@@ -1052,7 +1049,7 @@ class Custom_dataset_tab:
                                 video_input = gr.File()
                                 video_input_button = gr.UploadButton(label="Click to Upload a Video",
                                                                      file_types=["file"], file_count="single")
-                                video_clear_button = gr.ClearButton(label="Clear")
+                                video_clear_button = gr.ClearButton(value="Clear")
                                 with gr.Row():
                                     video_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
                                                                   value=os.getcwd())
@@ -1072,14 +1069,14 @@ class Custom_dataset_tab:
                             video2audio_input = gr.File()
                             video2audio_input_button = gr.UploadButton(label="Click to Upload a Video",
                                                                  file_types=["file"], file_count="single")
-                            video2audio_clear_button = gr.ClearButton(label="Clear")
+                            video2audio_clear_button = gr.ClearButton(value="Clear")
                             with gr.Row():
                                 video2audio_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
                                                               value=os.getcwd())
                                 convert_video2audio_button = gr.Button(value="Convert Video", variant='primary')
                         with gr.Accordion(label="Audio Preview", visible=True, open=False):
                             with gr.Column():
-                                audio_waveform = gr.Audio(label="Audio Data", type="filepath", source="upload", value=None, interactive=False)
+                                audio_waveform = gr.Audio(label="Audio Data", type="filepath", sources=["upload"], value=None, interactive=False)
                     # with gr.Tab("UMAP Viewer"):
                     #     with gr.Column():
                     #         gr.Textbox(label="Testing", value="")
@@ -1350,7 +1347,7 @@ class Custom_dataset_tab:
 
         self.gpu_ckbx.select(
             fn=self.are_gpus_present,
-            inputs=[self.gpu_ckbx],
+            inputs=[],
             outputs=[self.gpu_ckbx]
         )#.then(fn=RELOAD_MODEL)
         # self.gpu_ckbx.change(fn=re_load_model, inputs=[model_choice_dropdown, gpu_ckbx], outputs=[])########################################### i will need to re-load the model if this occurs

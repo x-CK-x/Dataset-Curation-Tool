@@ -37,9 +37,9 @@ model_info_map = {
             "post-process":
                 [
                     os.rename(os.path.join(os.getcwd(), "Z3D-E621-Convnext", "Z3D-E621-Convnext.onnx"),
-                                os.path.join(os.getcwd(), "Z3D-E621-Convnext", "model.onnx")),
+                                os.path.join(os.getcwd(), "Z3D-E621-Convnext", "model.onnx")) if os.path.exists(os.path.join(os.getcwd(), "Z3D-E621-Convnext", "Z3D-E621-Convnext.onnx")) else print("No model file found"),
                     os.rename(os.path.join(os.getcwd(), "Z3D-E621-Convnext", "tags-selected.csv"),
-                                os.path.join(os.getcwd(), "Z3D-E621-Convnext", "tags.csv"))
+                                os.path.join(os.getcwd(), "Z3D-E621-Convnext", "tags.csv")) if os.path.exists(os.path.join(os.getcwd(), "Z3D-E621-Convnext", "tags-selected.csv")) else print("No model file found")
                 ]
         },
     "eva02-clip-vit-large-7704":
@@ -90,14 +90,14 @@ model_info_map = {
                 ],
             "pre-process":
                 [
-                    help.create_dirs(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704"))
+                    help.create_dirs(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) if os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) else print("No model file found")
                 ],
             "post-process":
                 [
                     shutil.move(os.path.join(os.getcwd(), "model.onnx"),
-                                os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "model.onnx")),
+                                os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "model.onnx")) if os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) else print("No model file found"),
                     shutil.move(os.path.join(os.getcwd(), "tags.json"),
-                                os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "tags.json"))
+                                os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "tags.json")) if os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) else print("No model file found")
                 ]
         },
     "eva02-vit-large-448-8046":
@@ -150,14 +150,14 @@ model_info_map = {
                 ],
             "pre-process":
                 [
-                    help.create_dirs(os.path.join(os.getcwd(), "eva02-vit-large-448-8046"))
+                    help.create_dirs(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) if os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) else print("No model file found")
                 ],
             "post-process":
                 [
                     shutil.move(os.path.join(os.getcwd(), "model.pth"),
-                                os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "model.pth")),
+                                os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "model.pth")) if os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) else print("No model file found"),
                     shutil.move(os.path.join(os.getcwd(), "tags_8041.json"),
-                                os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "tags.json"))
+                                os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "tags.json")) if os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) else print("No model file found")
                 ]
         },
     "experimental_efficientnetv2_m_8035":
@@ -202,14 +202,14 @@ model_info_map = {
                 ],
             "pre-process":
                 [
-                    help.create_dirs(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035"))
+                    help.create_dirs(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) if os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) else print("No model file found")
                 ],
             "post-process":
                 [
                     shutil.move(os.path.join(os.getcwd(), "model_balanced.pth"),
-                                os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "model.pth")),
+                                os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "model.pth")) if os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) else print("No model file found"),
                     shutil.move(os.path.join(os.getcwd(), "tags_8034.json"),
-                                os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "tags.json"))
+                                os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "tags.json")) if os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) else print("No model file found")
                 ]
         }
 }

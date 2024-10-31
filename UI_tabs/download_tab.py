@@ -1137,8 +1137,7 @@ class Download_tab:
                         create_entries_from_checkboxgroup_button_blacklist = gr.Button(value="Create Entry/s from Tag/s", variant='primary')
 
                         # split into setting_(NUMBER).json files
-                        fast_create_json_button_blacklist = gr.Button(value="Split to Setting Files", variant='primary',
-                                                                      info="Converts json file to auto create setting_(NUMBER).json files")
+                        fast_create_json_button_blacklist = gr.Button(value="Split to Setting Files", variant='primary') # info="Converts json file to auto create setting_(NUMBER).json files"
 
             with gr.Accordion("Edit Requirements for Advanced Configuration", visible=True, open=False):
                 gr.Markdown(md_.add_comps_config)
@@ -1835,7 +1834,7 @@ class Download_tab:
             fn=None,
             inputs=[self.tag_required_suggestion_dropdown, self.relevant_required_categories],
             outputs=None,
-            _js=js_.js_set_colors_on_list_required
+            js=js_.js_set_colors_on_list_required
         )
         self.required_tags_textbox.submit(
              fn=self.textbox_handler_required,
@@ -1859,7 +1858,7 @@ class Download_tab:
             fn=None,
             inputs=[self.tag_blacklist_suggestion_dropdown, self.relevant_blacklist_categories],
             outputs=None,
-            _js=js_.js_set_colors_on_list_blacklist
+            js=js_.js_set_colors_on_list_blacklist
         )
         self.blacklist_tags_textbox.submit(
             fn=self.textbox_handler_blacklist,
