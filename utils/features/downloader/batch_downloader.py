@@ -16,7 +16,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 import utils.helper_functions as help
 
-
+import threading  # Added for threading.Lock()
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -629,7 +629,7 @@ class E6_Downloader:
                     with open(path, 'w') as f:
                         f.write('\n'.join([str(s) for s in l]))
 
-    def run_download(self, file, length, dwn_log_path, err_log_path):
+    def run_download(self, file, length, dwn_log_path, err_log_path, numcpu):
         failed_md5 = set()
         start_time = time.time()
         DL = ''
@@ -644,10 +644,26 @@ class E6_Downloader:
         ctr = multiprocessing.Value('i', 0)
         lock = multiprocessing.Lock()
 
+        # Added lock and last_request_time for rate limiting
+        request_lock = threading.Lock()
+        last_request_time = [0.0]  # Use a list to make it mutable in nested function
+
         def download_url(url, file_name):
-            print(f"url:\t{url}")
             nonlocal ctr
+            nonlocal last_request_time
             try:
+                # Rate limiting logic
+                while True:
+                    with request_lock:
+                        current_time = time.time()
+                        elapsed = current_time - last_request_time[0]
+                        if elapsed >= self.LIVE_DOWNLOAD_WAIT_TIMER:
+                            last_request_time[0] = current_time
+                            break
+                        else:
+                            sleep_time = self.LIVE_DOWNLOAD_WAIT_TIMER - elapsed
+                    time.sleep(sleep_time)
+
                 r = self.session.get(url, stream=True)  # Using the session object with retries.
                 if r.status_code != 200:
                     print(f"Failed to fetch {url}. Status code: {r.status_code}. Response: {r.text[:100]}")
@@ -676,7 +692,7 @@ class E6_Downloader:
                 else:
                     failed_downloads[url]['attempts'] += 1
 
-        with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+        with ThreadPoolExecutor(max_workers=numcpu) as executor:
             for sublist in sublists:
                 image_id_w_ext = (sublist[2].replace('out=', ''))
                 help.verbose_print(f"sublist:\t{sublist}")
@@ -690,8 +706,9 @@ class E6_Downloader:
 
         if failed_downloads:
             print("Retrying failed downloads...")
-            with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+            with ThreadPoolExecutor(max_workers=numcpu) as executor:
                 for url, data in failed_downloads.items():
+                    time.sleep(self.RETRY_TIMER)  # Wait a bit before retrying
                     if data['attempts'] < MAX_ATTEMPTS:
                         executor.submit(download_url, url, data['filename'])
                     else:
@@ -701,7 +718,7 @@ class E6_Downloader:
         os.remove(file)
         return failed_md5
 
-    def download_posts(self, prms, batch_nums, posts_save_paths, tag_to_cat, base_folder='', batch_mode=False):
+    def download_posts(self, prms, batch_nums, posts_save_paths, tag_to_cat, base_folder='', batch_mode=False, numcpu=1):
         _img_lists_df = pl.DataFrame()
         __df = pl.DataFrame()
         _md5_source = pl.DataFrame()
@@ -786,7 +803,7 @@ class E6_Downloader:
             print('## Downloading posts')
             failed_set = self.run_download(prms["batch_folder"][batch_num] + '/__.txt', length,
                                       prms["batch_folder"][batch_num] + f'/download_log_{batch_num}.txt',
-                                      prms["batch_folder"][batch_num] + f'/download_error_log_{batch_num}.txt')
+                                      prms["batch_folder"][batch_num] + f'/download_error_log_{batch_num}.txt', numcpu)
             if failed_set:
                 print('## Some posts were downloaded unsuccessfully.')
                 failed_md5.update(failed_set)
@@ -798,7 +815,7 @@ class E6_Downloader:
             print(f"##\n## Found {length} unique posts to save\n##")
             print('## Downloading posts')
             failed_set = self.run_download(base_folder + '/__.txt', length, base_folder + '/download_log.txt',
-                                      base_folder + '/download_error_log.txt')
+                                      base_folder + '/download_error_log.txt', numcpu)
             if failed_set:
                 print('## Some posts were downloaded unsuccessfully.')
                 failed_md5.update(failed_set)
@@ -809,7 +826,7 @@ class E6_Downloader:
             df.filter(pl.col('md5').str.contains('|'.join(failed_md5))).select(
                 ['download_links', 'cmd_directory', 'cmd_filename']).write_csv(_file, separator='\n', has_header=False)
             failed_set_part_2 = self.run_download(_file, len(failed_md5), base_folder + '/redownload_log.txt',
-                                             base_folder + '/redownload_error_log.txt')
+                                             base_folder + '/redownload_error_log.txt', numcpu)
             failed_md5 = failed_md5 & failed_set_part_2
 
         validate_redownload = set()
@@ -865,11 +882,11 @@ class E6_Downloader:
                     failed_set_part_3 = self.run_download(base_folder + '/____.txt', num_redownload,
                                                      prms["batch_folder"][batch_num] + f'/redownload_log_b_{batch_num}.txt',
                                                      prms["batch_folder"][
-                                                         batch_num] + f'/redownload_error_log_b_{batch_num}.txt')
+                                                         batch_num] + f'/redownload_error_log_b_{batch_num}.txt', numcpu)
                 else:
                     failed_set_part_3 = self.run_download(base_folder + '/____.txt', num_redownload,
                                                      base_folder + '/redownload_log_b.txt',
-                                                     base_folder + '/redownload_error_log_b.txt')
+                                                     base_folder + '/redownload_error_log_b.txt', numcpu)
                 failed_md5 = (failed_md5 - found_md5) | failed_set_part_3
             else:
                 print('## Found 0 direct file links for redownloading.')
@@ -1245,6 +1262,9 @@ class E6_Downloader:
             self.backend_conn.close()
 
     def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, backend_conn):
+        self.RETRY_TIMER = 10
+        self.LIVE_DOWNLOAD_WAIT_TIMER = 1 # this may have to change depending on the number of images being downloaded and the number threads dispatched to download them
+
         self.basefolder = basefolder
         self.settings = settings
         self.numcpu = numcpu
@@ -1304,7 +1324,7 @@ class E6_Downloader:
                 raise ValueError(self.tagsparquet, 'not found.')
 
         max_cpu = multiprocessing.cpu_count()
-        num_cpu = max_cpu if (self.numcpu > max_cpu) or (self.numcpu < 1) else self.numcpu
+        self.numcpu = max_cpu if (self.numcpu > max_cpu) or (self.numcpu < 1) else self.numcpu
 
         print('## Checking number of batches validity')
         batch_count = self.check_param_batch_count(prms)
@@ -1340,13 +1360,13 @@ class E6_Downloader:
                 posts_save_path = self.collect_posts(prms, batch_num, e621_posts_list_filename)
                 if posts_save_path is not None:
                     start_time = time.time()
-                    image_list_df = self.download_posts(prms, [batch_num], [posts_save_path], tag_to_cat, base_folder)
+                    image_list_df = self.download_posts(prms, [batch_num], [posts_save_path], tag_to_cat, base_folder, self.numcpu)
                     elapsed = time.time() - start_time
                     print(
                         f'## Batch {batch_num} download elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
                     if not prms["skip_resize"][batch_num] and (image_list_df.shape[0] > 0):
                         start_time = time.time()
-                        self.resize_imgs(prms, batch_num, num_cpu, image_list_df["directory"].to_list(),
+                        self.resize_imgs(prms, batch_num, self.numcpu, image_list_df["directory"].to_list(),
                                     image_list_df["filename"].to_list(), image_list_df["tagfilebasename"].to_list())
                         elapsed = time.time() - start_time
                         print(
@@ -1361,14 +1381,14 @@ class E6_Downloader:
             if posts_save_paths:
                 start_time = time.time()
                 image_list_df = self.download_posts(prms, list(range(batch_count)), posts_save_paths, tag_to_cat, base_folder,
-                                               batch_mode=True)
+                                               batch_mode=True, numcpu=self.numcpu)
                 elapsed = time.time() - start_time
                 print(
                     f'## Batch download elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
                 self.create_tag_count(prms)
                 if image_list_df.shape[0] > 0:
                     start_time = time.time()
-                    self.resize_imgs_batch(num_cpu,
+                    self.resize_imgs_batch(self.numcpu,
                                       image_list_df["directory"].to_list(),
                                       image_list_df["filename"].to_list(),
                                       image_list_df["resized_img_folder"].to_list(),
