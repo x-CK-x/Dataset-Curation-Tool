@@ -360,7 +360,7 @@ class E6_Downloader:
             help.verbose_print(f"db_export_file_path:\t{db_export_file_path}")
 
             if shutil.which('curl') is not None:
-                subprocess.check_output(f'curl https://e621.net/db_export/ -o {db_export_file_path}', shell=True)
+                subprocess.check_output(f'curl https://e621.net/db_export/ -o "{db_export_file_path}" --ssl-no-revoke', shell=True) # downloads without the need to verify SSL certificate
             db_export_file_path = db_export_file_path.replace('\"', '')
             with open(db_export_file_path) as f:
                 contents = f.read()
