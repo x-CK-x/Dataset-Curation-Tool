@@ -88,35 +88,8 @@ Create a Support Ticket or Bug Report here: [https://github.com/x-CK-x/Dataset-C
 
 Feel free to suggest new feature/s here: [https://github.com/x-CK-x/Dataset-Curation-Tool/discussions/categories/ideas](https://github.com/x-CK-x/Dataset-Curation-Tool/discussions/categories/ideas)
 
-## Future Objectives/Features
-
-- [X] Update the existing **Version_3 WebUI** [WIKI Page](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki) for the **Version_4 WebUI**
-- [X] Finish Code Refactor
-- [X] Conda setup instructions
-- [X] CSV load time optimization with the pandas framework
-- [X] .sh & .bat installer scripts for conda
-- [X] Image Board manager class object
-- [X] PNG Info & tag combination options
-
-__NEW Features Paused as of (09/05/2023)__ :: unless there are willing contributors to develop any of the other features.
-
-__New image board specific tagging/captioning models will be supported as they are released__ :: (There is "no" current eta. on the progress of those models being developed by others)
-
-__Contributors are welcome to open a `Pull Request` for their developments & I will promptly review it to be added__
-
-- [ ] Add Aliases for tags suggestions in the textboxes
-- [ ] Add Support for *brand new* tag & captioning models & tag combining options
-  - deepdanbooru
-  - huggingface IDEFICS (api call)
-  - gpt-4 (api call)
-- [ ] Add Auto-caption feature using various heuristics to determine from each auto-tag/caption model; what tags are best
-- [ ] Include support for a variation of different public image boards
-- [ ] Add De-Noise & Upscale Models, e.g. [StableSR](https://github.com/IceClear/StableSR)
-- [ ] Add Segmentation & Detection Models, e.g. [SegmentAnything-HQ](https://github.com/continue-revolution/sd-webui-segment-anything)
-- [ ] Add Cross Attention Visualization [DAAM](https://github.com/castorini/daam)
-- [ ] Add Grad-CAM
-- [ ] Add UMAP
-- [ ] Color code tag categories for tag suggestions in the dropdown menus (**blocked** : [https://github.com/gradio-app/gradio/issues/4988](https://github.com/gradio-app/gradio/issues/4988))
+## "Existing" **AND** "Future" Objectives/Features
+These can be tracked in Both the [Feature List](https://github.com/x-CK-x/Dataset-Curation-Tool/issues/36) as well as in the [Issues Section](https://github.com/x-CK-x/Dataset-Curation-Tool/issues)
 
 ## Additional Information
 
