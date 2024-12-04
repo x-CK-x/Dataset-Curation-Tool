@@ -113,8 +113,8 @@ class Extras_tab:
                                                   "eva02-vit-large-448-8046",
                                                   "experimental_efficientnetv2_m_8035"]
 
-                model_download_types = gr.Dropdown(choices=model_download_options, label='Diffusion Model Selection')
-                tagging_model_download_types = gr.Dropdown(choices=tagging_model_download_options, label='AutoTagging Model Selection', multiselect=True)
+                model_download_types = gr.Dropdown(choices=model_download_options, label='Diffusion Model Selection', value=None)
+                tagging_model_download_types = gr.Dropdown(choices=tagging_model_download_options, label='AutoTagging Model Selection', multiselect=True, value=None)
                 model_download_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Code Repositories to Download', value=[], visible=False)
                 nested_model_links_checkbox_group = gr.CheckboxGroup(choices=[], label='Specific Model Versions', value=[],
                                                                  visible=False)
@@ -192,4 +192,8 @@ class Extras_tab:
                      self.custom_dataset_tab_manager.file_upload_button_single,
                      self.custom_dataset_tab_manager.file_upload_button_batch,
                      self.custom_dataset_tab_manager.gallery_images_batch]
+        ).then( # update the model list in the custom dataset tab
+            fn=self.custom_dataset_tab_manager.refresh_model_list,
+            inputs=[],
+            outputs=[self.custom_dataset_tab_manager.model_choice_dropdown]
         )
