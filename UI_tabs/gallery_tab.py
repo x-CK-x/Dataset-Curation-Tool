@@ -1302,8 +1302,12 @@ class Gallery_tab:
     def get_img_tags(self, gallery_comp, select_multiple_images_checkbox, images_selected_state,
                      select_between_images_checkbox, images_tuple_points, event_data: gr.SelectData):
         # self.selected_image_dict  # id -> {categories: tag/s}, type -> string
-
-        help.verbose_print(f"gallery_comp[event_data.index]['name']:\t{gallery_comp[event_data.index]['name']}")
+        temp = '\\' if help.is_windows() else '/'
+        help.verbose_print(f"event_data:\t{event_data}")
+        help.verbose_print(f"event_data.index:\t{event_data.index}")
+        help.verbose_print(f"gallery_comp[event_data.index]:\t{gallery_comp[event_data.index]}")
+        help.verbose_print(f"full_path:\t{(gallery_comp[event_data.index])[0]}")
+        help.verbose_print(f"image name:\t{(gallery_comp[event_data.index])[0].split(temp)[-1]}")
 
         img_name = None
         artist_comp_checkboxgroup = gr.update(choices=[])
@@ -1341,7 +1345,7 @@ class Gallery_tab:
             help.verbose_print(f"images_selected_states:\t{images_selected_state}")
         else:
             images_selected_state = []
-            download_folder_type, img_name = self.extract_name_and_extention(gallery_comp[event_data.index]['name'])
+            download_folder_type, img_name = self.extract_name_and_extention((gallery_comp[event_data.index])[0])# requires full path; returns [ext, img_id]
 
             help.verbose_print(f"download_folder_type:\t{download_folder_type}")
             help.verbose_print(f"img_name:\t{img_name}")
@@ -1367,8 +1371,7 @@ class Gallery_tab:
 
         only_selected_state_object = dict()
         for index in images_selected_state:
-            only_selected_state_object[index] = self.extract_name_and_extention(
-                gallery_comp[index]['name'])  # returns index -> [ext, img_id]
+            only_selected_state_object[index] = self.extract_name_and_extention((gallery_comp[index])[0])  # returns index -> [ext, img_id]
         help.verbose_print(f"only_selected_state_object:\t{only_selected_state_object}")
 
         return gr.update(
@@ -1804,7 +1807,7 @@ class Gallery_tab:
                                                                        info="Image/s by date")
                             with gr.Column(min_width=50, scale=4):
                                 apply_datetime_choice_menu = gr.Dropdown(label="Sort Order",
-                                                                         choices=["new-to-old", "old-to-new"], value="",
+                                                                         choices=["new-to-old", "old-to-new"], value=None,
                                                                          info="Image/s by date")
                         with gr.Row():
                             image_remove_button = gr.Button(value="Remove Selected Image/s", variant='primary')
@@ -1867,7 +1870,7 @@ class Gallery_tab:
                                                       value="Start")
                         with gr.Row():
                             prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
-                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", columns=3, object_fit="contain", height=1356)
+                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", columns=3, object_fit="contain", interactive=True, height=1356)#"1356px")#, height="auto")#, height=1356)
 
         self.refresh_aspect_btn = refresh_aspect_btn
         self.download_folder_type = download_folder_type
