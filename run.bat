@@ -135,26 +135,43 @@ echo Checking repository path...
 echo Checking repository path... >> debug.log
 
 if exist "%PATHFILE%" (
-    echo Found stored path in %PATHFILE%
-    echo Found stored path in %PATHFILE% >> debug.log
-    set /p PARENT_PATH=<"%PATHFILE%"
-    if "%PARENT_PATH%"=="" (
-        echo Stored path is empty. Please delete %PATHFILE% and run again.
-        echo Stored path is empty. Please delete %PATHFILE% and run again. >> debug.log
-        echo Press any key to exit.
-        pause >nul
-        exit /b 1
-    )
-    cd /d "%PARENT_PATH%" >> debug.log 2>&1
-    if errorlevel 1 (
-        echo Failed to change directory to stored path: "%PARENT_PATH%"
-        echo Failed to change directory to stored path: "%PARENT_PATH%" >> debug.log
-        echo Press any key to exit.
-        pause >nul
-        exit /b 1
-    )
-    echo Changed directory to stored path: %cd%
-    echo Changed directory to stored path: %cd% >> debug.log
+	echo Checking the content of %PATHFILE%:
+	type "%PATHFILE%" >> debug.log
+
+	@echo off
+	SETLOCAL ENABLEDELAYEDEXPANSION
+
+	echo Checking the content of %PATHFILE%
+	type "%PATHFILE%" >> debug.log
+
+	set "PARENT_PATH="
+
+	for /f "usebackq tokens=* delims=" %%i in ("%PATHFILE%") do (
+		echo Line read: "%%i"
+		set "PARENT_PATH=%%i"
+	)
+
+	echo After loop, PARENT_PATH="!PARENT_PATH!"
+
+	if "!PARENT_PATH!"=="" (
+		echo Stored path is empty. Please delete %PATHFILE% and run again.
+		echo Stored path is empty. Please delete %PATHFILE% and run again. >> debug.log
+		echo Press any key to exit.
+		pause >nul
+		exit /b 1
+	)
+
+	cd /d "!PARENT_PATH!" >> debug.log 2>&1
+	if errorlevel 1 (
+		echo Failed to change directory to stored path: "!PARENT_PATH!"
+		echo Failed to change directory to stored path: "!PARENT_PATH!" >> debug.log
+		echo Press any key to exit.
+		pause >nul
+		exit /b 1
+	)
+
+	echo Changed directory to stored path: %cd%
+	echo Changed directory to stored path: %cd% >> debug.log
 ) else (
     echo No %PATHFILE% found, using current directory as parent
     echo No %PATHFILE% found, using current directory as parent >> debug.log
