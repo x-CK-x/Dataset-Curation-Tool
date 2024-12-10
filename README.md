@@ -8,8 +8,6 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ## Installation Requirements
 
-Make sure you have `git` installed!
-
 > Download either the windows, mac, or linux run file (repo will be installed for you):
 > 
 > [Windows Download](https://github.com/x-CK-x/Dataset-Curation-Tool/blob/main/run.bat)
@@ -75,7 +73,7 @@ The "DUPLICATE" run files (run.bat, mac_run.sh, linux_run.sh) residing in the Da
 
 ## Important Information
 
-- the most current **STABLE** build --> [v4.4.9](https://github.com/x-CK-x/Dataset-Curation-Tool/releases/tag/v4.4.9)
+- the most current **STABLE** build --> [v4.4.10](https://github.com/x-CK-x/Dataset-Curation-Tool/releases/tag/v4.4.10)
 - for new users, it's highly recommended to use releases instead of pulling from the main branch
 - in addition it is important to avoid using the **alpha** builds in the [releases](https://github.com/x-CK-x/Dataset-Curation-Tool/releases)
 - if an alpha build is present it will be labeled as a **pre-release** and the **main-branch** of the repo is also likely to contain those changes; as such please use the most recent stable build as denoted above
