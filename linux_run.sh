@@ -3,7 +3,7 @@
 set -e
 set -o pipefail
 
-# Create/reset debug log
+# Create/reset debug.log
 echo "Script started at $(date)" > debug.log
 echo "----------------------------------------" >> debug.log
 
@@ -24,17 +24,13 @@ for arg in "$@"; do
     fi
 done
 
-# Check if git is available
 echo "Checking if git is available..."
 echo "Checking if git is available..." >> debug.log
 if ! command -v git >/dev/null 2>&1; then
     echo "Git not found. Installing Git..."
     echo "Git not found. Installing Git..." >> debug.log
 
-    # Adjust for your distro/package manager if needed. Here we assume apt.
-    # If user doesn't have apt, they must install git manually or you can add logic for other distros.
-    # For a fully automatic approach without user intervention, consider curl + tarball from Git sources, 
-    # but for simplicity we use apt here:
+    # If apt is available:
     if command -v apt >/dev/null 2>&1; then
         sudo apt update >> debug.log 2>&1 && sudo apt install -y git >> debug.log 2>&1
         if [ $? -ne 0 ]; then
@@ -60,7 +56,6 @@ else
     echo "Git is already installed" >> debug.log
 fi
 
-# Check if conda command is available
 echo "Checking conda availability..."
 echo "Checking conda availability..." >> debug.log
 if ! command -v conda >/dev/null 2>&1; then
@@ -85,7 +80,6 @@ if ! command -v conda >/dev/null 2>&1; then
     rm miniconda.sh
     export PATH="$HOME/miniconda/bin:$PATH"
     conda init bash >> debug.log 2>&1 || true
-    # shellcheck source=/dev/null
     source ~/.bashrc
 
     echo "Miniconda installed successfully"
@@ -94,7 +88,6 @@ else
     echo "Miniconda is already installed"
     echo "Miniconda is already installed" >> debug.log
     export PATH="$HOME/miniconda/bin:$PATH"
-    # shellcheck source=/dev/null
     source ~/.bashrc
 fi
 
@@ -104,7 +97,10 @@ echo "Checking repository path..." >> debug.log
 if [ -f "$PATHFILE" ]; then
     echo "Found stored path in $PATHFILE"
     echo "Found stored path in $PATHFILE" >> debug.log
-    STORED_PATH=$(<"$PATHFILE")
+
+    # Read and trim leading/trailing whitespace
+    STORED_PATH=$(sed -e 's/^[[:space:]]*//;s/[[:space:]]*$//' "$PATHFILE")
+
     if [ -z "$STORED_PATH" ]; then
         echo "Stored path is empty. Please delete $PATHFILE and run again."
         echo "Stored path is empty. Please delete $PATHFILE and run again." >> debug.log
@@ -112,6 +108,7 @@ if [ -f "$PATHFILE" ]; then
         read -rsn1
         exit 1
     fi
+
     cd "$STORED_PATH" >> debug.log 2>&1
     if [ $? -ne 0 ]; then
         echo "Failed to change directory to stored path: $STORED_PATH"
@@ -125,6 +122,7 @@ if [ -f "$PATHFILE" ]; then
 else
     echo "No $PATHFILE found, using current directory as parent"
     echo "No $PATHFILE found, using current directory as parent" >> debug.log
+
     # Already in correct directory
     PARENT_PATH="$PWD"
     echo "Using current directory as parent: $PWD"
@@ -274,7 +272,6 @@ else
         echo "Environment data-curation exists. Updating environment"
         echo "Environment data-curation exists. Updating environment" >> debug.log
         conda env update -n data-curation -f environment.yml >> debug.log 2>&1 || true
-        # No strict exit here if update fails, but you can add a check if you want.
     else
         echo "Environment data-curation already exists and up to date"
         echo "Environment data-curation already exists and up to date" >> debug.log
@@ -283,7 +280,6 @@ fi
 
 echo "Activating data-curation environment..."
 echo "Activating data-curation environment..." >> debug.log
-# shellcheck source=/dev/null
 source activate data-curation || {
     echo "Failed to activate environment"
     echo "Failed to activate environment" >> debug.log
@@ -304,7 +300,6 @@ python webui.py "${OTHER_ARGS[@]}" >> debug.log 2>&1 || {
 
 echo "Starting UI at http://localhost:7860"
 echo "Starting UI at http://localhost:7860" >> debug.log
-
 OS=$(uname)
 if [ "$OS" = "Linux" ]; then
     xdg-open http://localhost:7860 || true
