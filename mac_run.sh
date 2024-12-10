@@ -59,7 +59,6 @@ if ! command -v conda >/dev/null 2>&1; then
     rm miniconda.sh
     export PATH="$HOME/miniconda/bin:$PATH"
     conda init bash >> debug.log 2>&1 || true
-    # shellcheck source=/dev/null
     source ~/.bashrc
 
     echo "Miniconda installed successfully"
@@ -68,7 +67,6 @@ else
     echo "Miniconda is already installed"
     echo "Miniconda is already installed" >> debug.log
     export PATH="$HOME/miniconda/bin:$PATH"
-    # shellcheck source=/dev/null
     source ~/.bashrc
 fi
 
@@ -78,7 +76,9 @@ echo "Checking repository path..." >> debug.log
 if [ -f "$PATHFILE" ]; then
     echo "Found stored path in $PATHFILE"
     echo "Found stored path in $PATHFILE" >> debug.log
-    STORED_PATH=$(<"$PATHFILE")
+
+    STORED_PATH=$(sed -e 's/^[[:space:]]*//;s/[[:space:]]*$//' "$PATHFILE")
+
     if [ -z "$STORED_PATH" ]; then
         echo "Stored path is empty. Please delete $PATHFILE and run again."
         echo "Stored path is empty. Please delete $PATHFILE and run again." >> debug.log
@@ -86,6 +86,7 @@ if [ -f "$PATHFILE" ]; then
         read -rsn1
         exit 1
     fi
+
     cd "$STORED_PATH" >> debug.log 2>&1
     if [ $? -ne 0 ]; then
         echo "Failed to change directory to stored path: $STORED_PATH"
@@ -99,6 +100,7 @@ if [ -f "$PATHFILE" ]; then
 else
     echo "No $PATHFILE found, using current directory as parent"
     echo "No $PATHFILE found, using current directory as parent" >> debug.log
+
     PARENT_PATH="$PWD"
     echo "Using current directory as parent: $PWD"
     echo "Using current directory as parent: $PWD" >> debug.log
