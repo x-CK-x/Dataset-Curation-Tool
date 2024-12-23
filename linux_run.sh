@@ -32,7 +32,7 @@ if ! command -v git >/dev/null 2>&1; then
 
     # If apt is available:
     if command -v apt >/dev/null 2>&1; then
-        sudo apt update >> debug.log 2>&1 && sudo apt install -y git >> debug.log 2>&1
+        sudo apt update && sudo apt install -y git
         if [ $? -ne 0 ]; then
             echo "Git installation failed"
             echo "Git installation failed" >> debug.log
@@ -61,7 +61,7 @@ echo "Checking conda availability..." >> debug.log
 if ! command -v conda >/dev/null 2>&1; then
     echo "Miniconda not found. Installing Miniconda..."
     echo "Miniconda not found. Installing Miniconda..." >> debug.log
-    curl -o miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh >> debug.log 2>&1
+    curl -o miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
     if [ $? -ne 0 ]; then
         echo "Failed to download Miniconda. Check internet connection."
         echo "Failed to download Miniconda. Check internet connection." >> debug.log
@@ -69,7 +69,7 @@ if ! command -v conda >/dev/null 2>&1; then
         read -rsn1
         exit 1
     fi
-    bash miniconda.sh -b -p "$HOME/miniconda" >> debug.log 2>&1
+    bash miniconda.sh -b -p "$HOME/miniconda"
     if [ $? -ne 0 ]; then
         echo "Miniconda installation failed"
         echo "Miniconda installation failed" >> debug.log
@@ -79,7 +79,7 @@ if ! command -v conda >/dev/null 2>&1; then
     fi
     rm miniconda.sh
     export PATH="$HOME/miniconda/bin:$PATH"
-    conda init bash >> debug.log 2>&1 || true
+    conda init bash || true
     source ~/.bashrc
 
     echo "Miniconda installed successfully"
@@ -109,7 +109,7 @@ if [ -f "$PATHFILE" ]; then
         exit 1
     fi
 
-    cd "$STORED_PATH" >> debug.log 2>&1
+    cd "$STORED_PATH"
     if [ $? -ne 0 ]; then
         echo "Failed to change directory to stored path: $STORED_PATH"
         echo "Failed to change directory to stored path: $STORED_PATH" >> debug.log
@@ -132,7 +132,7 @@ fi
 if [ ! -f "Dataset-Curation-Tool/environment.yml" ]; then
     echo "Dataset-Curation-Tool not found in $PWD. Attempting to clone..."
     echo "Dataset-Curation-Tool not found in $PWD. Attempting to clone..." >> debug.log
-    git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git Dataset-Curation-Tool >> debug.log 2>&1
+    git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git Dataset-Curation-Tool
     if [ $? -ne 0 ]; then
         echo "Git clone failed"
         echo "Git clone failed" >> debug.log
@@ -146,7 +146,7 @@ else
     echo "Dataset-Curation-Tool already present" >> debug.log
 fi
 
-cd Dataset-Curation-Tool >> debug.log 2>&1
+cd Dataset-Curation-Tool
 if [ $? -ne 0 ]; then
     echo "Cloned (if needed) but failed to enter Dataset-Curation-Tool directory"
     echo "Cloned (if needed) but failed to enter Dataset-Curation-Tool directory" >> debug.log
@@ -194,7 +194,7 @@ rm -f linux_run.sh mac_run.sh run.bat
 
 echo "Fetching latest changes and tags..."
 echo "Fetching latest changes and tags..." >> debug.log
-git fetch >> debug.log 2>&1
+git fetch
 if [ $? -ne 0 ]; then
     echo "Failed to fetch from git repository"
     echo "Failed to fetch from git repository" >> debug.log
@@ -220,21 +220,21 @@ if [ "$CURRENT_TAG" != "$LATEST_TAG" ]; then
     echo "Not on the latest tag. Checking out to $LATEST_TAG."
     echo "Not on the latest tag. Checking out to $LATEST_TAG." >> debug.log
 
-    git reset HEAD linux_run.sh mac_run.sh run.bat >> debug.log 2>&1 || true
-    git checkout -- linux_run.sh mac_run.sh run.bat >> debug.log 2>&1 || true
+    git reset HEAD linux_run.sh mac_run.sh run.bat || true
+    git checkout -- linux_run.sh mac_run.sh run.bat || true
 
     echo "Stashing any user changes..."
     echo "Stashing any user changes..." >> debug.log
-    git stash >> debug.log 2>&1 || true
+    git stash || true
 
     echo "Removing __pycache__ and pyc files"
     echo "Removing __pycache__ and pyc files" >> debug.log
-    find . -name "__pycache__" -type d -exec rm -r {} + >> debug.log 2>&1
-    find . -name "*.pyc" -exec rm -f {} + >> debug.log 2>&1
+    find . -name "__pycache__" -type d -exec rm -r {} +
+    find . -name "*.pyc" -exec rm -f {} +
 
     echo "Checking out to $LATEST_TAG..."
     echo "Checking out to $LATEST_TAG..." >> debug.log
-    git checkout "tags/$LATEST_TAG" >> debug.log 2>&1
+    git checkout "tags/$LATEST_TAG"
     if [ $? -ne 0 ]; then
         echo "Failed to checkout to $LATEST_TAG."
         echo "Failed to checkout to $LATEST_TAG." >> debug.log
@@ -245,7 +245,7 @@ if [ "$CURRENT_TAG" != "$LATEST_TAG" ]; then
 
     echo "Applying stashed user changes..."
     echo "Applying stashed user changes..." >> debug.log
-    git stash apply >> debug.log 2>&1 || true
+    git stash apply || true
 
     UPDATE_ENV=true
 else
@@ -259,7 +259,7 @@ conda info --envs | grep data-curation > /dev/null
 if [ $? -ne 0 ]; then
     echo "Environment data-curation not found. Creating environment..."
     echo "Environment data-curation not found. Creating environment..." >> debug.log
-    conda env create -f environment.yml >> debug.log 2>&1
+    conda env create -f environment.yml
     if [ $? -ne 0 ]; then
         echo "Failed to create conda environment"
         echo "Failed to create conda environment" >> debug.log
@@ -271,7 +271,7 @@ else
     if $UPDATE_ENV; then
         echo "Environment data-curation exists. Updating environment"
         echo "Environment data-curation exists. Updating environment" >> debug.log
-        conda env update -n data-curation -f environment.yml >> debug.log 2>&1 || true
+        conda env update -n data-curation -f environment.yml || true
     else
         echo "Environment data-curation already exists and up to date"
         echo "Environment data-curation already exists and up to date" >> debug.log
@@ -290,7 +290,7 @@ source activate data-curation || {
 
 echo "Running the python program..."
 echo "Running the python program..." >> debug.log
-python webui.py "${OTHER_ARGS[@]}" >> debug.log 2>&1 || {
+python webui.py "${OTHER_ARGS[@]}" || {
     echo "Python program encountered an error"
     echo "Python program encountered an error" >> debug.log
     echo "Check debug.log for details. Press any key to exit."
