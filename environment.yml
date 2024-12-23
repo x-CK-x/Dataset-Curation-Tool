@@ -19,6 +19,7 @@ dependencies:
   - Pillow
   - libjpeg-turbo
   - libpng
+  - numpy<2
   - pip:
     - opencv-python
     - polars==0.16.18
