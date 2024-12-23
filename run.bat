@@ -11,7 +11,8 @@ if errorlevel 1 (
     echo Git not found. Installing Git...
     echo Git not found. Installing Git... >> debug.log
 
-    curl -Lo git-installer.exe "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe" --ssl-no-revoke -k >> debug.log 2>&1
+    curl -Lo git-installer.exe "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe" --ssl-no-revoke -k
+    
 
     if not exist "git-installer.exe" (
         echo Failed to download Git installer - file not found
@@ -42,7 +43,8 @@ if errorlevel 1 (
 
     echo Installing Git silently...
     echo Installing Git silently... >> debug.log
-    git-installer.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS >> debug.log 2>&1
+    git-installer.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS
+    
 
     if errorlevel 1 (
         echo Git installation failed
@@ -111,7 +113,8 @@ if exist "%CONDA_EXE%" (
 ) else (
     echo Miniconda not found. Installing Miniconda...
     echo Miniconda not found. Installing Miniconda... >> debug.log
-    curl -o miniconda.exe "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe" >> debug.log 2>&1
+    curl -o miniconda.exe "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
+    
     if errorlevel 1 (
         echo Failed to download Miniconda. Check internet connection.
         echo Failed to download Miniconda. Check internet connection. >> debug.log
@@ -119,7 +122,8 @@ if exist "%CONDA_EXE%" (
         pause >nul
         exit /b 1
     )
-    miniconda.exe /InstallationType=JustMe /RegisterPython=0 /S /D=%UserProfile%\Miniconda3 >> debug.log 2>&1
+    miniconda.exe /InstallationType=JustMe /RegisterPython=0 /S /D=%UserProfile%\Miniconda3
+    
     if errorlevel 1 (
         echo Miniconda installation failed
         echo Miniconda installation failed >> debug.log
@@ -161,7 +165,8 @@ if exist "%PATHFILE%" (
 		exit /b 1
 	)
 
-	cd /d "!PARENT_PATH!" >> debug.log 2>&1
+	cd /d "!PARENT_PATH!"
+    
 	if errorlevel 1 (
 		echo Failed to change directory to stored path: "!PARENT_PATH!"
 		echo Failed to change directory to stored path: "!PARENT_PATH!" >> debug.log
@@ -188,7 +193,8 @@ if exist "Dataset-Curation-Tool\environment.yml" (
 ) else (
     echo Dataset-Curation-Tool not found in %cd%. Attempting to clone...
     echo Dataset-Curation-Tool not found in %cd%. Attempting to clone... >> debug.log
-    git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git Dataset-Curation-Tool >> debug.log 2>&1
+    git clone https://github.com/x-CK-x/Dataset-Curation-Tool.git Dataset-Curation-Tool
+    
 
     if errorlevel 1 (
         echo Git clone failed
@@ -200,7 +206,8 @@ if exist "Dataset-Curation-Tool\environment.yml" (
     set "UPDATE_ENV=1"
 )
 
-cd /d Dataset-Curation-Tool >> debug.log 2>&1
+cd /d Dataset-Curation-Tool
+
 
 if not exist "environment.yml" (
     echo environment.yml not found inside Dataset-Curation-Tool
@@ -269,8 +276,10 @@ if not "%CURRENT_TAG%"=="%LATEST_TAG%" (
     echo Not on the latest tag. Checking out to %LATEST_TAG%.
     echo Not on the latest tag. Checking out to %LATEST_TAG%. >> debug.log
 
-    git reset HEAD linux_run.sh mac_run.sh run.bat >> debug.log 2>&1
-    git checkout -- linux_run.sh mac_run.sh run.bat >> debug.log 2>&1
+    git reset HEAD linux_run.sh mac_run.sh run.bat
+    
+    git checkout -- linux_run.sh mac_run.sh run.bat
+    
 
     echo Stashing any user changes...
     echo Stashing any user changes... >> debug.log
@@ -283,7 +292,8 @@ if not "%CURRENT_TAG%"=="%LATEST_TAG%" (
 
     echo Checking out to %LATEST_TAG%...
     echo Checking out to %LATEST_TAG%... >> debug.log
-    git checkout tags/%LATEST_TAG% >> debug.log 2>&1
+    git checkout tags/%LATEST_TAG%
+    
     if errorlevel 1 (
         echo Failed to checkout to %LATEST_TAG%.
         echo Failed to checkout to %LATEST_TAG%. >> debug.log
@@ -294,7 +304,8 @@ if not "%CURRENT_TAG%"=="%LATEST_TAG%" (
 
     echo Applying stashed user changes...
     echo Applying stashed user changes... >> debug.log
-    git stash apply >> debug.log 2>&1
+    git stash apply
+    
 
     set "UPDATE_ENV=1"
 ) else (
@@ -308,7 +319,8 @@ call conda info --envs | findstr /c:"data-curation" >nul
 if errorlevel 1 (
     echo Environment data-curation not found. Creating environment...
     echo Environment data-curation not found. Creating environment... >> debug.log
-    call conda env create -f environment.yml >> debug.log 2>&1
+    call conda env create -f environment.yml
+    
     if errorlevel 1 (
         echo Failed to create conda environment
         echo Failed to create conda environment >> debug.log
@@ -320,7 +332,8 @@ if errorlevel 1 (
     if "%UPDATE_ENV%"=="1" (
         echo Environment data-curation exists. Updating environment...
         echo Environment data-curation exists. Updating environment... >> debug.log
-        call conda env update -n data-curation -f environment.yml >> debug.log 2>&1
+        call conda env update -n data-curation -f environment.yml
+        
     ) else (
         echo Environment data-curation already exists and up to date
         echo Environment data-curation already exists and up to date >> debug.log
@@ -329,7 +342,8 @@ if errorlevel 1 (
 
 echo Activating data-curation environment...
 echo Activating data-curation environment... >> debug.log
-call activate data-curation >> debug.log 2>&1
+call activate data-curation
+
 if errorlevel 1 (
     echo Failed to activate environment
     echo Failed to activate environment >> debug.log
