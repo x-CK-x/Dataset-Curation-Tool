@@ -63,7 +63,8 @@ class Download_tab:
                            tag_count_list_folder, min_month, min_day, min_year, collect_checkbox_group_var,
                            download_checkbox_group_var,
                            resize_checkbox_group_var, create_new_config_checkbox, settings_path, proxy_url_textbox,
-                           custom_csv_path_textbox, use_csv_custom_checkbox):
+                           custom_csv_path_textbox, use_csv_custom_checkbox, override_download_delay_checkbox,
+                           custom_download_delay_slider, custom_retry_attempts_slider):
 
         self.settings_json["batch_folder"] = str(batch_folder)
         self.settings_json["resized_img_folder"] = str(resized_img_folder)
@@ -96,6 +97,10 @@ class Download_tab:
 
         self.settings_json["use_csv_custom"] = bool(use_csv_custom_checkbox)
         self.settings_json["csv_custom_path"] = str(custom_csv_path_textbox)
+
+        self.settings_json["override_download_delay"] = bool(override_download_delay_checkbox)
+        self.settings_json["custom_download_delay"] = int(custom_download_delay_slider)
+        self.settings_json["custom_retry_attempts"] = int(custom_retry_attempts_slider)
 
         # COLLECT CheckBox Group
         for key in self.collect_checkboxes:
@@ -434,6 +439,12 @@ class Download_tab:
         custom_csv_path_textbox = gr.update(value=self.settings_json["use_csv_custom"])
         use_csv_custom_checkbox = gr.update(value=self.settings_json["csv_custom_path"])
 
+
+        override_download_delay_checkbox = gr.update(value=self.settings_json["override_download_delay"])
+        custom_download_delay_slider = gr.update(value=self.settings_json["custom_download_delay"])
+        custom_retry_attempts_slider = gr.update(value=self.settings_json["custom_retry_attempts"])
+
+
         help.verbose_print(f"{self.settings_json}")
         help.verbose_print(f"json key count: {len(self.settings_json)}")
 
@@ -454,7 +465,7 @@ class Download_tab:
                blacklist_tags_group_var, skip_posts_file, skip_posts_type, collect_from_listed_posts_file, collect_from_listed_posts_type, apply_filter_to_listed_posts, \
                save_searched_list_type, save_searched_list_path, downloaded_posts_folder, png_folder, jpg_folder, webm_folder, gif_folder, swf_folder, save_filename_type, \
                remove_tags_list, replace_tags_list, tag_count_list_folder, all_json_files_checkboxgroup, quick_json_select, proxy_url_textbox, settings_path, \
-               custom_csv_path_textbox, use_csv_custom_checkbox
+               custom_csv_path_textbox, use_csv_custom_checkbox, override_download_delay_checkbox, custom_download_delay_slider, custom_retry_attempts_slider
 
     # load a different config
     def change_config(self, selected: gr.SelectData, file_path):
@@ -568,6 +579,12 @@ class Download_tab:
         custom_csv_path_textbox = gr.update(value=self.settings_json["csv_custom_path"])
         use_csv_custom_checkbox = gr.update(value=self.settings_json["use_csv_custom"])
 
+
+        override_download_delay_checkbox = gr.update(value=self.settings_json["override_download_delay"])
+        custom_download_delay_slider = gr.update(value=self.settings_json["custom_download_delay"])
+        custom_retry_attempts_slider = gr.update(value=self.settings_json["custom_retry_attempts"])
+
+
         help.verbose_print(f"{self.settings_json}")
         help.verbose_print(f"json key count: {len(self.settings_json)}")
 
@@ -588,7 +605,7 @@ class Download_tab:
                blacklist_tags_group_var, skip_posts_file, skip_posts_type, collect_from_listed_posts_file, collect_from_listed_posts_type, apply_filter_to_listed_posts, \
                save_searched_list_type, save_searched_list_path, downloaded_posts_folder, png_folder, jpg_folder, webm_folder, gif_folder, swf_folder, save_filename_type, \
                remove_tags_list, replace_tags_list, tag_count_list_folder, all_json_files_checkboxgroup, quick_json_select, proxy_url_textbox, settings_path, \
-               custom_csv_path_textbox, use_csv_custom_checkbox
+               custom_csv_path_textbox, use_csv_custom_checkbox, override_download_delay_checkbox, custom_download_delay_slider, custom_retry_attempts_slider
 
     def textbox_handler_required(self, tag_string_comp, state, is_textbox):
         # help.verbose_print(f"tag_string_comp:\t{tag_string_comp}")
@@ -1189,6 +1206,24 @@ class Download_tab:
                     with gr.Column():
                         cachepostsdb = gr.Checkbox(label='cache e6 posts file when multiple batches', value=False)
                 with gr.Row():
+                    with gr.Column():
+                        override_download_delay_checkbox = gr.Checkbox(
+                            label='Override Download Delay & Retries',
+                            value=self.settings_json.get("override_download_delay", False)
+                        )
+                    with gr.Column():
+                        custom_download_delay_slider = gr.Slider(
+                            minimum=0, maximum=60, step=1,
+                            label='Download Delay (seconds)',
+                            value=self.settings_json.get("custom_download_delay", 1)
+                        )
+                    with gr.Column():
+                        custom_retry_attempts_slider = gr.Slider(
+                            minimum=1, maximum=10, step=1,
+                            label='Retry Attempts',
+                            value=self.settings_json.get("custom_retry_attempts", 3)
+                        )
+                with gr.Row():
                     postscsv = gr.Textbox(lines=1, label='Path to e6 posts csv', value="")
                     tagscsv = gr.Textbox(lines=1, label='Path to e6 tags csv', value="")
                     postsparquet = gr.Textbox(lines=1, label='Path to e6 posts parquet', value="")
@@ -1311,6 +1346,9 @@ class Download_tab:
         self.create_entries_from_checkboxgroup_button_required = create_entries_from_checkboxgroup_button_required
         self.create_entries_from_checkboxgroup_button_blacklist = create_entries_from_checkboxgroup_button_blacklist
         self.remove_json_batch_buttton = remove_json_batch_buttton
+        self.override_download_delay_checkbox = override_download_delay_checkbox
+        self.custom_download_delay_slider = custom_download_delay_slider
+        self.custom_retry_attempts_slider = custom_retry_attempts_slider
 
         return [
                 self.config_save_var,
@@ -1408,7 +1446,10 @@ class Download_tab:
                 self.append_tags_textbox,
                 self.create_entries_from_checkboxgroup_button_required,
                 self.create_entries_from_checkboxgroup_button_blacklist,
-                self.remove_json_batch_buttton
+                self.remove_json_batch_buttton,
+                self.override_download_delay_checkbox,
+                self.custom_download_delay_slider,
+                self.custom_retry_attempts_slider
                 ]
 
     def get_event_listeners(self):
@@ -1569,7 +1610,8 @@ class Download_tab:
                      self.save_filename_type, self.gallery_tab_manager.remove_tags_list, self.gallery_tab_manager.replace_tags_list,
                      self.tag_count_list_folder, self.all_json_files_checkboxgroup, self.quick_json_select,
                      self.proxy_url_textbox, self.settings_path,  self.custom_csv_path_textbox,
-                     self.use_csv_custom_checkbox]
+                     self.use_csv_custom_checkbox, self.override_download_delay_checkbox, self.custom_download_delay_slider, 
+                     self.custom_retry_attempts_slider]
         ).then(
             fn=self.check_to_reload_auto_complete_config, 
             inputs=[], 
@@ -1645,7 +1687,10 @@ class Download_tab:
                 self.settings_path,
                 self.proxy_url_textbox,
                 self.custom_csv_path_textbox,
-                self.use_csv_custom_checkbox
+                self.use_csv_custom_checkbox,
+                self.override_download_delay_checkbox,
+                self.custom_download_delay_slider,
+                self.custom_retry_attempts_slider
             ],
             outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
         ).then(
@@ -1696,7 +1741,10 @@ class Download_tab:
                 self.settings_path,
                 self.proxy_url_textbox,
                 self.custom_csv_path_textbox,
-                self.use_csv_custom_checkbox
+                self.use_csv_custom_checkbox,
+                self.override_download_delay_checkbox,
+                self.custom_download_delay_slider,
+                self.custom_retry_attempts_slider
             ],
             outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
         ).then(
@@ -1770,7 +1818,8 @@ class Download_tab:
                      self.save_searched_list_type,self.save_searched_list_path,self.downloaded_posts_folder,self.png_folder,self.jpg_folder,
                      self.webm_folder,self.gif_folder,self.swf_folder,self.save_filename_type,self.gallery_tab_manager.remove_tags_list,self.gallery_tab_manager.replace_tags_list,
                      self.tag_count_list_folder,self.all_json_files_checkboxgroup,self.quick_json_select,self.proxy_url_textbox,
-                     self.settings_path, self.custom_csv_path_textbox, self.use_csv_custom_checkbox]
+                     self.settings_path, self.custom_csv_path_textbox, self.use_csv_custom_checkbox, 
+                     self.override_download_delay_checkbox, self.custom_download_delay_slider, self.custom_retry_attempts_slider]
         ).then(
             fn=self.check_to_reload_auto_complete_config,
             inputs=[],
