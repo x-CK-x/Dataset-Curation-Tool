@@ -639,7 +639,6 @@ class E6_Downloader:
         sublists = [urls[i:i + 3] for i in range(0, len(urls), 3)]
 
         failed_downloads = {}
-        MAX_ATTEMPTS = 3
         # Shared counter and lock
         ctr = multiprocessing.Value('i', 0)
         lock = multiprocessing.Lock()
@@ -709,10 +708,10 @@ class E6_Downloader:
             with ThreadPoolExecutor(max_workers=numcpu) as executor:
                 for url, data in failed_downloads.items():
                     time.sleep(self.RETRY_TIMER)  # Wait a bit before retrying
-                    if data['attempts'] < MAX_ATTEMPTS:
+                    if data['attempts'] < self.MAX_ATTEMPTS:
                         executor.submit(download_url, url, data['filename'])
                     else:
-                        print(f"Failed to download {url} after {MAX_ATTEMPTS} attempts")
+                        print(f"Failed to download {url} after {self.MAX_ATTEMPTS} attempts")
                         failed_md5.add(url)
         print('')
         os.remove(file)
@@ -1261,9 +1260,12 @@ class E6_Downloader:
         if self.backend_conn:
             self.backend_conn.close()
 
-    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, backend_conn):
+    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, 
+                 tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, 
+                 backend_conn):
         self.RETRY_TIMER = 10
         self.LIVE_DOWNLOAD_WAIT_TIMER = 1 # this may have to change depending on the number of images being downloaded and the number threads dispatched to download them
+        self.MAX_ATTEMPTS = 3
 
         self.basefolder = basefolder
         self.settings = settings
@@ -1301,6 +1303,13 @@ class E6_Downloader:
 
         with open(self.settings, 'r') as json_file:
             prms = json.load(json_file)
+        
+        if prms.get("override_download_delay", False):
+            # If the user wants to override
+            new_delay = prms.get("custom_download_delay", self.LIVE_DOWNLOAD_WAIT_TIMER)
+            self.LIVE_DOWNLOAD_WAIT_TIMER = new_delay
+        new_retry = prms.get("custom_retry_attempts", self.MAX_ATTEMPTS)
+        self.MAX_ATTEMPTS = new_retry
 
         if self.postscsv != '':
             if not self.postscsv.endswith('.csv'):
