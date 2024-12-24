@@ -56,5 +56,8 @@
 "min_day": 1,
 "proxy_url": "61437",
 "use_csv_custom": false,
-"csv_custom_path": ""
+"csv_custom_path": "",
+"override_download_delay": false,
+"custom_download_delay": 1,
+"custom_retry_attempts": 3
 }
