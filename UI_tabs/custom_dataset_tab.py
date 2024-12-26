@@ -10,6 +10,7 @@ from utils import md_constants as md_, helper_functions as help
 from utils.features.video_splitter import Video2Frames as vid2frames
 from utils.features.captioning import autotag
 from utils.features.video_splitter.Video2Audio import Video2Audio
+from utils.features.captioning.model_configs import model_configs as mc
 
 
 class Custom_dataset_tab:
@@ -59,31 +60,34 @@ class Custom_dataset_tab:
         help.write_tags_to_csv(self.gallery_tab_manager.tags_csv_dict, os.path.join(tag_folder, "tags.csv"))
 
     def refresh_model_list(self):
-        if not "Z3D-E621-Convnext" in self.auto_tag_models \
-                and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
-                and os.path.exists(os.path.join(os.getcwd(), 'Z3D-E621-Convnext', 'model.onnx')):
-            self.auto_tag_models.append('Z3D-E621-Convnext')
+        """
+        Rebuilds self.auto_tag_models by checking which models in model_info_map
+        actually exist on disk (folder + final file).
+        """
 
-        if not "eva02-clip-vit-large-7704" in self.auto_tag_models \
-                and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) \
-                and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "model.onnx")):
-            self.auto_tag_models.append("eva02-clip-vit-large-7704")
+        # Start with an empty list
+        self.auto_tag_models = []
 
-        if not "eva02-vit-large-448-8046" in self.auto_tag_models \
-                and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) \
-                and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "model.pth")):
-            self.auto_tag_models.append("eva02-vit-large-448-8046")
+        # 1) Loop over all known models in the config
+        for model_key, model_data in mc.model_info_map.items():
+            folder_name = model_data["info"].get("folder_name", model_key)
+            extension = model_data["info"].get("model_extension", "pth")  # default to 'pth'
+            folder_path = os.path.join(os.getcwd(), folder_name)
+            final_file = os.path.join(folder_path, f"model.{extension}")
 
-        if not "experimental_efficientnetv2_m_8035" in self.auto_tag_models \
-                and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) \
-                and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "model.pth")):
-            self.auto_tag_models.append("experimental_efficientnetv2_m_8035")
+            # 2) Check if the final file exists (and folder)
+            if os.path.exists(folder_path) and os.path.exists(final_file):
+                # Then this model is installed
+                self.auto_tag_models.append(model_key)
 
-        if not "PNG Info" in self.auto_tag_models:
+        # 3) Optionally add "PNG Info" or other special entries
+        if "PNG Info" not in self.auto_tag_models:
             self.auto_tag_models.append("PNG Info")
 
+        # 4) Return updated dropdown
         model_choice_dropdown = gr.update(choices=self.auto_tag_models)
         return model_choice_dropdown
+
 
     def load_images(self, images_path, image_mode_choice_state):
         if self.autotagmodel is None:
@@ -182,46 +186,53 @@ class Custom_dataset_tab:
             value=image_preview_pil), gr.update(value=image_generated_tags_prompt_builder_textbox)
 
     def load_model(self, model_name, use_cpu, event_data: gr.SelectData):
+        """
+        Loads the selected auto-tag model using config-based info 
+        (folder name, extension, etc.) from model_info_map.
+        """
+
+        # Lazy-init autotagmodel if needed
         if self.autotagmodel is None:
             folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
             folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
             folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["png_folder"])
-            tag_count_dir = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
-                                         self.download_tab_manager.settings_json["tag_count_list_folder"])
+            tag_count_dir = os.path.join(
+                os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                self.download_tab_manager.settings_json["tag_count_list_folder"]
+            )
             self.autotagmodel = autotag.AutoTag(dest_folder=folder_path, tag_folder=tag_count_dir, image_board=self.image_board)
             help.check_requirements()
 
-        model_path = ""
-        model_name = ""
-        if "Z3D-E621-Convnext" in event_data.value:
-            model_path = os.path.join(os.getcwd(), "Z3D-E621-Convnext")
-            model_name = "model.onnx"
-            self.autotagmodel.set_run_option("model")
-            self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
-
-        elif "eva02-clip-vit-large-7704" in (event_data.value).lower():
-            model_path = os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")
-            model_name = "model.onnx"
-            self.autotagmodel.set_run_option("model")
-            self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
-
-        elif "eva02-vit-large-448-8046" in (event_data.value).lower():
-            model_path = os.path.join(os.getcwd(), "eva02-vit-large-448-8046")
-            model_name = "model.pth"
-            self.autotagmodel.set_run_option("model")
-            self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
-
-        elif "experimental_efficientnetv2_m_8035" in (event_data.value).lower():
-            model_path = os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")
-            model_name = "model.pth"
-            self.autotagmodel.set_run_option("model")
-            self.autotagmodel.load_model(model_dir=model_path, model_name=model_name, use_cpu=use_cpu)
-
-        elif "info" in (event_data.value).lower():
-            self.autotagmodel.set_run_option("info")
-
-        help.verbose_print(f"selected option is:\t{event_data.value}")
+        selected_model = event_data.value  # e.g. "MODEL NAME"
+        help.verbose_print(f"selected option is:\t{selected_model}")
         help.verbose_print(f"selected loaded using cpu={use_cpu}")
+
+        # If user picks "PNG Info", do a special action
+        if "PNG Info" in selected_model:
+            self.autotagmodel.set_run_option("info")
+            return
+
+        # Otherwise, load from model_config
+        if selected_model in mc.model_info_map:
+            info_dict = mc.model_info_map[selected_model]["info"]
+            folder_name = info_dict.get("folder_name", selected_model)
+            model_ext = info_dict.get("model_extension", "pth")
+
+            model_path = os.path.join(os.getcwd(), folder_name)
+            final_file_name = f"model.{model_ext}"  # e.g. "model.onnx" or "model.pth"
+
+            # Actually load the model
+            self.autotagmodel.set_run_option("model")
+            self.autotagmodel.load_model(
+                model_dir=model_path,
+                model_name=final_file_name,
+                use_cpu=use_cpu
+            )
+        else:
+            # The user might have selected something not in the config
+            help.verbose_print(f"No config entry found for model: {selected_model}")
+            # optionally show an error or do nothing
+
 
     # def re_load_model(model_name, use_cpu):
     #     global self.autotagmodel
@@ -879,119 +890,253 @@ class Custom_dataset_tab:
     def render_tab(self):
         with gr.Tab("Add Custom Dataset"):
             gr.Markdown(md_.custom)
+
+            # 1) Refresh the local auto_tag_models list from model_info_map (no more hardcoded checks).
+            #    This call ensures self.auto_tag_models is updated with everything found on disk.
+            self.refresh_model_list()
+
+            # For the UI, define user-friendly strings
             image_modes = ['Single', 'Batch']
-            self.auto_tag_models.append("PNG Info")
-
-            if not "Z3D-E621-Convnext" in self.auto_tag_models and os.path.exists(
-                    os.path.join(os.getcwd(), 'Z3D-E621-Convnext')) \
-                    and os.path.exists(
-                os.path.join(os.path.join(os.getcwd(), 'Z3D-E621-Convnext'), 'model.onnx')):
-                self.auto_tag_models.append('Z3D-E621-Convnext')
-
-            if not "eva02-clip-vit-large-7704" in self.auto_tag_models \
-                    and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) \
-                    and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "model.onnx")):
-                self.auto_tag_models.append("eva02-clip-vit-large-7704")
-
-            if not "eva02-vit-large-448-8046" in self.auto_tag_models \
-                    and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) \
-                    and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "model.pth")):
-                self.auto_tag_models.append("eva02-vit-large-448-8046")
-
-            if not "experimental_efficientnetv2_m_8035" in self.auto_tag_models \
-                    and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) \
-                    and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "model.pth")):
-                self.auto_tag_models.append("experimental_efficientnetv2_m_8035")
-
             write_tag_opts = ['Overwrite', 'Merge', 'Pre-pend', 'Append']
             merge_tag_opts = ['Union', 'Intersection', 'New-Original', 'Original-New']
             use_tag_opts = ['Use All', 'Use All above Threshold', 'Manually Select']
-            tag_selection_list = ["(Category) Select Any", "(Category) Clear Any", "(Category) Invert Any",
-                                  "Select All", "Clear All", "Invert All"]
-            tab_selection = ["Image Default Editor", "Image Crop Editor", "Image Sketch Editor",
-                             "Image Color Sketch Editor"]
+            tag_selection_list = [
+                "(Category) Select Any",
+                "(Category) Clear Any",
+                "(Category) Invert Any",
+                "Select All",
+                "Clear All",
+                "Invert All"
+            ]
+            tab_selection = [
+                "Image Default Editor",
+                "Image Crop Editor",
+                "Image Sketch Editor",
+                "Image Color Sketch Editor"
+            ]
+
             with gr.Row():
                 with gr.Column():
                     with gr.Accordion(label="Image Settings", visible=True, open=True):
                         with gr.Row():
                             with gr.Tab("Single"):
-                                file_upload_button_single = gr.File(label=f"{image_modes[0]} Image Mode",
-                                                                    file_count="single",
-                                                                    interactive=True, file_types=["image"],
-                                                                    visible=True, type="filepath")
+                                file_upload_button_single = gr.File(
+                                    label=f"{image_modes[0]} Image Mode",
+                                    file_count="single",
+                                    interactive=True,
+                                    file_types=["image"],
+                                    visible=True,
+                                    type="filepath"
+                                )
                             with gr.Tab("Batch"):
-                                file_upload_button_batch = gr.File(label=f"{image_modes[1]} Image Mode",
-                                                                   file_count="directory",
-                                                                   interactive=True, visible=True, type="filepath")
+                                file_upload_button_batch = gr.File(
+                                    label=f"{image_modes[1]} Image Mode",
+                                    file_count="directory",
+                                    interactive=True,
+                                    visible=True,
+                                    type="filepath"
+                                )
                             with gr.Tab("Non-Interact Batch"):
-                                gallery_images_batch = gr.File(label=f"(Non-Interact) {image_modes[1]} Image Mode",
-                                                               file_count="multiple",
-                                                               interactive=False, visible=True, type="filepath")
+                                gallery_images_batch = gr.File(
+                                    label=f"(Non-Interact) {image_modes[1]} Image Mode",
+                                    file_count="multiple",
+                                    interactive=False,
+                                    visible=True,
+                                    type="filepath"
+                                )
                             with gr.Tab("Image Preview"):
                                 with gr.Column():
-                                    image_preview_pil = gr.Image(label=f"Image Preview", interactive=False,
-                                                                 visible=True, type="pil", height=840)
-                        with gr.Row():
-                            send_img_from_autotag_dropdown = gr.Dropdown(label="Image to Tab Selector",
-                                                                     choices=tab_selection)
-                            self.ext_choices = ["png", "jpg", "gif", "webm", "webp", "mp3", "mp4", "jpeg", "swf", "mov", "tiff", "psd", "blend", "pdf", "txt", "zip", "rar"]
-                            ext_selection = gr.Dropdown(info="Extension Type",
-                                                        value=self.ext_choices[0],
-                                                        choices=self.ext_choices,
-                                                        interactive=True,
-                                                        show_label=False)
-                        with gr.Row():
-                            send_img_from_autotag_button = gr.Button(value="Send Image to (Other) Tab", variant='primary')
-                            remove_invalid_chars_button = gr.Button(value="Remove Bad Filename Chars",
-                                                                variant='secondary') # info="Uses the path provided to resolve all files"
-                            fix_files = gr.Button(value="Resolve File Extesions",
-                                                  variant="secondary")
+                                    image_preview_pil = gr.Image(
+                                        label="Image Preview",
+                                        interactive=False,
+                                        visible=True,
+                                        type="pil",
+                                        height=840
+                                    )
 
+                        # Extra row for sending images, file extension fixes, etc.
+                        with gr.Row():
+                            send_img_from_autotag_dropdown = gr.Dropdown(
+                                label="Image to Tab Selector",
+                                choices=tab_selection
+                            )
+                            self.ext_choices = [
+                                "png", "jpg", "gif", "webm", "webp",
+                                "mp3", "mp4", "jpeg", "swf", "mov",
+                                "tiff", "psd", "blend", "pdf", "txt",
+                                "zip", "rar"
+                            ]
+                            ext_selection = gr.Dropdown(
+                                info="Extension Type",
+                                value=self.ext_choices[0],
+                                choices=self.ext_choices,
+                                interactive=True,
+                                show_label=False
+                            )
+
+                        with gr.Row():
+                            send_img_from_autotag_button = gr.Button(
+                                value="Send Image to (Other) Tab",
+                                variant='primary'
+                            )
+                            remove_invalid_chars_button = gr.Button(
+                                value="Remove Bad Filename Chars",
+                                variant='secondary'
+                            )
+                            fix_files = gr.Button(
+                                value="Resolve File Extesions",
+                                variant="secondary"
+                            )
+
+                    # Model Settings
                     with gr.Accordion(label="Model Settings", visible=True, open=True):
                         with gr.Row():
                             with gr.Column(elem_id="trim_row_length"):
                                 gpu_ckbx = gr.Checkbox(label="GPU", info="Use GPU", value=False)
                             with gr.Column(elem_id="trim_row_length"):
-                                gr.Markdown("""Refresh""", elem_id="trim_markdown_length")
+                                gr.Markdown("Refresh", elem_id="trim_markdown_length")
                                 refresh_symbol = '\U0001f504'  # 🔄
-                                refresh_models_btn = gr.Button(value=refresh_symbol, variant="variant",
-                                                               elem_id="refresh_models_btn")
-                            model_choice_dropdown = gr.Dropdown(choices=self.auto_tag_models, label="Model Selection")
+                                refresh_models_btn = gr.Button(
+                                    value=refresh_symbol,
+                                    variant="variant",
+                                    elem_id="refresh_models_btn"
+                                )
+
+                            # This will now display the updated list from self.auto_tag_models (populated by refresh_model_list())
+                            model_choice_dropdown = gr.Dropdown(
+                                choices=self.auto_tag_models,
+                                label="Model Selection"
+                            )
+
                             # Dropdown menu for selecting operations
-                            self.operation_choices = ["Crop", "Zoom", "Resize", "Rotate", "Scale", "Translation",
-                                                      "Brightness", "Contrast", "Saturation", "Noise", "Shear", "Horizontal Flip", "Vertical Flip"]
-                            operations_dropdown = gr.Dropdown(choices=self.operation_choices,
-                                                              multiselect=True, label="Preprocess Options",
-                                                              interactive=True, value=[])
+                            self.operation_choices = [
+                                "Crop", "Zoom", "Resize", "Rotate", "Scale",
+                                "Translation", "Brightness", "Contrast", "Saturation",
+                                "Noise", "Shear", "Horizontal Flip", "Vertical Flip"
+                            ]
+                            operations_dropdown = gr.Dropdown(
+                                choices=self.operation_choices,
+                                multiselect=True,
+                                label="Preprocess Options",
+                                interactive=True,
+                                value=[]
+                            )
+
+                        # Crop / Preprocessing Sliders
                         with gr.Row():
-                            landscape_crop_dropdown = gr.Dropdown(choices=['left', 'mid', 'right', None],
-                                                                  label="Landscape Crop", info="Mandatory",
-                                                                  visible=False)
-                            portrait_crop_dropdown = gr.Dropdown(choices=['top', 'mid', 'bottom', None],
-                                                                 label="Portrait Crop", info="Mandatory", visible=False)
+                            landscape_crop_dropdown = gr.Dropdown(
+                                choices=['left', 'mid', 'right', None],
+                                label="Landscape Crop",
+                                info="Mandatory",
+                                visible=False
+                            )
+                            portrait_crop_dropdown = gr.Dropdown(
+                                choices=['top', 'mid', 'bottom', None],
+                                label="Portrait Crop",
+                                info="Mandatory",
+                                visible=False
+                            )
+
                         with gr.Column():
-                            # Slider for zoom value (assuming you want to zoom between 0.5x to 3x)
-                            zoom_slider = gr.Slider(minimum=0.5, maximum=3.0, value=1.0, step=0.1,
-                                                           label=f"{self.operation_choices[1]} Value", visible=False)
-                            rotate_slider = gr.Slider(minimum=-180, maximum=180, step=1, value=0, visible=False, label=f"{self.operation_choices[3]} Value")  # Rotate angle
-                            scale_slider = gr.Slider(minimum=0.5, maximum=2, step=0.05, value=1, visible=False, label=f"{self.operation_choices[4]} Value")  # Scale factor
-                            dx_slider = gr.Slider(minimum=-100, maximum=100, step=1, value=0, visible=False, label=f"{self.operation_choices[5]}-X Value")  # dx for translation
-                            dy_slider = gr.Slider(minimum=-100, maximum=100, step=1, value=0, visible=False, label=f"{self.operation_choices[5]}-Y Value")  # dy for translation
-                            brightness_slider = gr.Slider(minimum=0.5, maximum=2, step=0.05, value=1, visible=False, label=f"{self.operation_choices[6]} Value")  # Brightness factor
-                            contrast_slider = gr.Slider(minimum=0.5, maximum=2, step=0.05, value=1, visible=False, label=f"{self.operation_choices[7]} Value")  # Contrast factor
-                            saturation_slider = gr.Slider(minimum=0.5, maximum=2, step=0.05, value=1, visible=False, label=f"{self.operation_choices[8]} Value")  # Saturation factor
-                            noise_slider = gr.Slider(minimum=0, maximum=100, step=1, value=0, visible=False, label=f"{self.operation_choices[9]} Value")  # Noise level
-                            shear_slider = gr.Slider(minimum=-0.5, maximum=0.5, step=0.05, value=0, visible=False, label=f"{self.operation_choices[10]} Value")  # Shear factor
+                            zoom_slider = gr.Slider(
+                                minimum=0.5,
+                                maximum=3.0,
+                                value=1.0,
+                                step=0.1,
+                                label=f"{self.operation_choices[1]} Value",
+                                visible=False
+                            )
+                            rotate_slider = gr.Slider(
+                                minimum=-180,
+                                maximum=180,
+                                step=1,
+                                value=0,
+                                visible=False,
+                                label=f"{self.operation_choices[3]} Value"
+                            )
+                            scale_slider = gr.Slider(
+                                minimum=0.5,
+                                maximum=2,
+                                step=0.05,
+                                value=1,
+                                visible=False,
+                                label=f"{self.operation_choices[4]} Value"
+                            )
+                            dx_slider = gr.Slider(
+                                minimum=-100,
+                                maximum=100,
+                                step=1,
+                                value=0,
+                                visible=False,
+                                label=f"{self.operation_choices[5]}-X Value"
+                            )
+                            dy_slider = gr.Slider(
+                                minimum=-100,
+                                maximum=100,
+                                step=1,
+                                value=0,
+                                visible=False,
+                                label=f"{self.operation_choices[5]}-Y Value"
+                            )
+                            brightness_slider = gr.Slider(
+                                minimum=0.5,
+                                maximum=2,
+                                step=0.05,
+                                value=1,
+                                visible=False,
+                                label=f"{self.operation_choices[6]} Value"
+                            )
+                            contrast_slider = gr.Slider(
+                                minimum=0.5,
+                                maximum=2,
+                                step=0.05,
+                                value=1,
+                                visible=False,
+                                label=f"{self.operation_choices[7]} Value"
+                            )
+                            saturation_slider = gr.Slider(
+                                minimum=0.5,
+                                maximum=2,
+                                step=0.05,
+                                value=1,
+                                visible=False,
+                                label=f"{self.operation_choices[8]} Value"
+                            )
+                            noise_slider = gr.Slider(
+                                minimum=0,
+                                maximum=100,
+                                step=1,
+                                value=0,
+                                visible=False,
+                                label=f"{self.operation_choices[9]} Value"
+                            )
+                            shear_slider = gr.Slider(
+                                minimum=-0.5,
+                                maximum=0.5,
+                                step=0.05,
+                                value=0,
+                                visible=False,
+                                label=f"{self.operation_choices[10]} Value"
+                            )
+
                         with gr.Row():
-                            confidence_threshold_slider = gr.Slider(minimum=0, maximum=100, step=1,
-                                                                    label='Confidence Threshold', value=75,
-                                                                    visible=True, interactive=True)
+                            confidence_threshold_slider = gr.Slider(
+                                minimum=0,
+                                maximum=100,
+                                step=1,
+                                label='Confidence Threshold',
+                                value=75,
+                                visible=True,
+                                interactive=True
+                            )
                         with gr.Row():
                             interrogate_button = gr.Button(value="Interrogate", variant='primary')
                         with gr.Row():
-                            image_with_tag_path_textbox = gr.Textbox(label="Path to Image/Video Folder",
-                                                                     info="Folder should contain both (tag/s & image/s) if no video",
-                                                                     interactive=True)
+                            image_with_tag_path_textbox = gr.Textbox(
+                                label="Path to Image/Video Folder",
+                                info="Folder should contain both (tag/s & image/s) if no video",
+                                interactive=True
+                            )
                         with gr.Row():
                             with gr.Column(min_width=50, scale=1):
                                 copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
@@ -1002,90 +1147,142 @@ class Custom_dataset_tab:
                                 save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
                             with gr.Column(min_width=50, scale=2):
                                 save_custom_tags_button = gr.Button(value="Save/Add Tags", variant='primary')
+
                         with gr.Row():
-                            write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
-                            merge_tag_opts_dropdown = gr.Dropdown(label="Merge Tag Options", choices=merge_tag_opts, multiselect=True, visible=False, interactive=True)
-                            use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
+                            write_tag_opts_dropdown = gr.Dropdown(
+                                label="Write Tag Options",
+                                choices=write_tag_opts
+                            )
+                            merge_tag_opts_dropdown = gr.Dropdown(
+                                label="Merge Tag Options",
+                                choices=merge_tag_opts,
+                                multiselect=True,
+                                visible=False,
+                                interactive=True
+                            )
+                            use_tag_opts_radio = gr.Dropdown(
+                                label="Use Tag Options",
+                                choices=use_tag_opts
+                            )
+
+                    # Tag/s Options
                     with gr.Accordion(label="Tag/s Options", visible=True, open=True):
                         with gr.Row():
                             text_to_replace_textbox = gr.Textbox(label="Text to Replace", interactive=True)
                             replacement_text_textbox = gr.Textbox(label="Replacement Text", interactive=True)
-                            replace_text_button = gr.Button(value="Replace Text", variant='primary') # info='Replaces all text in every tag in all .txt files in the path specified'
+                            replace_text_button = gr.Button(value="Replace Text", variant='primary')
+
                         with gr.Column():
-                            image_generated_tags_prompt_builder_textbox = gr.Textbox(label="Prompt String", value="",
-                                                                                     visible=True, interactive=False)
-                            image_generated_tags = gr.CheckboxGroup(label="Generated Tag/s", choices=[], visible=True,
-                                                                    interactive=True)
+                            image_generated_tags_prompt_builder_textbox = gr.Textbox(
+                                label="Prompt String",
+                                value="",
+                                visible=True,
+                                interactive=False
+                            )
+                            image_generated_tags = gr.CheckboxGroup(
+                                label="Generated Tag/s",
+                                choices=[],
+                                visible=True,
+                                interactive=True
+                            )
                         with gr.Row():
                             with gr.Column(min_width=50, scale=3):
-                                tag_effects_dropdown = gr.Dropdown(label="Tag Selector Effect/s",
-                                                                   choices=tag_selection_list)
+                                tag_effects_dropdown = gr.Dropdown(
+                                    label="Tag Selector Effect/s",
+                                    choices=tag_selection_list
+                                )
                             with gr.Column(min_width=50, scale=1):
-                                category_filter_batch_checkbox = gr.Checkbox(label="Enable Filter on Batch Mode", info="auto-selects/applies category selection to batch")
+                                category_filter_batch_checkbox = gr.Checkbox(
+                                    label="Enable Filter on Batch Mode",
+                                    info="auto-selects/applies category selection to batch"
+                                )
                         with gr.Row():
-                            category_filter_dropdown = gr.Dropdown(label="Filter by Category (Multi-Select Enabled)",
-                                                                   choices=list(self.image_board.categories_map.values()),
-                                                                   multiselect=True)
+                            category_filter_dropdown = gr.Dropdown(
+                                label="Filter by Category (Multi-Select Enabled)",
+                                choices=list(self.image_board.categories_map.values()),
+                                multiselect=True
+                            )
+
+                # Right Column
                 with gr.Column():
                     with gr.Tab("Tag/s Preview"):
                         with gr.Accordion(label="Tag/s Probabilities", visible=True, open=True):
                             with gr.Column():
-                                image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
-                        #         gr.Accordion(label="SAM-HQ Bounding Box Crop", visible=True, open=False)
-                        #         gr.Accordion(label="SAM-HQ Segmentation Crop", visible=True, open=False)
-                        #         gr.Accordion(label="Upscale", visible=True, open=False)
-                        #         gr.Accordion(label="Denoise/Unglaze", visible=True, open=False)
-                        #         gr.Accordion(label="Duplication Detection", visible=True, open=False)
+                                image_confidence_values = gr.Label(
+                                    label="Tag/s Confidence/s",
+                                    visible=True,
+                                    value={}
+                                )
                     with gr.Tab("Video to Frames Splitter"):
                         with gr.Accordion("Video to Frames Splitter", visible=True, open=False):
                             gr.Markdown("""
-                                It is also partially possible to extract \"SOME\" video fragments from swf files with this tool, 
-                                but it will require (FFMPEG) AND it likely \"NOT\" work in the majority of cases unless the contained video 
+                                It is also partially possible to extract "SOME" video fragments from SWF files with this tool, 
+                                but it will require (FFMPEG) AND it likely "NOT" work in the majority of cases unless the contained video 
                                 in the swf file is encoded within a specific set of formats. (for usage with SWF files, proceed at your own risk!)
 
-                                Most other video formats (not swf associated) should work. (It is \"NOT\" recommended to attempt converting with corrupted video files either!)
+                                Most other video formats (not swf associated) should work. (It is "NOT" recommended to attempt converting with corrupted video files either!)
                             """)
                             with gr.Column():
                                 video_input = gr.File()
-                                video_input_button = gr.UploadButton(label="Click to Upload a Video",
-                                                                     file_types=["file"], file_count="single")
+                                video_input_button = gr.UploadButton(
+                                    label="Click to Upload a Video",
+                                    file_types=["file"],
+                                    file_count="single"
+                                )
                                 video_clear_button = gr.ClearButton(value="Clear")
                                 with gr.Row():
-                                    video_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
-                                                                  value=os.getcwd())
-                                    convert_video_button = gr.Button(value="Convert Video", variant='primary')
+                                    video_output_dir = gr.Textbox(
+                                        label="(Optional) Output Folder Path",
+                                        value=os.getcwd()
+                                    )
+                                    convert_video_button = gr.Button(
+                                        value="Convert Video",
+                                        variant='primary'
+                                    )
                         with gr.Accordion(label="Gallery Preview", visible=True, open=False):
                             with gr.Column():
-                                video_frames_gallery = gr.Gallery(label=f"Video Frame/s Gallery", interactive=False,
-                                                                  visible=True, columns=3, object_fit="contain",
-                                                                  height=780)
+                                video_frames_gallery = gr.Gallery(
+                                    label="Video Frame/s Gallery",
+                                    interactive=False,
+                                    visible=True,
+                                    columns=3,
+                                    object_fit="contain",
+                                    height=780
+                                )
+
                     with gr.Tab("Video to Audio Splitter"):
                         gr.Markdown("""
                             FFMPEG is required to run this feature!
                             (linux) can be installed as part of the run button via a pop-up window that will appear
-                            (macos & windows) users are advised to go to the Official Website to download \'ffmpeg\': https://ffmpeg.org/download.html
+                            (macos & windows) users are advised to go to the Official Website to download 'ffmpeg': https://ffmpeg.org/download.html
                         """)
                         with gr.Column():
                             video2audio_input = gr.File()
-                            video2audio_input_button = gr.UploadButton(label="Click to Upload a Video",
-                                                                 file_types=["file"], file_count="single")
+                            video2audio_input_button = gr.UploadButton(
+                                label="Click to Upload a Video",
+                                file_types=["file"],
+                                file_count="single"
+                            )
                             video2audio_clear_button = gr.ClearButton(value="Clear")
                             with gr.Row():
-                                video2audio_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
-                                                              value=os.getcwd())
-                                convert_video2audio_button = gr.Button(value="Convert Video", variant='primary')
+                                video2audio_output_dir = gr.Textbox(
+                                    label="(Optional) Output Folder Path",
+                                    value=os.getcwd()
+                                )
+                                convert_video2audio_button = gr.Button(
+                                    value="Convert Video",
+                                    variant='primary'
+                                )
                         with gr.Accordion(label="Audio Preview", visible=True, open=False):
                             with gr.Column():
-                                audio_waveform = gr.Audio(label="Audio Data", type="filepath", sources=["upload"], value=None, interactive=False)
-                    # with gr.Tab("UMAP Viewer"):
-                    #     with gr.Column():
-                    #         gr.Textbox(label="Testing", value="")
-                    #         gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=730)
-                    # with gr.Tab("Grad Cam Viewer"):
-                    #     with gr.Column():
-                    #         gr.Textbox(label="Testing", value="")
-                    #         gr.Image(label=f"Image Preview", interactive=False, visible=True, type="pil", height=730)
-
+                                audio_waveform = gr.Audio(
+                                    label="Audio Data",
+                                    type="filepath",
+                                    sources=["upload"],
+                                    value=None,
+                                    interactive=False
+                                )
+        # 2) Return all these UI elements as a list (just like your original code does)
         self.file_upload_button_single = file_upload_button_single
         self.file_upload_button_batch = file_upload_button_batch
         self.gallery_images_batch = gallery_images_batch
@@ -1144,64 +1341,64 @@ class Custom_dataset_tab:
         self.replace_text_button = replace_text_button
 
         return [
-                self.file_upload_button_single,
-                self.file_upload_button_batch,
-                self.gallery_images_batch,
-                self.image_preview_pil,
-                self.send_img_from_autotag_dropdown,
-                self.send_img_from_autotag_button,
-                self.gpu_ckbx,
-                self.refresh_models_btn,
-                self.model_choice_dropdown,
-                self.operations_dropdown,
-                self.zoom_slider,
-                self.rotate_slider,
-                self.scale_slider,
-                self.dx_slider,
-                self.dy_slider,
-                self.brightness_slider,
-                self.contrast_slider,
-                self.saturation_slider,
-                self.noise_slider,
-                self.shear_slider,
-                self.landscape_crop_dropdown,
-                self.portrait_crop_dropdown,
-                self.confidence_threshold_slider,
-                self.interrogate_button,
-                self.image_with_tag_path_textbox,
-                self.copy_mode_ckbx,
-                self.save_custom_images_button,
-                self.save_custom_tags_button,
-                self.write_tag_opts_dropdown,
-                self.use_tag_opts_radio,
-                self.image_generated_tags_prompt_builder_textbox,
-                self.image_generated_tags,
-                self.tag_effects_dropdown,
-                self.category_filter_batch_checkbox,
-                self.category_filter_dropdown,
-                self.image_confidence_values,
-                self.video_input,
-                self.video_input_button,
-                self.video_clear_button,
-                self.video_output_dir,
-                self.convert_video_button,
-                self.video_frames_gallery,
-                self.auto_tag_models,
-                self.remove_invalid_chars_button,
-                self.fix_files,
-                self.ext_selection,
-                self.merge_tag_opts_dropdown,
-                self.video2audio_input,
-                self.video2audio_input_button,
-                self.video2audio_clear_button,
-                self.video2audio_output_dir,
-                self.convert_video2audio_button,
-                self.audio_waveform,
-                self.include_invalid_tags_ckbx,
-                self.text_to_replace_textbox,
-                self.replacement_text_textbox,
-                self.replace_text_button
-                ]
+            self.file_upload_button_single,
+            self.file_upload_button_batch,
+            self.gallery_images_batch,
+            self.image_preview_pil,
+            self.send_img_from_autotag_dropdown,
+            self.send_img_from_autotag_button,
+            self.gpu_ckbx,
+            self.refresh_models_btn,
+            self.model_choice_dropdown,
+            self.operations_dropdown,
+            self.zoom_slider,
+            self.rotate_slider,
+            self.scale_slider,
+            self.dx_slider,
+            self.dy_slider,
+            self.brightness_slider,
+            self.contrast_slider,
+            self.saturation_slider,
+            self.noise_slider,
+            self.shear_slider,
+            self.landscape_crop_dropdown,
+            self.portrait_crop_dropdown,
+            self.confidence_threshold_slider,
+            self.interrogate_button,
+            self.image_with_tag_path_textbox,
+            self.copy_mode_ckbx,
+            self.save_custom_images_button,
+            self.save_custom_tags_button,
+            self.write_tag_opts_dropdown,
+            self.use_tag_opts_radio,
+            self.image_generated_tags_prompt_builder_textbox,
+            self.image_generated_tags,
+            self.tag_effects_dropdown,
+            self.category_filter_batch_checkbox,
+            self.category_filter_dropdown,
+            self.image_confidence_values,
+            self.video_input,
+            self.video_input_button,
+            self.video_clear_button,
+            self.video_output_dir,
+            self.convert_video_button,
+            self.video_frames_gallery,
+            self.auto_tag_models,
+            self.remove_invalid_chars_button,
+            self.fix_files,
+            self.ext_selection,
+            self.merge_tag_opts_dropdown,
+            self.video2audio_input,
+            self.video2audio_input_button,
+            self.video2audio_clear_button,
+            self.video2audio_output_dir,
+            self.convert_video2audio_button,
+            self.audio_waveform,
+            self.include_invalid_tags_ckbx,
+            self.text_to_replace_textbox,
+            self.replacement_text_textbox,
+            self.replace_text_button
+        ]
 
     def get_event_listeners(self):
         # batch interrogate and batch interrogate non-interact need option for self.include_invalid_tags_ckbx
