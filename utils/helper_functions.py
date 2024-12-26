@@ -17,6 +17,7 @@ import gzip
 import pandas as pd
 
 from utils.features.captioning.model_configs import model_configs as mc
+from utils import helper_functions as help
 
 ops = {'+': operator.add, '-': operator.sub}
 
@@ -681,64 +682,75 @@ def get_model_names(name):
     elif name == "FluffyRock":
         return get_fluffyrock_models()
 
-def download_models(model_download_types, model_download_checkbox_group, tagging_model_download_types, nested_model_links_checkbox_group):
-    disable_flag = "--disable-ipv6"
-    model_flag = False
-    for model_name in model_download_checkbox_group:
-        if "rock" in model_name.lower():
-            model_flag = True
-            break
 
-    model_name_list = model_download_checkbox_group
-    if model_flag:
-        model_name_list = nested_model_links_checkbox_group
 
-    auto_tag_models = []
+
+def verify_downloaded_model(model_name: str) -> bool:
+    """
+    Checks if the final model file (model.<extension>) exists,
+    using the 'model_extension' from the config.
+    Returns True if found, else False.
+    """
+    info = mc.model_info_map[model_name]["info"]
+
+    # e.g. "onnx", "pth", or "safetensors"
+    model_extension = info.get("model_extension", "pth")  
+    folder_path = os.path.join(os.getcwd(), model_name)
+    final_path = os.path.join(folder_path, f"model.{model_extension}")
+
+    verbose_print(f"[verify_downloaded_model] Looking for: {final_path}")
+
+    return os.path.exists(final_path)
+
+def download_models(
+    model_download_types,
+    model_download_checkbox_group,
+    tagging_model_download_types,
+    nested_model_links_checkbox_group
+):
+    """
+    Downloads either SD models or Tagging models,
+    referencing model_configs.py for the latter.
+    Returns a list of 'auto_tag_models' that were successfully verified.
+    """
+
+    # 1) Decide if user selected nested models or not
+    model_flag = any("rock" in m.lower() for m in model_download_checkbox_group)
+    model_name_list = nested_model_links_checkbox_group if model_flag else model_download_checkbox_group
+
+    # 2) Possibly download the SD models
+    #    If you have logic to build the final URL for these:
     for model_name in model_name_list:
-        verbose_print(f"model name:\t{model_name}")
+        help.verbose_print(f"model name:\t{model_name}")
 
         if "/" in model_name:
             if "rock" in model_name.lower():
                 model_name = "/".join(model_name.split("/")[-2:])
             else:
-                model_name = "/".join(model_name.split("/")[-1])
+                model_name = model_name.split("/")[-1]
 
-        # get full url path
-        url_path = full_model_download_link(model_download_types, model_name)
+        # Build full URL path using your 'full_model_download_link'
+        url_path = help.full_model_download_link(model_download_types, model_name)
+        help.verbose_print(f"DOWNLOADING:\t{model_name}")
+        help.download_url(url_path, url_path.split('/')[-1])
+        help.verbose_print("Done")
 
-        verbose_print(f"DOWNLOADING:\t{model_name}")
-        download_url(url_path, url_path.split('/')[-1])
-        verbose_print(f"Done")
-
-    if tagging_model_download_types is not None and len(tagging_model_download_types) > 0:
+    # 3) Download any Tagging Models
+    auto_tag_models = []
+    if tagging_model_download_types:
         for each_model in tagging_model_download_types:
-            # download caption model
+            # Download with the official 'download_caption_model' from model_configs.py
             mc.download_caption_model(model_selection=each_model)
 
-            # add to new tagging feature
-            if os.path.exists(os.path.join(os.getcwd(), "Z3D-E621-Convnext")) \
-                    and os.path.exists(os.path.join(os.getcwd(), "Z3D-E621-Convnext", "Z3D-E621-Convnext.onnx")):
-                auto_tag_models.append("Z3D-E621-Convnext")
-            else:# linux didn't register the file extension
-                os.rename(src="iNMyyi2w", dst="iNMyyi2w.zip")
-                # finally unzip the file
-                unzip_all()
-                delete_all_archives()
-                auto_tag_models.append("Z3D-E621-Convnext")
-                verbose_print("Done")
+            # Verify the folder + final file exist:
+            if verify_downloaded_model(each_model):
+                auto_tag_models.append(each_model)
+                help.verbose_print(f"Tagging model verified: {each_model}")
+            else:
+                help.verbose_print(f"Could NOT locate final model file for '{each_model}' after download.")
 
-            if os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704")) \
-                    and os.path.exists(os.path.join(os.getcwd(), "eva02-clip-vit-large-7704", "model.onnx")):
-                auto_tag_models.append("eva02-clip-vit-large-7704")
-
-            if os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046")) \
-                    and os.path.exists(os.path.join(os.getcwd(), "eva02-vit-large-448-8046", "model.pth")):
-                auto_tag_models.append("eva02-vit-large-448-8046")
-
-            if os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035")) \
-                    and os.path.exists(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035", "model.pth")):
-                auto_tag_models.append("experimental_efficientnetv2_m_8035")
     return auto_tag_models
+
 
 
 
