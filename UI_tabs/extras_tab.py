@@ -108,10 +108,8 @@ class Extras_tab:
                 # SD model/s
                 model_download_options = ["Fluffusion", "FluffyRock"]
                 # Auto-Tag model/s
-                tagging_model_download_options = ["Z3D-E621-Convnext",
-                                                  "eva02-clip-vit-large-7704",
-                                                  "eva02-vit-large-448-8046",
-                                                  "experimental_efficientnetv2_m_8035"]
+                from utils.features.captioning.model_configs import model_configs as mc
+                tagging_model_download_options = mc.model_info_map.keys()
 
                 model_download_types = gr.Dropdown(choices=model_download_options, label='Diffusion Model Selection', value=None)
                 tagging_model_download_types = gr.Dropdown(choices=tagging_model_download_options, label='AutoTagging Model Selection', multiselect=True, value=None)
