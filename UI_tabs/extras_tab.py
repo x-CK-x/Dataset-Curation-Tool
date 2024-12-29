@@ -108,7 +108,7 @@ class Extras_tab:
                 # SD model/s
                 model_download_options = ["Fluffusion", "FluffyRock"]
                 # Auto-Tag model/s
-                from utils.features.captioning.model_configs import model_configs as mc
+                from utils.features.captioning.model_configs import tag_model_config as mc
                 tagging_model_download_options = mc.model_info_map.keys()
 
                 model_download_types = gr.Dropdown(choices=model_download_options, label='Diffusion Model Selection', value=None)
