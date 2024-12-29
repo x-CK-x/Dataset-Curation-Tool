@@ -358,7 +358,7 @@ model_info_map = {
                 },
             "urls":
                 [
-                    "https://huggingface.co/Thouph/experimental_efficientnetv2_m_8035/resolve/main/model.onnx",
+                    "https://huggingface.co/Thouph/experimental_efficientnetv2_m_8035/resolve/main/model_balanced.onnx",
                     "https://huggingface.co/Thouph/experimental_efficientnetv2_m_8035/resolve/main/tags_8034.json"
                 ],
             "pre-process":
@@ -367,9 +367,9 @@ model_info_map = {
                 ],
             "post-process": 
                 [
-                    lambda: rename_if_exists("experimental_efficientnetv2_m_8035", "model.onnx", "model.onnx"),
+                    lambda: rename_if_exists("experimental_efficientnetv2_m_8035", "model_balanced.onnx", "model.onnx"),
                     lambda: rename_if_exists("experimental_efficientnetv2_m_8035", "tags_8034.json", "tags.json"),
-                    lambda: shutil.move(os.path.join(os.getcwd(), "model_balanced.pth"), os.path.join(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035"), "model.onnx")),
+                    lambda: shutil.move(os.path.join(os.getcwd(), "model_balanced.onnx"), os.path.join(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035"), "model.onnx")),
                     lambda: shutil.move(os.path.join(os.getcwd(), "tags_8034.json"), os.path.join(os.path.join(os.getcwd(), "experimental_efficientnetv2_m_8035"), "tags.json"))
                     # lambda: convert_to_onnx_if_needed("experimental_efficientnetv2_m_8035")
                 ]
