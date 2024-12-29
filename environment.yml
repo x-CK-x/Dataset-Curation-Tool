@@ -29,6 +29,7 @@ dependencies:
     - gradio
     - beautifulsoup4
     - pandas
+    - onnx
     - onnxruntime
     - onnxruntime-gpu
     - piexif
