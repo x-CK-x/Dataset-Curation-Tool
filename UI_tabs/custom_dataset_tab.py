@@ -10,7 +10,7 @@ from utils import md_constants as md_, helper_functions as help
 from utils.features.video_splitter import Video2Frames as vid2frames
 from utils.features.captioning import autotag
 from utils.features.video_splitter.Video2Audio import Video2Audio
-from utils.features.captioning.model_configs import model_configs as mc
+from utils.features.captioning.model_configs import tag_model_config as mc
 
 
 class Custom_dataset_tab:
