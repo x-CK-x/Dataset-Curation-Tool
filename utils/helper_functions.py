@@ -16,7 +16,7 @@ from zipfile import ZipFile
 import gzip
 import pandas as pd
 
-from utils.features.captioning.model_configs import model_configs as mc
+from utils.features.captioning.model_configs import tag_model_config as mc
 from utils import helper_functions as help
 
 ops = {'+': operator.add, '-': operator.sub}
