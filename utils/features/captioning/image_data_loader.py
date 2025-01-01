@@ -9,16 +9,39 @@ import copy
 import os
 
 from utils import helper_functions as help
+from utils.features.captioning.model_configs import tag_model_config as mc
 
 class ImageLoadingPrepDataset(torch.utils.data.Dataset):
-    def __init__(self, image_paths):
+    def __init__(self, image_paths, model_dir=None):
         self.images = image_paths
         self.images = [path for path in self.images if not (".txt" in path)]
+        self.model_dir = model_dir
+
+        
+
+
+        # 1) Pull the model's config if model_dir is provided
+        info = {}
+        if self.model_dir is not None:
+            # The folder name or model key (e.g. "Z3D-Convnext")
+            self.model_key = os.path.basename(self.model_dir)
+            # Get the ".get('info', {})" so we don't crash if "model_key" missing
+            info = mc.model_info_map.get(self.model_key, {}).get("info", {})
+        else:
+            self.model_key = "unknown"
+
+        # 2) Always define the fields, using a fallback default if not in config
+        self.strip_alpha = info.get("strip_alpha", True)
+        self.expected_num_channels = info.get("expected_num_channels", 3)
+        self.expected_input_format = info.get("expected_input_format", "NCHW")
+        # (Add any other fields you want from config, e.g. mean/std, etc.)
+
+
 
         self.operation_choices = ["Crop", "Zoom", "Resize", "Rotate", "Scale", "Translation",
                                   "Brightness", "Contrast", "Saturation", "Noise", "Shear",
                                   "Horizontal Flip", "Vertical Flip"]
-        self.preprocess_options = ['resize']
+        self.preprocess_options = []
         self.zoom_value = 1.0
         self.rotate_slider = 0
         self.scale_slider = 1
@@ -33,25 +56,86 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         self.landscape_square_crop = None
         self.global_images_list = []
 
+    def smart_imread(self, path, flag=cv2.IMREAD_UNCHANGED):
+        # double-check path is a real string
+        if not isinstance(path, str):
+            print(f"smart_imread got a non-string path: {path}")
+            return None
+        # read via opencv
+        image = cv2.imread(path, flag)
+        if image is None:
+            return None
+        # if there's an alpha channel, handle that
+        if image.shape[-1] == 4:
+            return image[:, :, :4]
+        else:
+            return image
+
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, idx):
         img_path = str(self.images[idx])
-        try:
-            image = self.smart_imread(img_path)
-            image = self.preprocess_image(image)
-            tensor = torch.tensor(image)
-        except Exception as e:
-            print(f"Could not load image path: {img_path}, error: {e}")
+        if not os.path.exists(img_path):
+            print(f"[WARN] File does not exist at: {img_path}")
             return None
+
+        # 1) Use PIL to load the image
+        pil_image = Image.open(img_path)
+
+        # If the model wants RGBA, do:
+        # if self.expected_num_channels == 4:
+        #     pil_image = pil_image.convert("RGBA")
+        # else:
+        #     pil_image = pil_image.convert("RGB")
+
+        # 2) Apply official transform
+        arr_chw = mc.apply_official_preprocess(pil_image, self.model_key)
+        # shape => e.g. (3,224,224), or (3,384,384), or (4,384,384) if your onnx wants RGBA
+
+        # 3) Convert to Torch tensor (not strictly required if you pass NumPy to onnx)
+        tensor = torch.from_numpy(arr_chw)  # shape=(C,H,W), float32
+
         return (tensor, img_path)
+        # image = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        # if image is None:
+        #     print(f"[WARN] Could not read image at {img_path}")
+        #     return None
+        
+        # print(f"image shape before:\t{image.shape}")
+
+        # # If strip_alpha is True, remove alpha
+        # if self.strip_alpha and image.shape[-1] == 4:
+        #     image = image[..., :3]
+
+        # print(f"image shape after:\t{image.shape}")
+
+        # # If the channel count is still not 3, you can skip or attempt a fix
+        # if image.shape[-1] != self.expected_num_channels:
+        #     print(f"[WARN] Image has {image.shape[-1]} channels, model expects "
+        #         f"{self.expected_num_channels}. Attempting fix or skipping.")
+        #     # e.g., image = image[..., :3]
+
+        # # -- KEY STEP: Call your existing code to do resizing, cropping, etc. --
+        # image = self.preprocess_image(image)  # <--- IMPORTANT, so final_resize_check is invoked
+
+        # # Cast to float32. 
+        # # (If your model needs 0..1, do image /= 255.0)
+        # image = image.astype(np.float32)
+
+        # # Convert to a torch tensor
+        # tensor = torch.tensor(image)  # shape: (448, 448, 3) now
+        # return (tensor, img_path)
+
 
     def get_image_paths(self):
         return self.images
 
     def set_image_paths(self, images):
         self.images = images
+
+    def set_model_dir(self, model_dir):
+        self.model_dir = model_dir
 
     def save_image_data(self, src_name, src, is_augmented):
         temp = '\\' if help.is_windows() else '/'
@@ -134,17 +218,6 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
 
     def preprocess_image(self, image):
         return self.partial_image_crop_button(image)
-
-    def smart_imread(self, image, flag=cv2.IMREAD_UNCHANGED):
-        if image.endswith(".gif"):
-            image = Image.open(image)
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-            image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        else:
-            image = cv2.imread(image, flag)
-        image_without_alpha = image[:, :, :3]
-        return image_without_alpha
 
     def pad_image(self, image):
         print('pad image')
@@ -313,6 +386,18 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         result = img.transform((width, height), Image.AFFINE, (1, m, -m * width / 2, 0, 1, 0))
         return np.array(result)
 
+    def final_resize_check(self, image):
+        model_input_size = mc.model_info_map[os.path.basename(self.model_dir)]["info"]["input_dims"][0]
+
+        print('image resize')
+        # pad to square
+        image, original_max_length = self.pad_image(image)
+        interp = cv2.INTER_AREA if original_max_length > model_input_size else cv2.INTER_LANCZOS4
+        image = cv2.resize(image, (model_input_size, model_input_size),
+                           interpolation=interp)  # width, height
+        # image = (image.astype(np.float32))# / 255.0
+        return image
+
     def partial_image_crop_button(self, image):
         print(f'options to run:\t{self.preprocess_options}')
         image = np.array(image)
@@ -352,8 +437,11 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
             elif preprocess_op.lower() == self.operation_choices[12].lower(): # Vertical Flip
                 image = self.flip_vertical(image)
 
-        if not 'resize' in self.preprocess_options[-1].lower():
-            image = self.resize(image)  # formats image to required size
+        # if not 'resize' in self.preprocess_options[-1].lower():
+        #     image = self.resize(image)  # formats image to required size
+
+        # final_resize_check
+        image = self.final_resize_check(image)
 
         # Convert to float32, if necessary
         image = image.astype(np.float32)
@@ -363,8 +451,6 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         print(f'numpy image HASH:\t{hash(image.tostring())}')
 
         return image
-
-
 
     def augment_image(self, image):
         print(f'options to run:\t{self.preprocess_options}')
