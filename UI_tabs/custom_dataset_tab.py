@@ -216,15 +216,13 @@ class Custom_dataset_tab:
         if selected_model in mc.model_info_map:
             info_dict = mc.model_info_map[selected_model]["info"]
             folder_name = info_dict.get("folder_name", selected_model)
-            model_ext = info_dict.get("model_extension", "pth")
 
-            model_path = os.path.join(os.getcwd(), folder_name)
-            final_file_name = f"model.{model_ext}"  # e.g. "model.onnx" or "model.pth"
+            final_file_name = f"model.onnx"
 
             # Actually load the model
             self.autotagmodel.set_run_option("model")
             self.autotagmodel.load_model(
-                model_dir=model_path,
+                model_dir=folder_name,
                 model_name=final_file_name,
                 use_cpu=use_cpu
             )
@@ -434,6 +432,9 @@ class Custom_dataset_tab:
                                      filter_in_checkbox=category_filter_batch_checkbox,
                                           include_invalid_tags_ckbx=include_invalid_tags_ckbx)
             image_confidence_values, image_generated_tags, image_preview_pil = self.autotagmodel.get_predictions(True)
+
+            print(f"image_preview_pil.shape:\t{image_preview_pil.shape}")
+
         else:
             self.autotagmodel.interrogate(single_image=False, all_tags_ever_dict=self.gallery_tab_manager.all_tags_ever_dict,
                                      filter_in_categories=category_filter_dropdown,
@@ -461,9 +462,14 @@ class Custom_dataset_tab:
 
         if image_preview_pil is not None:
             print("UPDATING IMAGE PREVIEW")
-            image_preview_pil = np.array(image_preview_pil)  # [0]
-            image_preview_pil = image_preview_pil[:, :, ::-1]  # BGR -> RGB
-            image_preview_pil = Image.fromarray(np.uint8(image_preview_pil))  # *255#cm.gist_earth()
+            # image_preview_pil = np.array(image_preview_pil)  # [0]
+            # image_preview_pil = image_preview_pil[:, :, ::-1]  # BGR -> RGB
+
+            # Transpose the array to get the desired shape
+            image_preview_pil = np.transpose(image_preview_pil, (1, 2, 0))*255#cm.gist_earth()
+
+            image_preview_pil = np.uint8(image_preview_pil)
+            image_preview_pil = Image.fromarray(image_preview_pil)  #
             image_preview_pil = gr.update(value=image_preview_pil)
         else:
             image_preview_pil = gr.update()
@@ -1005,7 +1011,8 @@ class Custom_dataset_tab:
                             # This will now display the updated list from self.auto_tag_models (populated by refresh_model_list())
                             model_choice_dropdown = gr.Dropdown(
                                 choices=self.auto_tag_models,
-                                label="Model Selection"
+                                label="Model Selection",
+                                value=None
                             )
 
                             # Dropdown menu for selecting operations
@@ -1474,6 +1481,8 @@ class Custom_dataset_tab:
             inputs=[self.file_upload_button_single, self.image_editor_tab_manager.image_mode_choice_state],
             outputs=[self.image_editor_tab_manager.image_mode_choice_state]
         )
+
+
         self.refresh_models_btn.click(
             fn=self.refresh_model_list,
             inputs=[],
@@ -1498,6 +1507,8 @@ class Custom_dataset_tab:
             outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil,
                      self.image_generated_tags_prompt_builder_textbox, self.file_upload_button_single]
         )
+
+
         self.interrogate_button.click(
             fn=self.unload_component,
             inputs=None,
@@ -1521,7 +1532,17 @@ class Custom_dataset_tab:
             fn=self.prompt_string_builder,
             inputs=[self.use_tag_opts_radio, self.image_generated_tags, self.confidence_threshold_slider],
             outputs=[self.image_generated_tags_prompt_builder_textbox]
+        ).then(
+            fn=self.set_threshold,
+            inputs=[self.confidence_threshold_slider],
+            outputs=[self.image_confidence_values, self.image_generated_tags]
+        ).then(
+            fn=self.prompt_string_builder,
+            inputs=[self.use_tag_opts_radio, self.image_generated_tags, self.confidence_threshold_slider],
+            outputs=[self.image_generated_tags_prompt_builder_textbox]
         )
+
+
         self.operations_dropdown.change(
             fn=self.make_menus_visible,
             inputs=[self.operations_dropdown],
@@ -1529,6 +1550,8 @@ class Custom_dataset_tab:
                      self.scale_slider, self.dx_slider, self.dy_slider, self.brightness_slider, self.contrast_slider,
                      self.saturation_slider, self.noise_slider, self.shear_slider]
         )
+
+
         self.model_choice_dropdown.select(
             fn=self.load_model,
             inputs=[self.model_choice_dropdown, self.gpu_ckbx],
@@ -1566,6 +1589,11 @@ class Custom_dataset_tab:
             inputs=[self.use_tag_opts_radio, self.image_generated_tags, self.confidence_threshold_slider],
             outputs=[self.image_generated_tags_prompt_builder_textbox]
         )
+
+
+
+
+
         self.file_upload_button_single.upload(
             fn=self.load_images,
             inputs=[self.file_upload_button_single, self.image_mode_choice_state],
