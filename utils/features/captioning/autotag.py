@@ -7,6 +7,7 @@ import multiprocessing as mp
 import pandas as pd
 import heapq
 import shutil
+from PIL import Image
 
 import torch
 import onnxruntime as ort
@@ -14,11 +15,11 @@ import onnxruntime as ort
 from utils import helper_functions as help
 from utils.features.captioning import image_data_loader
 from utils.features.captioning.PNG_Info import ImageMetadataExtractor
-
+from utils.features.captioning.model_configs import tag_model_config as mc
 
 class AutoTag:
     def __init__(self, labels_file="tags-selected.csv", batch_size=1, max_data_loader_n_workers=math.ceil(mp.cpu_count()/2),
-                 caption_extension='.txt', debug=True, dest_folder=None, tag_folder=None, image_board=None):
+                 caption_extension='.txt', debug=True, dest_folder=None, tag_folder=None, image_board=None, model_name=None):
         self.labels_file = labels_file
         self.caption_extension = caption_extension
         self.batch_size = batch_size
@@ -49,10 +50,11 @@ class AutoTag:
         self.model_dir = None
         self.dest_folder = dest_folder
         self.tag_folder = tag_folder
-        self.crop_image_size = 448
+        self.crop_image_size = None
         self.filter_in_categories = None
         self.filter_in_checkbox = None
         self.image_paths = None
+        self.model_name = model_name
 
         self.image_board = image_board
         self.valid_categories = {name: i for i, name in enumerate(self.image_board.valid_categories)}
@@ -65,15 +67,19 @@ class AutoTag:
         self.run_model = run_opt
 
     def set_crop_image_size(self, crop_image_size):
-        if '.onnx' in self.model_name:
-            self.crop_image_size = 448
-        else:
-            self.crop_image_size = crop_image_size
+        self.crop_image_size = crop_image_size ################# expect some changes with this
         return self.crop_image_size
 
     def load_model(self, model_dir="", model_name="", use_cpu=True):
-        self.model_name = model_name
-        self.model_dir = model_dir
+        self.model_dir = model_dir # actual model name; which is the folder name
+        self.model_name = model_name # model.onnx
+        
+        self.model_dir = os.path.join(os.getcwd(), self.model_dir)
+        if os.path.exists(self.model_dir):
+            help.verbose_print(f"self.model_dir:\t{self.model_dir} exists")
+            help.verbose_print(f"model_dir:\t{model_dir} used to load model type & tags.csv/json")
+            self.label_names = mc.load_tags_for_model(model_dir)
+
         self.use_cpu = use_cpu
         providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
         if self.use_cpu:
@@ -94,6 +100,7 @@ class AutoTag:
 
     def set_threshold(self, thresh):
         self.thresh = thresh
+        print(f"is now:\t{self.thresh}")
 
     def set_image_with_tag_path_textbox(self, image_with_tag_path_textbox):
         self.image_with_tag_path_textbox = image_with_tag_path_textbox
@@ -167,12 +174,6 @@ class AutoTag:
     def set_data(self, train_data_dir=None, single_image=False):
         self.train_data_dir = train_data_dir
 
-        model_dir_path = os.path.join(os.getcwd(), 'Z3D-E621-Convnext')######## this will change in the future
-        if os.path.exists(model_dir_path):
-            self.model_dir = model_dir_path
-            help.verbose_print(f"self.model_dir:\t{self.model_dir}")
-            self.label_names = pd.read_csv(os.path.join(self.model_dir, self.labels_file))
-
         if single_image and (('.png' in self.train_data_dir) or ('.jpg' in self.train_data_dir)):
             self.image_paths = [self.train_data_dir]
             self.meta_data_extractor.image_paths = self.image_paths
@@ -194,12 +195,80 @@ class AutoTag:
     def set_image_size(self, crop_size):
         self.crop_image_size = crop_size
 
+    # still in image_data_loader.py
     def collate_fn_remove_corrupted(self, batch):
         # Filter out all the Nones (corrupted examples)
-        batch = list(filter(lambda x: x is not None, batch))
+        batch = [x for x in batch if x is not None]
         return batch
 
+
+
+    def convert_batch_channels(self, imgs, expected_num_channels):
+        """
+        Converts each image in the batch to RGB or RGBA using PIL.
+
+        Args:
+            imgs (numpy.ndarray): Array of images with shape (N, C, H, W).
+            expected_num_channels (int): 3 for RGB, 4 for RGBA.
+
+        Returns:
+            numpy.ndarray: Array of converted images with shape (N, C', H, W).
+        """
+        # Validate input dimensions
+        if imgs.ndim != 4:
+            raise ValueError(f"Expected input tensor to have 4 dimensions (N, C, H, W), got {imgs.ndim} dimensions.")
+        
+        N, C, H, W = imgs.shape
+        
+        # Validate channel size
+        if C not in [3, 4]:
+            raise ValueError(f"Expected channel size 3 (RGB) or 4 (RGBA), got {C}.")
+        
+        # Initialize list to hold converted images
+        converted_imgs = []
+        
+        for i in range(N):
+            # Extract the i-th image: shape (C, H, W)
+            img = imgs[i]
+            
+            # Transpose to (H, W, C) for PIL compatibility
+            img = np.transpose(img, (1, 2, 0))  # Now shape: (H, W, C)
+            
+            # Convert to uint8 if necessary
+            if img.dtype != np.uint8:
+                img_uint8 = (img * 255).astype(np.uint8)
+            else:
+                img_uint8 = img
+            
+            # Create PIL Image
+            pil_img = Image.fromarray(img_uint8)
+            
+            # Apply channel conversion
+            if expected_num_channels == 4:
+                pil_img = pil_img.convert("RGBA")
+            else:
+                pil_img = pil_img.convert("RGB")
+            
+            # Convert back to NumPy array
+            img_converted = np.array(pil_img).astype(np.float32) / 255.0  # Normalize to [0,1]
+            
+            # Transpose back to (C', H, W)
+            img_converted = np.transpose(img_converted, (2, 0, 1))  # Shape: (C', H, W)
+            
+            converted_imgs.append(img_converted)
+        
+        # Stack all converted images into a single NumPy array: (N, C', H, W)
+        converted_imgs = np.stack(converted_imgs, axis=0)
+        
+        return converted_imgs
+
+
+
     def run_batch(self, path_imgs, single_image, all_tags_ever_dict, include_invalid_tags_ckbx):
+        if len(path_imgs) == 0:
+            print("[WARN] This batch has 0 valid images. Skipping run_batch.")
+            return
+
         self.global_image_predictions_predictions = []
 
         help.verbose_print(f"path_imgs[0][0]:\t{path_imgs[0][0]}")
@@ -493,15 +562,82 @@ class AutoTag:
                     help.write_tags_to_csv(rating_csv_dict, os.path.join(self.tag_folder, "rating.csv"))
                     help.write_tags_to_csv(tags_csv_dict, os.path.join(self.tag_folder, "tags.csv"))
         else: # run a tag/captioning model
-            imgs = np.array([im for _, im in path_imgs])
+            """
+            Gathers a batch of (image_path, image_tensor) pairs, 
+            runs the ONNX model, and parses the outputs.
+            """
+            if len(path_imgs) == 0:
+                print("[WARN] This batch has 0 valid images. Skipping run_batch.")
+                return
+
+            # Clear old predictions
+            self.global_image_predictions_predictions = []
+
+            # Print debug info
+            help.verbose_print(f"path_imgs[0][0]:\t{path_imgs[0][0]}")
+            # e.g. path_imgs might be [("path/to/image.png", numpy_array), ...]
+
+            # 1) Build a batch array: shape => (B, C, H, W)
+            # Each 'image' is presumably a (C,H,W) float32 from your dataset
+            imgs = np.array([im for _, im in path_imgs])  # shape => (B, C, H, W)
+            print(f"[DEBUG] run_batch -> shape of 'imgs': {imgs.shape}")
+
+            # (Optional) If your ONNX model is actually NHWC, do:
+            # imgs = np.transpose(imgs, (0, 2, 3, 1))  # shape => (B, H, W, C)
+            # But if you do official PyTorch NCHW, skip it.
+            self.model_dir_model_name = os.path.basename(self.model_dir)
+            self.expected_num_channels = mc.model_info_map[self.model_dir_model_name]["info"]["expected_num_channels"]
+            # Convert channels
+            imgs = self.convert_batch_channels(imgs, self.expected_num_channels)
+            print("Converted imgs shape:", imgs.shape)  # Expected: (1, 4, 384, 384)
+
+            if self.model_dir_model_name == "Z3D-Convnext":
+                # (Optional) If your ONNX model is actually NHWC, do:
+                imgs = np.transpose(imgs, (0, 2, 3, 1))  # shape => (B, H, W, C) i.e. (1, 448, 448, 3)
+                print("Z3D-Convnext model -> Converted imgs shape:", imgs.shape)  # Expected: (1, 448, 448, 3)
+
+
+
+
+
+            # 2) Prepare to run ONNX
             input_name = self.ort_sess.get_inputs()[0].name
             label_name = self.ort_sess.get_outputs()[0].name
-            outputs = self.ort_sess.run([label_name], {input_name: imgs})
 
+            # 3) Run inference
+            outputs = self.ort_sess.run([label_name], {input_name: imgs})
+            # Suppose shape => (B, num_classes)
+
+            # 4) Post-process the predictions
+            # For example, if the model outputs raw logits, apply sigmoid
+            # If it already outputs probabilities, skip
+
+            # Suppose 'outputs[0]' is shape (batch_size, num_classes) of "probabilities".
             temp = '\\' if help.is_windows() else '/'
             for i, output in enumerate(outputs[0]):
                 self.combined_tags = {}
                 self.label_names["probs"] = output
+
+
+                preds = output  # e.g. shape (B, num_labels)
+                # If your model is known to produce raw logits, do:
+                preds = 1.0 / (1.0 + np.exp(-preds))   # apply sigmoid on each logit
+
+                # Then clamp
+                preds = np.clip(preds, 0.0, 1.0)
+
+                # Now 'preds[i, j]' is guaranteed to be between 0 and 1
+                # If you want to store them as percentage:
+                preds_percent = preds# * 100.0
+                # But only do that for display, e.g. "80.34%".
+                print(f"Predictions: {preds_percent}")
+                self.label_names["probs"] = preds_percent
+
+
+
+
+
+
                 found_tags = None
                 # get image name
                 image_name = ((path_imgs[i][0]).split(temp)[-1]).split('.')[0]
@@ -519,7 +655,7 @@ class AutoTag:
                     found_tags = self.label_names[self.label_names["probs"] > float(0)][["name", "probs"]]
                     found_tags = found_tags.values.tolist()
 
-                    help.verbose_print(f"found_tags:\t{found_tags}")
+                    # help.verbose_print(f"found_tags:\t{found_tags}")
 
                     # filter out invalid
                     # remove tags not in csv or not a valid category type
@@ -531,8 +667,8 @@ class AutoTag:
                         self.combined_tags[element[0]] = [element[1], f"{image_name}.{image_ext}"]  # tag -> [probability, name w/ extension]
                 else: # batch mode
                     if self.use_tag_opts_radio == 'Use All above Threshold':
-                        print(f"(float(self.thresh) / 100.0):\t{(float(self.thresh) / 100.0)}")
-                        found_tags = self.label_names[(self.label_names["probs"] > (float(self.thresh)/100.0))][["name", "probs"]]
+                        print(f"(float(self.thresh)):\t{(float(self.thresh))}")
+                        found_tags = self.label_names[(self.label_names["probs"] > (float(self.thresh)))][["name", "probs"]]
                     elif self.use_tag_opts_radio == 'Use All' or self.use_tag_opts_radio == 'Manually Select':
                         found_tags = self.label_names[self.label_names["probs"] > float(0)][["name", "probs"]]
                     else:
@@ -802,8 +938,14 @@ class AutoTag:
         if self.max_data_loader_n_workers is not None:
             self.image_paths = [path for path in self.image_paths if not (".txt" in path)]
             self.meta_data_extractor.image_paths = self.image_paths
-            self.dataset = image_data_loader.ImageLoadingPrepDataset(copy.deepcopy(self.image_paths))
+            self.dataset = image_data_loader.ImageLoadingPrepDataset(
+                copy.deepcopy(self.image_paths),
+                model_dir=self.model_dir  # so the dataset can read the config
+            )
 
+            if self.crop_image_size is None:
+                self.dataset.set_model_dir(self.model_dir)
+                self.crop_image_size = mc.model_info_map[os.path.basename(self.model_dir)]["info"]["input_dims"][0]
             self.dataset.set_crop_image_size(self.crop_image_size)
             print(f"self.dataset.crop_image_size is now:\t{self.dataset.crop_image_size}")
             self.dataset.set_preprocess_options(self.preprocess_options)
@@ -856,11 +998,13 @@ class AutoTag:
                 image, image_path = image_data
                 if image is not None:
                     image = image.detach().numpy()
+                    print(f"image.shape PRIOR TO BEING APPENDED TO GLOBAL IMAGE LIST:\t{image.shape}")
                     self.global_images_list.append(copy.deepcopy(image))
                 else:
                     try:
                         image = self.dataset.smart_imread(image_path)
                         image = self.dataset.preprocess_image(image)
+                        print(f"image.shape PRIOR TO BEING APPENDED TO GLOBAL IMAGE LIST:\t{image.shape}")
                         self.global_images_list.append(copy.deepcopy(image))
                     except Exception as e:
                         print(f"Could not load image path {image_path}, error: {e}")
@@ -879,12 +1023,22 @@ class AutoTag:
         print("done!")
 
     def get_predictions(self, single_image):####### gets a list of -> tag -> [prob, image_name.ext]
-        # print(f"self.global_image_predictions_predictions:\t{self.global_image_predictions_predictions}")
+        if self.global_image_predictions_predictions is None or len(self.global_image_predictions_predictions) == 0:
+            print(f"self.global_image_predictions_predictions:\t{self.global_image_predictions_predictions}")
+        # If there's no predictions stored yet, return empty
+        if not self.global_image_predictions_predictions:
+            return {}, [], None
 
         if single_image:
             image_dict = self.global_image_predictions_predictions[0]
             keys = image_dict.keys()
-            answer = copy.deepcopy({key: float(image_dict[key][0]) for key in keys}), copy.deepcopy(list(keys)), copy.deepcopy(self.global_images_list[0])
+
+            print(f"len(self.global_images_list) BEFORE BEING RETURNED AS THE FINAL ANSWER & THE PIL IMAGE FOR THE IMAGE PREVIEW ON THE GUI:\t{len(self.global_images_list)}")
+
+            print(f"self.global_images_list[0].shape BEFORE BEING RETURNED AS THE FINAL ANSWER & THE PIL IMAGE FOR THE IMAGE PREVIEW ON THE GUI:\t{self.global_images_list[0].shape}")
+
+
+            answer = copy.deepcopy({key: float(image_dict[key][0]) for key in keys}), copy.deepcopy(list(keys)), copy.deepcopy(self.global_images_list[0])###########maybe change this to a list of tuples
             return answer
         else:
             return {}, [], None
@@ -927,11 +1081,11 @@ class AutoTag:
 
             print(f"self.use_tag_opts_radio:\t{self.use_tag_opts_radio}")
             print(f"self.write_tag_opts_dropdown:\t{self.write_tag_opts_dropdown}")
-            print(f"(float(self.thresh) / 100.0):\t{(float(self.thresh) / 100.0)}")
+            print(f"(float(self.thresh)):\t{(float(self.thresh))}")
             if self.use_tag_opts_radio == 'Use All above Threshold':
                 temp_list = list(
                     self.global_image_predictions_predictions[0].keys())  # tag -> [probability, name w/ extension]
-                any_selected_tags = [tag for tag in temp_list if float(self.global_image_predictions_predictions[0][tag][0]) > (float(self.thresh) / 100.0)]
+                any_selected_tags = [tag for tag in temp_list if float(self.global_image_predictions_predictions[0][tag][0]) > (float(self.thresh))]
             elif self.use_tag_opts_radio == 'Use All':
                 temp_list = list(
                     self.global_image_predictions_predictions[0].keys())  # tag -> [probability, name w/ extension]
