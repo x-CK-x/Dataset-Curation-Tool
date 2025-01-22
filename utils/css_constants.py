@@ -51,8 +51,11 @@ refresh_models_btn_rule = """
 """
 
 gallery_fix_height = """
-.fixed-height.svelte-g4rw9.svelte-g4rw9 {
-	min-height: 971px;
-	max-height: 0vh;
+.custom-gallery { 
+    height: 1356px !important; 
+    width: 100%; 
+    margin: 10px auto; 
+    padding: 0px; 
+    overflow-y: auto !important; 
 }
 """
