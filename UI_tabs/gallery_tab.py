@@ -1870,7 +1870,8 @@ class Gallery_tab:
                                                       value="Start")
                         with gr.Row():
                             prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
-                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", columns=3, object_fit="contain", interactive=True, height=1356)#"1356px")#, height="auto")#, height=1356)
+                gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", object_fit="contain", interactive=True, columns=3, height=1356,
+                         elem_classes="custom-gallery")
 
         self.refresh_aspect_btn = refresh_aspect_btn
         self.download_folder_type = download_folder_type
