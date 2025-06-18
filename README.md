@@ -120,7 +120,8 @@ Files/folders that use the same path are merged, not overwritten. For example, u
 
 ## License
 
-MIT
+This project is licensed under the terms of the
+[GNU General Public License v3.0](LICENSE).
 
 ## Usage conditions
 By using this downloader, the user agrees that the author is not liable for any misuse of this downloader. This downloader is open-source and free to use.
