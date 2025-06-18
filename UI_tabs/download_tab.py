@@ -990,7 +990,7 @@ class Download_tab:
                             self.settings_json["proxy_url"] = proxy_value
                         proxy_url_textbox = gr.Textbox(lines=1, label='(Optional Proxy URL)', value=self.settings_json["proxy_url"])
                     with gr.Column(min_width=50, scale=1):
-                        tag_sep = gr.Textbox(lines=1, label='Tag Separator/Delimeter', value=self.settings_json["tag_sep"])
+                        tag_sep = gr.Textbox(lines=1, label='Tag Separator/Delimiter', value=self.settings_json["tag_sep"])
                     with gr.Column(min_width=50, scale=5):
                         tag_order_format = gr.Dropdown(multiselect=True, interactive=True, label='Tag ORDER',
                                                        choices=self.image_board.valid_categories,

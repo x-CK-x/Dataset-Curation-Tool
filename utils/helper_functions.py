@@ -108,11 +108,11 @@ def execute(cmd):
     if return_code:
         raise sub.CalledProcessError(return_code, cmd)
 
-def get_list(arb_string, delimeter):
-    return arb_string.split(delimeter)
+def get_list(arb_string, delimiter):
+    return arb_string.split(delimiter)
 
-def get_string(arb_list, delimeter):
-    return delimeter.join(arb_list)
+def get_string(arb_list, delimiter):
+    return delimiter.join(arb_list)
 
 def from_padded(line):
     if len(line) > 1:# check for padded-0
@@ -126,7 +126,7 @@ def to_padded(num):
 def is_windows():
     return os.name == 'nt'
 
-def get_OS_delimeter():
+def get_OS_delimiter():
     """Return the path delimiter for the current operating system."""
     if is_windows():
         return '\\'

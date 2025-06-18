@@ -697,7 +697,7 @@ class E6_Downloader:
                 help.verbose_print(f"sublist:\t{sublist}")
                 parts = (sublist[1].replace('dir=', '')).split('\\')
                 parts = [subpart for part in parts for subpart in part.split('/')]
-                new_path = f'{help.get_OS_delimeter()}'.join(parts)
+                new_path = f'{help.get_OS_delimiter()}'.join(parts)
                 url = sublist[0]
                 new_path = os.path.join(new_path, image_id_w_ext)
                 help.verbose_print(f"new_path:\t{new_path}")
