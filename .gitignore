@@ -5,6 +5,7 @@
 !UI_tabs/
 !utils/
 !wiki_assets/
+!tests/
 
 # Whitelist the specific files
 !LICENSE
