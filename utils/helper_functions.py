@@ -127,7 +127,8 @@ def is_windows():
     return os.name == 'nt'
 
 def get_OS_delimeter():
-    if is_windows() == 'nt':
+    """Return the path delimiter for the current operating system."""
+    if is_windows():
         return '\\'
     else:
         return '/'
