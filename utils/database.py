@@ -4,6 +4,7 @@ import threading
 from datetime import datetime
 import hashlib
 import json
+import shutil
 
 class DatabaseManager:
     def __init__(self, db_path):
@@ -168,6 +169,14 @@ class DatabaseManager:
             self.conn.commit()
             return cur.lastrowid
 
+    def get_websites(self):
+        """Return list of known websites."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT id, name FROM websites")
+            rows = cur.fetchall()
+            return rows
+
     def _compute_hash(self, file_path):
         """Return SHA1 hash for the given file."""
         h = hashlib.sha1()
@@ -282,7 +291,7 @@ class DatabaseManager:
                     )
         other.close()
 
-    def run_query(self, query):
+    def run_query(self, query, params=None):
         """Execute an arbitrary SQL query and return the results.
 
         Parameters
@@ -294,7 +303,10 @@ class DatabaseManager:
         with self.lock:
             cur = self.conn.cursor()
             try:
-                cur.execute(query)
+                if params is None:
+                    cur.execute(query)
+                else:
+                    cur.execute(query, params)
                 if query.strip().lower().startswith("select"):
                     rows = cur.fetchall()
                     headers = [description[0] for description in cur.description]
@@ -304,6 +316,57 @@ class DatabaseManager:
                     return [], []
             finally:
                 cur.close()
+
+    def get_table_names(self):
+        """Return list of table names in the database."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            rows = [r[0] for r in cur.fetchall()]
+            return rows
+
+    def fetch_table(self, table_name, limit=100):
+        """Return contents of a table."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute(f"SELECT * FROM {table_name} LIMIT ?", (limit,))
+            rows = cur.fetchall()
+            headers = [description[0] for description in cur.description]
+            return headers, rows
+
+    def search_files(self, required_tags, blacklist_tags):
+        """Search files containing required tags and not containing blacklist."""
+        conditions = []
+        params = []
+        for tag in required_tags:
+            conditions.append("post_tags LIKE ?")
+            params.append(f"%{tag}%")
+        for tag in blacklist_tags:
+            conditions.append("post_tags NOT LIKE ?")
+            params.append(f"%{tag}%")
+        where = " AND ".join(conditions) if conditions else "1"
+        query = f"SELECT * FROM files WHERE {where}"
+        return self.run_query(query, params)
+
+    def copy_files_from_table(self, table_name, dest_dir):
+        """Copy images referenced in a table to dest_dir."""
+        os.makedirs(dest_dir, exist_ok=True)
+        headers, rows = self.fetch_table(table_name, limit=1000000)
+        if "local_path" not in headers:
+            return 0
+        idx = headers.index("local_path")
+        count = 0
+        for row in rows:
+            src = row[idx]
+            if src and os.path.isfile(src):
+                fname = os.path.basename(src)
+                dst = os.path.join(dest_dir, fname)
+                try:
+                    shutil.copy2(src, dst)
+                    count += 1
+                except Exception:
+                    pass
+        return count
 
     def close(self):
         with self.lock:
