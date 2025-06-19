@@ -61,7 +61,12 @@ def build_ui():
         selected_image_dict = None  ### key:category, value:tag_list  # set on every click ::  # id -> {categories: tag/s}, type -> string
         is_csv_loaded = False
         config_name = "settings.json"
-        settings_json = help.load_session_config(os.path.join(cwd, config_name))
+        config_path = os.path.join(cwd, config_name)
+        settings_json = db_manager.get_latest_config()
+        if not settings_json:
+            settings_json = help.load_session_config(config_path)
+            if settings_json:
+                db_manager.add_config(settings_json, config_path)
         # Register the default website configuration
         website_id = db_manager.add_website("e621")
 
@@ -101,7 +106,8 @@ def build_ui():
         all_images_dict = {}  ### add images by key:id, value:selected_image_dict
         # load if data present / create if file not yet created
         auto_config_path = os.path.join(settings_json["batch_folder"], "configs")
-        auto_complete_config_name = f"auto_complete_{settings_json['batch_folder']}.json"
+        batch_name = os.path.basename(settings_json["batch_folder"])
+        auto_complete_config_name = f"auto_complete_{batch_name}.json"
         temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
         if not os.path.exists(auto_config_path):
             os.makedirs(auto_config_path)

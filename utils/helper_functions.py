@@ -36,6 +36,9 @@ def load_session_config(f_name):
     session_config = None
     file_exists = os.path.exists(f_name)
     if not file_exists: # create the file
+        dir_name = os.path.dirname(f_name)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
         with open(f_name, 'w') as f:
             f.close()
     else: # load the file
