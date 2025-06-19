@@ -14,8 +14,13 @@ class Merge_tab:
     def render_tab(self):
         with gr.Tab("Merge DB"):
             gr.Markdown(
-                """# Merge Databases\nCombine another `dataset_curation.db`
-                file with this one."""
+                """# Merge Databases
+                Combine the contents of a different `dataset_curation.db` with
+                the one currently loaded.
+
+                Provide the path to the other database file and click **Merge**.
+                All website, download and file records will be imported.
+                """
             )
             db_path = gr.Textbox(label="Other DB Path", info="Path to another .db file")
             run_btn = gr.Button("Merge")

@@ -796,7 +796,7 @@ class E6_Downloader:
                 __df = __df.vstack(df.select(['download_links', 'cmd_directory', 'cmd_filename']))
 
             df_list_for_tag_files.append(
-                df.drop(['download_links', 'directory', 'cmd_directory', 'file_ext', 'filename', 'cmd_filename']))
+                df.drop(['cmd_directory', 'cmd_filename']))
 
         if not batch_mode:
             print('## Downloading posts')
@@ -833,6 +833,8 @@ class E6_Downloader:
         replace_from_img_list = []
         remove_from_img_list = []
         tagfiles_no_post = set()
+        tags_map = {}
+        dates_map = {}
 
         if failed_md5:
             print(f'## Attempting to redownload {len(failed_md5)} unavailable posts using alternative source(s)')
@@ -977,6 +979,7 @@ class E6_Downloader:
             tag_string_lst = df['tag_string'].to_list()
             tagfilebasename_lst = df['tagfilebasename'].to_list()
             tagfilename_lst = df['tagfilename'].to_list()
+            filename_no_ext_lst = df['filename_no_ext'].to_list()
 
             tag_date_list = df['created_at'].to_list()
 
@@ -1084,6 +1087,9 @@ class E6_Downloader:
                         with open(tagfilename_lst[idx], 'w', encoding="utf-8") as f:
                             f.write(updated_tags)
 
+                    tags_map[filename_no_ext_lst[idx]] = updated_tags
+                    dates_map[filename_no_ext_lst[idx]] = post_creation_date
+
                     self.processed_tag_files.add(tagfilename_lst[idx])
 
                     if path and not dont_count:
@@ -1101,6 +1107,11 @@ class E6_Downloader:
                                     all_tag_count[tag] = 1
                 print('')
 
+        if tags_map:
+            _img_lists_df = _img_lists_df.with_columns(
+                pl.Series([tags_map.get(n, '') for n in _img_lists_df['filename_no_ext']]).alias('post_tags'),
+                pl.Series([dates_map.get(n, '') for n in _img_lists_df['filename_no_ext']]).alias('post_created_at')
+            )
         if not prms["skip_resize"][batch_num] and 'directory' in _img_lists_df.columns:
             _img_lists_df = _img_lists_df.unique(subset=['directory', 'filename_no_ext'])
         return _img_lists_df
@@ -1260,9 +1271,39 @@ class E6_Downloader:
         if self.backend_conn:
             self.backend_conn.close()
 
-    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, 
-                 tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb, 
-                 backend_conn):
+    def record_to_db(self, df):
+        if not self.db_manager or self.download_id is None:
+            return
+        from datetime import datetime
+        for row in df.to_dicts():
+            img_folder = row['directory']
+            img_file = row['filename']
+            img_ext = row['img_ext']
+            resized_folder = row['resized_img_folder']
+            delete = row['delete_original']
+            method = row['method_tag_files']
+            final_folder = img_folder if (delete or resized_folder == '' ) else resized_folder
+            if img_ext == 'same_as_original' or os.path.splitext(img_file)[1] == img_ext:
+                final_name = img_file
+            else:
+                final_name = os.path.splitext(img_file)[0] + img_ext
+            local_path = final_folder + final_name
+            tag_final_folder = final_folder if (not delete and resized_folder != img_folder and method in ('relocate','copy')) else img_folder
+            tag_local_path = tag_final_folder + row['tagfilebasename']
+            self.db_manager.add_file(
+                self.download_id,
+                row.get('post_tags',''),
+                row.get('post_created_at',''),
+                datetime.utcnow().isoformat(),
+                row.get('download_links',''),
+                local_path,
+                tag_local_path,
+                None
+            )
+
+    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv,
+                 tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb,
+                 backend_conn, db_path=None, download_id=None):
         self.RETRY_TIMER = 10
         self.LIVE_DOWNLOAD_WAIT_TIMER = 1 # this may have to change depending on the number of images being downloaded and the number threads dispatched to download them
         self.MAX_ATTEMPTS = 3
@@ -1277,6 +1318,14 @@ class E6_Downloader:
         self.tagsparquet = tagsparquet
         self.keepdb = keepdb
         self.cachepostsdb = cachepostsdb
+        self.download_id = download_id
+        self.db_manager = None
+        if db_path:
+            try:
+                from utils.database import DatabaseManager
+                self.db_manager = DatabaseManager(db_path)
+            except Exception:
+                self.db_manager = None
 
         print("============================")
         print(f"postscsv\t{postscsv}")
@@ -1380,6 +1429,7 @@ class E6_Downloader:
                         elapsed = time.time() - start_time
                         print(
                             f'## Batch {batch_num} resize elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
+                        self.record_to_db(image_list_df)
             self.create_searched_list(prms)
             self.create_tag_count(prms)
         else:
@@ -1409,6 +1459,7 @@ class E6_Downloader:
                     elapsed = time.time() - start_time
                     print(
                         f'## Batch resize elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
+                    self.record_to_db(image_list_df)
 
         if self.failed_images:
             print(f'## Failed to resize {len(self.failed_images)} images')
@@ -1421,6 +1472,9 @@ class E6_Downloader:
         print('#################################################################')
 
         self.close_PIPE()
+
+        if self.db_manager:
+            self.db_manager.close()
 
         del self.cached_e621_posts
     def _init_session(self):
