@@ -1,10 +1,13 @@
 import gradio as gr
 import os
 import argparse
+import json
 
 from utils import css_constants as css_, helper_functions as help
+from utils.database import DatabaseManager
 from utils.features.tag_suggestions.tag_suggest import Tag_Suggest
 from utils.features.image_boards.image_board_manager import Image_Board
+
 
 def build_ui():
     from UI_tabs.download_tab import Download_tab
@@ -14,6 +17,9 @@ def build_ui():
     from UI_tabs.custom_dataset_tab import Custom_dataset_tab
     from UI_tabs.image_editor_tab import Image_editor_tab
     from UI_tabs.advanced_settings_tab import Advanced_settings_tab
+    from UI_tabs.database_tab import Database_tab
+    from UI_tabs.import_tab import Import_tab
+    from UI_tabs.merge_tab import Merge_tab
 
     with gr.Blocks(css=f"{css_.preview_hide_rule} {css_.refresh_aspect_btn_rule} {css_.trim_row_length} {css_.trim_markdown_length} "
                        f"{css_.thumbnail_colored_border_css} {css_.refresh_models_btn_rule}"
@@ -21,6 +27,11 @@ def build_ui():
 
         # set local path
         cwd = os.getcwd()
+        db_dir = os.path.join(cwd, "databases")
+        os.makedirs(db_dir, exist_ok=True)
+        db_manager = DatabaseManager(os.path.join(db_dir, "dataset_curation.db"))
+        data_root = os.path.join(cwd, "data")
+        os.makedirs(data_root, exist_ok=True)
         # options
         img_extensions = ["png", "jpg", "same_as_original"]
         method_tag_files_opts = ["relocate", "copy"]
@@ -51,6 +62,8 @@ def build_ui():
         is_csv_loaded = False
         config_name = "settings.json"
         settings_json = help.load_session_config(os.path.join(cwd, config_name))
+        # Register the default website configuration
+        website_id = db_manager.add_website("e621")
 
         image_board = Image_Board(config_path=os.path.join(cwd, "utils", "features", "image_boards", "e6.json"))
 
@@ -133,20 +146,35 @@ def build_ui():
 
         ################################################################################################################
         # download tab init
-        download_tab_manager = Download_tab(settings_json, cwd, image_board, img_extensions, method_tag_files_opts,
-                                            collect_checkboxes, download_checkboxes, resize_checkboxes, file_extn_list,
-                                            config_name, required_tags_list, blacklist_tags, auto_config_path,
-                                            initial_required_state,
-                                            initial_required_state_tag, relevant_required_categories,
-                                            initial_blacklist_state, initial_blacklist_state_tag,
-                                            relevant_blacklist_categories, auto_complete_config
-                                            )
+        download_tab_manager = Download_tab(
+            settings_json,
+            data_root,
+            image_board,
+            img_extensions,
+            method_tag_files_opts,
+            collect_checkboxes,
+            download_checkboxes,
+            resize_checkboxes,
+            file_extn_list,
+            config_name,
+            required_tags_list,
+            blacklist_tags,
+            auto_config_path,
+            initial_required_state,
+            initial_required_state_tag,
+            relevant_required_categories,
+            initial_blacklist_state,
+            initial_blacklist_state_tag,
+            relevant_blacklist_categories,
+            auto_complete_config,
+            db_manager=db_manager,
+        )
         # render tab
         download_tab_manager.render_tab()
 
         ################################################################################################################
         # gallery tab init
-        gallery_tab_manager = Gallery_tab(file_extn_list, image_board, cwd, multi_select_ckbx_state,
+        gallery_tab_manager = Gallery_tab(file_extn_list, image_board, data_root, multi_select_ckbx_state,
                                           only_selected_state_object, images_selected_state, image_mode_choice_state,
                                           previous_search_state_text, current_search_state_placement_tuple,
                                           relevant_search_categories, initial_add_state, initial_add_state_tag,
@@ -154,7 +182,8 @@ def build_ui():
                                           auto_complete_config_name, all_tags_ever_dict, all_images_dict,
                                           selected_image_dict, artist_csv_dict, character_csv_dict, species_csv_dict,
                                           general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict,
-                                          image_creation_times, is_csv_loaded
+                                          image_creation_times, is_csv_loaded,
+                                          db_manager=db_manager, download_id=None
                                           )
         # render tab
         gallery_tab_manager.render_tab()
@@ -175,7 +204,7 @@ def build_ui():
 
         ################################################################################################################
         # custom dataset tab init
-        custom_dataset_tab_manager = Custom_dataset_tab(image_board, cwd, download_tab_manager, gallery_tab_manager,
+        custom_dataset_tab_manager = Custom_dataset_tab(image_board, data_root, download_tab_manager, gallery_tab_manager,
                                                         image_mode_choice_state, autotagmodel,
                                                         all_predicted_confidences, all_predicted_tags
                                                         )
@@ -187,7 +216,7 @@ def build_ui():
 
         ################################################################################################################
         # image editor tab init
-        image_editor_tab_manager = Image_editor_tab(gallery_tab_manager, download_tab_manager, cwd,
+        image_editor_tab_manager = Image_editor_tab(gallery_tab_manager, download_tab_manager, data_root,
                                                     image_mode_choice_state, custom_dataset_tab_manager
                                                     )
         # render tab
@@ -205,6 +234,16 @@ def build_ui():
         download_tab_manager.set_advanced_settings_tab_manager(advanced_settings_tab_manager)
         gallery_tab_manager.set_advanced_settings_tab_manager(advanced_settings_tab_manager)
 
+        ########################################################################################################
+        # database tab init
+        database_tab_manager = Database_tab(db_manager)
+        import_tab_manager = Import_tab(db_manager)
+        merge_tab_manager = Merge_tab(db_manager)
+        # render tabs
+        database_tab_manager.render_tab()
+        import_tab_manager.render_tab()
+        merge_tab_manager.render_tab()
+
         ################################################################################################################
         ################################################################################################################
         ################################################################################################################
@@ -221,6 +260,9 @@ def build_ui():
         extras_tab_manager.get_event_listeners()
         custom_dataset_tab_manager.get_event_listeners()
         image_editor_tab_manager.get_event_listeners()
+        database_tab_manager.get_event_listeners()
+        import_tab_manager.get_event_listeners()
+        merge_tab_manager.get_event_listeners()
     return demo
 
 def UI(**kwargs):
