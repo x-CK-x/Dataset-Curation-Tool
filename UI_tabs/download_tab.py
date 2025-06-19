@@ -252,7 +252,7 @@ class Download_tab:
         self.frontend_conn, self.backend_conn = mp.Pipe()
         self.image_board_downloader = mp.Process(target=batch_downloader.E6_Downloader, args=(
         basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb,
-        cachepostsdb, self.backend_conn), )
+        cachepostsdb, self.backend_conn, self.db_manager.db_path if self.db_manager else None, self.current_download_id), )
         self.image_board_downloader.start()
 
     def run_script_batch(self, basefolder='', settings_path=os.getcwd(), numcpu=-1, phaseperbatch=False, keepdb=False,
@@ -278,7 +278,8 @@ class Download_tab:
                     self.gallery_tab_manager.set_download_id(dl_id)
 
             self.image_board_downloader = batch_downloader.E6_Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv,
-                                                                         postsparquet, tagsparquet, keepdb, cachepostsdb, None)
+                                                                         postsparquet, tagsparquet, keepdb, cachepostsdb, None,
+                                                                         self.db_manager.db_path if self.db_manager else None, dl_id)
             #
             # settings_json = help.load_session_config(path)
             # # apply post-processing
