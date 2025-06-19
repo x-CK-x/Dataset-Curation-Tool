@@ -111,6 +111,7 @@ class Database_tab:
             table_options = self.db_manager.get_table_names() if hasattr(self.db_manager, "get_table_names") else []
             table_dropdown = gr.Dropdown(table_options, label="View Table", value=None)
             view_button = gr.Button(value="Show Table")
+
             with gr.Accordion("Tag Search", open=False):
                 with gr.Row():
                     with gr.Column():
@@ -128,6 +129,7 @@ class Database_tab:
                 create_table_btn = gr.Button(value="Create Table from Search")
                 export_dir = gr.Textbox(label="Export Directory")
                 export_button = gr.Button(value="Export Table Files")
+
             result_table = gr.Dataframe(visible=False)
             message_box = gr.Textbox(label="Message", interactive=False)
             req_state = gr.State([])
