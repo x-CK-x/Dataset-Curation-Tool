@@ -128,6 +128,7 @@ class Database_tab:
                 create_table_btn = gr.Button(value="Create Table from Search")
                 export_dir = gr.Textbox(label="Export Directory")
                 export_button = gr.Button(value="Export Table Files")
+
             result_table = gr.Dataframe(visible=False)
             message_box = gr.Textbox(label="Message", interactive=False)
             req_state = gr.State([])
