@@ -24,3 +24,12 @@ def test_search_files(tmp_path):
     assert rows and rows[0][headers.index('post_tags')].startswith('tag1')
     db.close()
 
+def test_get_latest_config(tmp_path):
+    db = setup_db(tmp_path)
+    assert db.get_latest_config() is None
+    cfg = {"a": 1}
+    db.add_config(cfg)
+    loaded = db.get_latest_config()
+    assert loaded == cfg
+    db.close()
+

@@ -205,6 +205,20 @@ class DatabaseManager:
             rows = cur.fetchall()
             return rows
 
+    def get_latest_config(self):
+        """Return the most recently added config as a dictionary or None."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT json FROM configs ORDER BY id DESC LIMIT 1")
+            row = cur.fetchone()
+            cur.close()
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except Exception:
+                return None
+        return None
+
     def _compute_hash(self, file_path):
         """Return SHA1 hash for the given file."""
         h = hashlib.sha1()
