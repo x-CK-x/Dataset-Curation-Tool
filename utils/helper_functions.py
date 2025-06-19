@@ -1021,13 +1021,27 @@ def load_trie(trie, all_tags_ever_dict):
     verbose_print("Done constructing Trie tree!")
 
 def get_batch_name(f_name):
+    """Return the ``batch_folder`` value from a settings file.
+
+    If the file does not exist or the key is missing, ``None`` is returned.
+    This avoids ``KeyError`` exceptions when scanning arbitrary JSON files in
+    a directory that may not contain this field (e.g. auto-complete config
+    files).
+    """
+
     settings_file = load_session_config(f_name)
-    return settings_file["batch_folder"]
+    if settings_file and "batch_folder" in settings_file:
+        return settings_file["batch_folder"]
+    return None
 
 def get_batch_names(paths):
+    """Return a list of batch folder names for the given config paths."""
+
     names = []
     for path in paths:
-        names.append(get_batch_name(path))
+        batch_name = get_batch_name(path)
+        if batch_name is not None:
+            names.append(batch_name)
     return names
 
 def map_batches_to_files(f_names, b_names):
