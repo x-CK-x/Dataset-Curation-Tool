@@ -798,6 +798,9 @@ class E6_Downloader:
             df_list_for_tag_files.append(
                 df.drop(['cmd_directory', 'cmd_filename']))
 
+            if self.backend_conn:
+                self.backend_conn.send(1)
+
         if not batch_mode:
             print('## Downloading posts')
             failed_set = self.run_download(prms["batch_folder"][batch_num] + '/__.txt', length,
@@ -942,10 +945,6 @@ class E6_Downloader:
                 for _id, md5, source in zip(_failed_df["id"].to_list(), _failed_df["md5"].to_list(),
                                             _failed_df["source"].to_list()):
                     f.write(f'id:{_id}\nmd5:{md5}\nsource:[ {source} ]\n')
-
-        # send total to progressbar
-        if self.backend_conn:
-            self.backend_conn.send(1)
 
         for batch_num, df in zip(batch_nums, df_list_for_tag_files):
 
@@ -1107,12 +1106,12 @@ class E6_Downloader:
                                     all_tag_count[tag] = 1
                 print('')
 
-        if tags_map:
+        if tags_map and 'filename_no_ext' in _img_lists_df.columns:
             _img_lists_df = _img_lists_df.with_columns(
                 pl.Series([tags_map.get(n, '') for n in _img_lists_df['filename_no_ext']]).alias('post_tags'),
                 pl.Series([dates_map.get(n, '') for n in _img_lists_df['filename_no_ext']]).alias('post_created_at')
             )
-        if not prms["skip_resize"][batch_num] and 'directory' in _img_lists_df.columns:
+        if (not prms["skip_resize"][batch_num]) and ('directory' in _img_lists_df.columns) and ('filename_no_ext' in _img_lists_df.columns):
             _img_lists_df = _img_lists_df.unique(subset=['directory', 'filename_no_ext'])
         return _img_lists_df
 
@@ -1151,14 +1150,13 @@ class E6_Downloader:
         with counter_lock:
             counter.value += 1
             print(f'\r## Resizing Images: {counter.value}/{length} ', end='')
+            if self.backend_conn:
+                self.backend_conn.send(1)
 
 
     def parallel_resize(self, counter, counter_lock, imgs_folder, img_file, img_ext, min_short_side, num_images, failed_images,
                         delete_original, resized_img_folder):
 
-        # send total to progressbar
-        if self.backend_conn:
-            self.backend_conn.send(num_images)
 
         resized_img_folder = imgs_folder if (delete_original or resized_img_folder == '') else resized_img_folder
         if (img_ext == 'same_as_original') or (os.path.splitext(img_file)[1] == img_ext):
