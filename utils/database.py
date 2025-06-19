@@ -4,6 +4,8 @@ import threading
 from datetime import datetime
 import hashlib
 import json
+import time
+import shutil
 
 class DatabaseManager:
     def __init__(self, db_path):
@@ -112,26 +114,51 @@ class DatabaseManager:
             self.conn.commit()
 
     def add_config(self, json_content=None, path=None):
-        """Insert a new config and return its id."""
+        """Insert a new config and return its id.
+
+        If no path is supplied, the JSON is written to a file in
+        ``data/configs`` and that path stored.  The table is expanded with
+        columns matching the JSON keys so values can be queried directly.
+        """
         now = datetime.utcnow().isoformat()
+        data = None
+        if json_content:
+            data = json.loads(json_content) if isinstance(json_content, str) else json_content
+        if path is None and data is not None:
+            config_dir = os.path.join(os.getcwd(), "data", "configs")
+            os.makedirs(config_dir, exist_ok=True)
+            fname = f"config_{int(time.time()*1000)}.json"
+            path = os.path.join(config_dir, fname)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data, indent=2))
+
         with self.lock:
             cur = self.conn.cursor()
+            if data:
+                cur.execute("PRAGMA table_info(configs)")
+                existing = [r[1] for r in cur.fetchall()]
+                for k in data.keys():
+                    if k not in existing:
+                        cur.execute(f"ALTER TABLE configs ADD COLUMN {k} TEXT")
+            columns = ["path", "json", "created_at"]
+            values = [path, json.dumps(data) if data is not None else None, now]
+            if data:
+                for k in data.keys():
+                    columns.append(k)
+                    v = data[k]
+                    values.append(json.dumps(v) if isinstance(v, (dict, list)) else str(v))
+            placeholders = ",".join(["?"] * len(columns))
             cur.execute(
-                "INSERT INTO configs (path, json, created_at) VALUES (?, ?, ?)",
-                (path, json_content, now),
+                f"INSERT INTO configs ({','.join(columns)}) VALUES ({placeholders})",
+                values,
             )
             config_id = cur.lastrowid
-            # break json into key/value rows for easier querying
-            if json_content:
-                try:
-                    data = json.loads(json_content) if isinstance(json_content, str) else json_content
-                    for k, v in data.items():
-                        cur.execute(
-                            "INSERT INTO config_entries (config_id, key, value) VALUES (?, ?, ?)",
-                            (config_id, k, json.dumps(v) if isinstance(v, (dict, list)) else str(v)),
-                        )
-                except Exception:
-                    pass
+            if data:
+                for k, v in data.items():
+                    cur.execute(
+                        "INSERT INTO config_entries (config_id, key, value) VALUES (?, ?, ?)",
+                        (config_id, k, json.dumps(v) if isinstance(v, (dict, list)) else str(v)),
+                    )
             self.conn.commit()
             return config_id
 
@@ -167,6 +194,14 @@ class DatabaseManager:
             )
             self.conn.commit()
             return cur.lastrowid
+
+    def get_websites(self):
+        """Return list of known websites."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT id, name FROM websites")
+            rows = cur.fetchall()
+            return rows
 
     def _compute_hash(self, file_path):
         """Return SHA1 hash for the given file."""
@@ -282,7 +317,7 @@ class DatabaseManager:
                     )
         other.close()
 
-    def run_query(self, query):
+    def run_query(self, query, params=None):
         """Execute an arbitrary SQL query and return the results.
 
         Parameters
@@ -294,7 +329,10 @@ class DatabaseManager:
         with self.lock:
             cur = self.conn.cursor()
             try:
-                cur.execute(query)
+                if params is None:
+                    cur.execute(query)
+                else:
+                    cur.execute(query, params)
                 if query.strip().lower().startswith("select"):
                     rows = cur.fetchall()
                     headers = [description[0] for description in cur.description]
@@ -304,6 +342,57 @@ class DatabaseManager:
                     return [], []
             finally:
                 cur.close()
+
+    def get_table_names(self):
+        """Return list of table names in the database."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            rows = [r[0] for r in cur.fetchall()]
+            return rows
+
+    def fetch_table(self, table_name, limit=100):
+        """Return contents of a table."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute(f"SELECT * FROM {table_name} LIMIT ?", (limit,))
+            rows = cur.fetchall()
+            headers = [description[0] for description in cur.description]
+            return headers, rows
+
+    def search_files(self, required_tags, blacklist_tags):
+        """Search files containing required tags and not containing blacklist."""
+        conditions = []
+        params = []
+        for tag in required_tags:
+            conditions.append("post_tags LIKE ?")
+            params.append(f"%{tag}%")
+        for tag in blacklist_tags:
+            conditions.append("post_tags NOT LIKE ?")
+            params.append(f"%{tag}%")
+        where = " AND ".join(conditions) if conditions else "1"
+        query = f"SELECT * FROM files WHERE {where}"
+        return self.run_query(query, params)
+
+    def copy_files_from_table(self, table_name, dest_dir):
+        """Copy images referenced in a table to dest_dir."""
+        os.makedirs(dest_dir, exist_ok=True)
+        headers, rows = self.fetch_table(table_name, limit=1000000)
+        if "local_path" not in headers:
+            return 0
+        idx = headers.index("local_path")
+        count = 0
+        for row in rows:
+            src = row[idx]
+            if src and os.path.isfile(src):
+                fname = os.path.basename(src)
+                dst = os.path.join(dest_dir, fname)
+                try:
+                    shutil.copy2(src, dst)
+                    count += 1
+                except Exception:
+                    pass
+        return count
 
     def close(self):
         with self.lock:
