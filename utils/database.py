@@ -4,6 +4,9 @@ import threading
 from datetime import datetime
 import hashlib
 import json
+
+import time
+
 import shutil
 
 class DatabaseManager:
@@ -113,26 +116,51 @@ class DatabaseManager:
             self.conn.commit()
 
     def add_config(self, json_content=None, path=None):
-        """Insert a new config and return its id."""
+        """Insert a new config and return its id.
+
+        If no path is supplied, the JSON is written to a file in
+        ``data/configs`` and that path stored.  The table is expanded with
+        columns matching the JSON keys so values can be queried directly.
+        """
         now = datetime.utcnow().isoformat()
+        data = None
+        if json_content:
+            data = json.loads(json_content) if isinstance(json_content, str) else json_content
+        if path is None and data is not None:
+            config_dir = os.path.join(os.getcwd(), "data", "configs")
+            os.makedirs(config_dir, exist_ok=True)
+            fname = f"config_{int(time.time()*1000)}.json"
+            path = os.path.join(config_dir, fname)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data, indent=2))
+
         with self.lock:
             cur = self.conn.cursor()
+            if data:
+                cur.execute("PRAGMA table_info(configs)")
+                existing = [r[1] for r in cur.fetchall()]
+                for k in data.keys():
+                    if k not in existing:
+                        cur.execute(f"ALTER TABLE configs ADD COLUMN {k} TEXT")
+            columns = ["path", "json", "created_at"]
+            values = [path, json.dumps(data) if data is not None else None, now]
+            if data:
+                for k in data.keys():
+                    columns.append(k)
+                    v = data[k]
+                    values.append(json.dumps(v) if isinstance(v, (dict, list)) else str(v))
+            placeholders = ",".join(["?"] * len(columns))
             cur.execute(
-                "INSERT INTO configs (path, json, created_at) VALUES (?, ?, ?)",
-                (path, json_content, now),
+                f"INSERT INTO configs ({','.join(columns)}) VALUES ({placeholders})",
+                values,
             )
             config_id = cur.lastrowid
-            # break json into key/value rows for easier querying
-            if json_content:
-                try:
-                    data = json.loads(json_content) if isinstance(json_content, str) else json_content
-                    for k, v in data.items():
-                        cur.execute(
-                            "INSERT INTO config_entries (config_id, key, value) VALUES (?, ?, ?)",
-                            (config_id, k, json.dumps(v) if isinstance(v, (dict, list)) else str(v)),
-                        )
-                except Exception:
-                    pass
+            if data:
+                for k, v in data.items():
+                    cur.execute(
+                        "INSERT INTO config_entries (config_id, key, value) VALUES (?, ?, ?)",
+                        (config_id, k, json.dumps(v) if isinstance(v, (dict, list)) else str(v)),
+                    )
             self.conn.commit()
             return config_id
 

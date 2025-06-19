@@ -111,19 +111,25 @@ class Database_tab:
             table_options = self.db_manager.get_table_names() if hasattr(self.db_manager, "get_table_names") else []
             table_dropdown = gr.Dropdown(table_options, label="View Table", value=None)
             view_button = gr.Button(value="Show Table")
-            req_tags = gr.Textbox(label="Add Required Tag", value="",
-                                 info="Press Enter to add")
-            req_group = gr.CheckboxGroup(label="Required Tags")
-            req_remove = gr.Button(value="Remove Selected Required")
-            blacklist_tags = gr.Textbox(label="Add Blacklist Tag", value="",
-                                       info="Press Enter to add")
-            blacklist_group = gr.CheckboxGroup(label="Blacklist Tags")
-            blacklist_remove = gr.Button(value="Remove Selected Blacklist")
-            search_button = gr.Button(value="Search")
-            new_table_name = gr.Textbox(label="New Table Name")
-            create_table_btn = gr.Button(value="Create Table from Search")
-            export_dir = gr.Textbox(label="Export Directory")
-            export_button = gr.Button(value="Export Table Files")
+
+            with gr.Accordion("Tag Search", open=False):
+                with gr.Row():
+                    with gr.Column():
+                        req_tags = gr.Textbox(label="Add Required Tag", value="",
+                                             info="Press Enter to add")
+                        req_group = gr.CheckboxGroup(label="Required Tags")
+                        req_remove = gr.Button(value="Remove Selected Required")
+                    with gr.Column():
+                        blacklist_tags = gr.Textbox(label="Add Blacklist Tag", value="",
+                                                   info="Press Enter to add")
+                        blacklist_group = gr.CheckboxGroup(label="Blacklist Tags")
+                        blacklist_remove = gr.Button(value="Remove Selected Blacklist")
+                search_button = gr.Button(value="Search")
+                new_table_name = gr.Textbox(label="New Table Name")
+                create_table_btn = gr.Button(value="Create Table from Search")
+                export_dir = gr.Textbox(label="Export Directory")
+                export_button = gr.Button(value="Export Table Files")
+
             result_table = gr.Dataframe(visible=False)
             message_box = gr.Textbox(label="Message", interactive=False)
             req_state = gr.State([])
