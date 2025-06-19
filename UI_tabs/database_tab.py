@@ -3,8 +3,9 @@ import os
 
 
 class Database_tab:
-    def __init__(self, db_manager):
+    def __init__(self, db_manager, gallery_tab_manager=None):
         self.db_manager = db_manager
+        self.gallery_tab_manager = gallery_tab_manager
 
     # Tag management helpers
     def add_tag(self, tag, current):
@@ -52,7 +53,8 @@ class Database_tab:
             return gr.update(), gr.update(value="No table selected")
         try:
             headers, rows = self.db_manager.fetch_table(table_name)
-            return gr.update(value=rows, headers=headers, visible=True), gr.update(value="")
+            count_msg = f"Total Rows: {len(rows)}"
+            return gr.update(value=rows, headers=headers, visible=True), gr.update(value=count_msg)
         except Exception as e:
             return gr.update(), gr.update(value=f"Error: {e}")
 
@@ -61,7 +63,8 @@ class Database_tab:
         required = required_list or []
         blacklist = blacklist_list or []
         headers, rows = self.db_manager.search_files(required, blacklist)
-        return gr.update(value=rows, headers=headers, visible=True)
+        count_msg = f"Matches Found: {len(rows)}"
+        return gr.update(value=rows, headers=headers, visible=True), gr.update(value=count_msg)
 
     def create_search_table(self, new_table_name, required_list, blacklist_list):
         if not new_table_name:
@@ -86,6 +89,26 @@ class Database_tab:
             return gr.update(value="Select table and directory")
         count = self.db_manager.copy_files_from_table(table_name, dest_dir)
         return gr.update(value=f"Copied {count} files")
+
+    def send_table_to_gallery(self, table_name):
+        if not table_name:
+            return gr.update(), gr.update(value="No table selected")
+        if not self.gallery_tab_manager:
+            return gr.update(), gr.update(value="Gallery not available")
+        headers, rows = self.db_manager.fetch_table(table_name)
+        images = self.gallery_tab_manager.load_from_db_rows(headers, rows)
+        msg = f"Loaded {len(rows)} rows into gallery"
+        return gr.update(value=images, visible=True), gr.update(value=msg)
+
+    def send_search_to_gallery(self, required_list, blacklist_list):
+        if not self.gallery_tab_manager:
+            return gr.update(), gr.update(value="Gallery not available")
+        required = required_list or []
+        blacklist = blacklist_list or []
+        headers, rows = self.db_manager.search_files(required, blacklist)
+        images = self.gallery_tab_manager.load_from_db_rows(headers, rows)
+        msg = f"Loaded {len(rows)} rows into gallery"
+        return gr.update(value=images, visible=True), gr.update(value=msg)
 
     def render_tab(self):
         with gr.Tab("Database"):
@@ -129,6 +152,9 @@ class Database_tab:
                 create_table_btn = gr.Button(value="Create Table from Search")
                 export_dir = gr.Textbox(label="Export Directory")
                 export_button = gr.Button(value="Export Table Files")
+                send_search_btn = gr.Button(value="Load Search in Gallery")
+            with gr.Row():
+                send_table_btn = gr.Button(value="Load Table in Gallery")
 
             result_table = gr.Dataframe(visible=False)
             message_box = gr.Textbox(label="Message", interactive=False)
@@ -151,6 +177,8 @@ class Database_tab:
         self.create_table_btn = create_table_btn
         self.export_dir = export_dir
         self.export_button = export_button
+        self.send_search_btn = send_search_btn
+        self.send_table_btn = send_table_btn
         self.result_table = result_table
         self.message_box = message_box
         self.req_state = req_state
@@ -160,7 +188,8 @@ class Database_tab:
                 req_tags, req_group, req_remove,
                 blacklist_tags, blacklist_group, blacklist_remove,
                 search_button, new_table_name, create_table_btn,
-                export_dir, export_button, result_table, message_box,
+                export_dir, export_button, send_search_btn, send_table_btn,
+                result_table, message_box,
                 req_state, blacklist_state]
 
     def get_event_listeners(self):
@@ -202,7 +231,7 @@ class Database_tab:
         self.search_button.click(
             fn=self.search,
             inputs=[self.req_state, self.blacklist_state],
-            outputs=self.result_table,
+            outputs=[self.result_table, self.message_box],
         )
         self.create_table_btn.click(
             fn=self.create_search_table,
@@ -213,6 +242,16 @@ class Database_tab:
             fn=self.export_table,
             inputs=[self.table_dropdown, self.export_dir],
             outputs=self.message_box,
+        )
+        self.send_search_btn.click(
+            fn=self.send_search_to_gallery,
+            inputs=[self.req_state, self.blacklist_state],
+            outputs=[self.gallery_tab_manager.gallery_comp, self.message_box],
+        )
+        self.send_table_btn.click(
+            fn=self.send_table_to_gallery,
+            inputs=self.table_dropdown,
+            outputs=[self.gallery_tab_manager.gallery_comp, self.message_box],
         )
 
 
