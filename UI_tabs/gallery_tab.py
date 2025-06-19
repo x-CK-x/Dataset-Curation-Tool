@@ -3,6 +3,7 @@ import os
 import copy
 import datetime
 import glob
+from PIL import Image
 
 from utils import js_constants as js_, md_constants as md_, helper_functions as help
 
@@ -43,6 +44,15 @@ class Gallery_tab:
         self.rating_csv_dict = rating_csv_dict
         self.tags_csv_dict = tags_csv_dict
         self.image_creation_times = image_creation_times
+
+        # supported media extensions
+        self.image_formats = [
+            "png", "jpg", "jpeg", "gif", "bmp", "tiff", "webp", "heic"
+        ]
+        self.video_formats = [
+            "webm", "mp4", "mkv", "avi", "mov", "flv", "gifv", "swf"
+        ]
+        self.current_media_mode = "images"
 
         self.db_manager = db_manager
         self.download_id = download_id
@@ -177,13 +187,17 @@ class Gallery_tab:
             self.selected_image_dict = None
 
     ### Update gellery component
-    def update_search_gallery(self, sort_images, sort_option):
+    def update_search_gallery(self, sort_images, sort_option, media_mode="images"):
         temp = '\\' if help.is_windows() else '/'
         folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
         folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
         images = []
         for ext in list(self.all_images_dict["searched"].keys()):
-            search_path = os.path.join(folder_path, self.download_tab_manager.settings_json[f"{ext}_folder"])
+            if media_mode == "images" and ext in self.video_formats:
+                continue
+            if media_mode == "videos" and ext not in self.video_formats:
+                continue
+            search_path = os.path.join(folder_path, self.download_tab_manager.settings_json.get(f"{ext}_folder", ""))
             for img_id in list(self.all_images_dict["searched"][ext].keys()):
                 images.append(os.path.join(search_path, f"{img_id}.{ext}"))
 
@@ -196,6 +210,14 @@ class Gallery_tab:
                 images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
                                                                                float('-inf')))
         # help.verbose_print(f"images:\t{images}")
+        if media_mode == "images":
+            pil_imgs = []
+            for p in images:
+                try:
+                    pil_imgs.append(Image.open(p))
+                except Exception:
+                    continue
+            images = pil_imgs
         return images
 
     def initialize_posts_timekeeper(self):
@@ -369,11 +391,33 @@ class Gallery_tab:
         self.all_images_dict["searched"] = copy.deepcopy(filtered_images)
         help.verbose_print(f"===============================")
 
+    def load_from_db_rows(self, headers, rows):
+        """Populate the search gallery using database rows."""
+        if "local_path" not in headers:
+            return []
+        path_idx = headers.index("local_path")
+        tag_idx = headers.index("post_tags") if "post_tags" in headers else None
+        self.all_images_dict["searched"] = {}
+        for row in rows:
+            path = row[path_idx]
+            if not path or not os.path.isfile(path):
+                continue
+            ext = os.path.splitext(path)[1].lstrip('.').lower()
+            img_id = os.path.splitext(os.path.basename(path))[0]
+            tags = []
+            if tag_idx is not None and row[tag_idx]:
+                tags = [t for t in str(row[tag_idx]).split() if t]
+            if ext not in self.all_images_dict["searched"]:
+                self.all_images_dict["searched"][ext] = {}
+            self.all_images_dict["searched"][ext][img_id] = tags
+        images = self.update_search_gallery(False, "", self.current_media_mode)
+        return images
+
     def search_tags(self, tag_search_textbox, global_search_opts, sort_images, sort_option):
         # update SEARCHED in global dictionary
         self.filter_images_by_tags(tag_search_textbox, global_search_opts)
         # return updated gallery
-        images = self.update_search_gallery(sort_images, sort_option)
+        images = self.update_search_gallery(sort_images, sort_option, self.current_media_mode)
         return gr.update(value=images, visible=True)
 
     def add_to_csv_dictionaries(self, string_category, tag, count=1):
@@ -1011,7 +1055,7 @@ class Gallery_tab:
         category_comp6 = gr.update(choices=[], value=[])
 
         # gallery update
-        images = self.update_search_gallery(sort_images, sort_option)
+        images = self.update_search_gallery(sort_images, sort_option, self.current_media_mode)
         gallery = gr.update(value=images, visible=True)
         # textbox update
         id_box = gr.update(value="")
@@ -1214,7 +1258,7 @@ class Gallery_tab:
         # type select
         if "searched" in self.all_images_dict and len(
                 list(self.all_images_dict["searched"].keys())) > 0 and self.get_searched_image_total() > 0:
-            images = self.update_search_gallery(sort_images, sort_option)
+            images = self.update_search_gallery(sort_images, sort_option, folder_type_select)
         else:
             help.verbose_print(f"in SHOW searched gallery")
             return self.show_gallery(folder_type_select, sort_images, sort_option)
@@ -1241,6 +1285,7 @@ class Gallery_tab:
     ### searched -> {img_id, tags}
     ######
     def show_gallery(self, folder_type_select, sort_images, sort_option):
+        self.current_media_mode = folder_type_select
         help.verbose_print(f"self.download_tab_manager.is_csv_loaded:\t{self.download_tab_manager.is_csv_loaded}")
 
         images = []
@@ -1252,22 +1297,29 @@ class Gallery_tab:
                 del self.all_images_dict["searched"]
                 self.all_images_dict["searched"] = {}
 
-            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
-            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
-            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
+            base_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            base_path = os.path.join(base_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
 
-            help.verbose_print(f"folder_path:\t{folder_path}")
-
-            # type select : re-load images
-            help.verbose_print(f"self.all_images_dict is None:\t{self.all_images_dict is None}")
-            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
-                    (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
-                    not self.download_tab_manager.is_csv_loaded:
-                images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
-                help.verbose_print(f"images:\t{images}")
-            else: # render from existing dictionary
-                for name in list(self.all_images_dict[folder_type_select].keys()):
-                    images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
+            # determine extensions based on mode
+            if folder_type_select in ["images", "videos"]:
+                exts = self.image_formats if folder_type_select == "images" else self.video_formats
+                for ext in exts:
+                    folder_key = f"{ext}_folder"
+                    folder = self.download_tab_manager.settings_json.get(folder_key)
+                    if not folder:
+                        continue
+                    path = os.path.join(base_path, folder)
+                    images.extend(glob.glob(os.path.join(path, f"*.{ext}")))
+            else:
+                folder_path = os.path.join(base_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
+                if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
+                        (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
+                        not self.download_tab_manager.is_csv_loaded:
+                    images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
+                    help.verbose_print(f"images:\t{images}")
+                else:  # render from existing dictionary
+                    for name in list(self.all_images_dict[folder_type_select].keys()):
+                        images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
 
             if not self.download_tab_manager.is_csv_loaded:
                 full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
@@ -1316,6 +1368,14 @@ class Gallery_tab:
                     images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
                                                                                    float('-inf')))
             # help.verbose_print(f"images:\t{images}")
+        if folder_type_select == "images":
+            pil_imgs = []
+            for p in images:
+                try:
+                    pil_imgs.append(Image.open(p))
+                except Exception:
+                    continue
+            images = pil_imgs
         return gr.update(value=images, visible=True)
 
     def extract_name_and_extention(self, gallery_comp_path):
@@ -1423,22 +1483,28 @@ class Gallery_tab:
         if "searched" in self.all_images_dict:
             del self.all_images_dict["searched"]
             self.all_images_dict["searched"] = {}
+        base_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+        base_path = os.path.join(base_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
 
-        folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
-        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
-        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
-
-        help.verbose_print(f"folder_path:\t{folder_path}")
-
-        # type select
         images = []
-        if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
+        if folder_type_select in ["images", "videos"]:
+            exts = self.image_formats if folder_type_select == "images" else self.video_formats
+            for ext in exts:
+                folder_key = f"{ext}_folder"
+                folder = self.download_tab_manager.settings_json.get(folder_key)
+                if not folder:
+                    continue
+                path = os.path.join(base_path, folder)
+                images.extend(glob.glob(os.path.join(path, f"*.{ext}")))
+        else:
+            folder_path = os.path.join(base_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
+            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
                     (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
                     not self.download_tab_manager.is_csv_loaded:
-            images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
-        else:
-            for name in list(self.all_images_dict[folder_type_select].keys()):
-                images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
+                images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
+            else:
+                for name in list(self.all_images_dict[folder_type_select].keys()):
+                    images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
 
         self.download_tab_manager.is_csv_loaded = False
 
@@ -1486,6 +1552,14 @@ class Gallery_tab:
                 images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
                                                                                float('-inf')))
 
+        if folder_type_select == "images":
+            pil_imgs = []
+            for p in images:
+                try:
+                    pil_imgs.append(Image.open(p))
+                except Exception:
+                    continue
+            images = pil_imgs
         # help.verbose_print(f"images:\t{images}")
         return gr.update(value=images, visible=True)
 
@@ -1810,7 +1884,7 @@ class Gallery_tab:
                             refresh_symbol = '\U0001f504'  # 🔄
                             refresh_aspect_btn = gr.Button(value=refresh_symbol, variant="variant",
                                                            elem_id="refresh_aspect_btn")
-                        download_folder_type = gr.Radio(choices=self.file_extn_list, label='Select Filename Type')
+                        download_folder_type = gr.Radio(choices=self.file_extn_list, label='Gallery Mode', value='images')
                         img_id_textbox = gr.Textbox(label="Image ID", interactive=False, lines=1, value="")
                     with gr.Accordion("Image Sort & Selection Options"):
                         with gr.Row():

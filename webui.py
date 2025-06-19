@@ -43,7 +43,7 @@ def build_ui():
         download_checkboxes = ["skip_post_download", "reorder_tags", "replace_underscores", "remove_parentheses",
                                "do_sort"]
         resize_checkboxes = ["skip_resize", "delete_original"]
-        file_extn_list = ["png", "jpg", "gif"]
+        file_extn_list = ["images", "videos"]
 
         artist_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
         character_csv_dict = {} ##################### eventually this will get migrated to the image_board_manager class!!!
@@ -100,7 +100,7 @@ def build_ui():
 
         all_images_dict = {}  ### add images by key:id, value:selected_image_dict
         # load if data present / create if file not yet created
-        auto_config_path = os.path.join(cwd, "auto_configs")
+        auto_config_path = os.path.join(settings_json["batch_folder"], "configs")
         auto_complete_config_name = f"auto_complete_{settings_json['batch_folder']}.json"
         temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
         if not os.path.exists(auto_config_path):
@@ -236,7 +236,7 @@ def build_ui():
 
         ########################################################################################################
         # database tab init
-        database_tab_manager = Database_tab(db_manager)
+        database_tab_manager = Database_tab(db_manager, gallery_tab_manager)
         import_tab_manager = Import_tab(db_manager)
         merge_tab_manager = Merge_tab(db_manager)
         # render tabs

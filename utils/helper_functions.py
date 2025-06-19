@@ -89,6 +89,10 @@ def update_JSON(settings, temp_config_name):
     temp = copy.deepcopy(settings)
     for entry in temp:
         verbose_print(f"{entry}:\t{settings[entry]}")
+    # Ensure the target directory exists before writing the JSON file
+    dir_name = os.path.dirname(temp_config_name)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
 
     with open(temp_config_name, "w") as f:
         json.dump(temp, indent=4, fp=f)
@@ -132,6 +136,11 @@ def get_OS_delimiter():
         return '\\'
     else:
         return '/'
+
+# Backwards compatibility for legacy code/tests using the misspelled
+# function name ``get_OS_delimeter``.
+def get_OS_delimeter():
+    return get_OS_delimiter()
 
 def unzip_file(file_path, new_name=""):
     temp = '\\' if is_windows() else '/'

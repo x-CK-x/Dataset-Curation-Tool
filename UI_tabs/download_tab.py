@@ -1,6 +1,7 @@
 import copy
 import glob
 import os
+import time
 import multiprocessing as mp
 import pandas as pd
 import gradio as gr
@@ -148,10 +149,11 @@ class Download_tab:
 
         if create_new_config_checkbox:  # if called from the "create new button" the True flag will always be passed to ensure this
             temp = '\\' if help.is_windows() else '/'
+            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
             if temp in settings_path:
                 self.config_name = settings_path
             else:
-                self.config_name = os.path.join(self.cwd, settings_path)
+                self.config_name = os.path.join(config_dir, settings_path)
 
         if not self.config_name or len(self.config_name) == 0:
             raise ValueError('No Config Name Specified')
@@ -161,7 +163,8 @@ class Download_tab:
 
         # get file names & create dictionary mappings to batch file names
         temp = '\\' if help.is_windows() else '/'
-        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
         json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
         batch_names = help.get_batch_names(json_names_full_paths)
         self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
@@ -257,12 +260,17 @@ class Download_tab:
 
     def run_script_batch(self, basefolder='', settings_path=os.getcwd(), numcpu=-1, phaseperbatch=False, keepdb=False,
                          cachepostsdb=False, postscsv='', tagscsv='', postsparquet='', tagsparquet='',
-                         run_button_batch=None, images_full_change_dict_textbox=None, progress=gr.Progress()):
+                         run_button_batch=None, images_full_change_dict_textbox=None, progress=gr.Progress(track_tqdm=True)):
         help.verbose_print(
             f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb}")
 
+        total = len(run_button_batch)
+        start = time.time()
         progress(0, desc="Starting...")
-        for setting in progress.tqdm(run_button_batch, desc="Tracking Total Progress"):
+        for idx, setting in enumerate(run_button_batch, start=1):
+            eta = (time.time() - start) / idx * (total - idx) if idx > 0 else 0
+            progress(idx / total, desc=f"Batch {idx}/{total} - ETA {int(eta)}s")
+            yield gr.update(value=f"{idx}/{total} (ETA {int(eta)}s)")
             setting = self.batch_to_json_map[setting]
             path = os.path.join(self.cwd, setting)
             if not ".json" in path:
@@ -285,38 +293,47 @@ class Download_tab:
             # # apply post-processing
             # auto_config_apply(images_full_change_dict_textbox)
             del self.image_board_downloader
-        return gr.update(interactive=False, visible=False)
+        yield gr.update(interactive=False, visible=False)
 
-    def data_collect(self, progress=gr.Progress()):
-        # thread block and wait for response
+    def data_collect(self, progress=gr.Progress(track_tqdm=True)):
         total = int(self.frontend_conn.recv())
-
+        start = time.time()
         progress(0, desc="Starting...")
-        for i in progress.tqdm(range(total), desc="Collecting"):
+        for i in range(total):
             _ = self.frontend_conn.recv()
-        return gr.update(interactive=False, visible=False)
+            elapsed = time.time() - start
+            eta = (elapsed / (i + 1)) * (total - i - 1) if i > 0 else 0
+            progress((i + 1) / total, desc=f"Collecting {i+1}/{total} - ETA {int(eta)}s")
+            yield gr.update(value=f"{i+1}/{total} (ETA {int(eta)}s)")
+        yield gr.update(interactive=False, visible=False)
 
-    def data_download(self, progress=gr.Progress()):
-        # thread block and wait for response
+    def data_download(self, progress=gr.Progress(track_tqdm=True)):
         total = int(self.frontend_conn.recv())
-
+        start = time.time()
         progress(0, desc="Starting...")
-        for i in progress.tqdm(range(0, total), desc="Downloading"):
+        for i in range(total):
             _ = int(self.frontend_conn.recv())
-        return gr.update(interactive=False, visible=False)
+            elapsed = time.time() - start
+            eta = (elapsed / (i + 1)) * (total - i - 1) if i > 0 else 0
+            progress((i + 1) / total, desc=f"Downloading {i+1}/{total} - ETA {int(eta)}s")
+            yield gr.update(value=f"{i+1}/{total} (ETA {int(eta)}s)")
+        yield gr.update(interactive=False, visible=False)
 
-    def data_resize(self, resize_checkbox_group, progress=gr.Progress()):
+    def data_resize(self, resize_checkbox_group, progress=gr.Progress(track_tqdm=True)):
         if not "skip_resize" in resize_checkbox_group:
-            # thread block and wait for response
             total = int(self.frontend_conn.recv())
-
+            start = time.time()
             progress(0, desc="Starting...")
-            for i in progress.tqdm(range(total), desc="Resizing"):
+            for i in range(total):
                 _ = self.frontend_conn.recv()
+                elapsed = time.time() - start
+                eta = (elapsed / (i + 1)) * (total - i - 1) if i > 0 else 0
+                progress((i + 1) / total, desc=f"Resizing {i+1}/{total} - ETA {int(eta)}s")
+                yield gr.update(value=f"{i+1}/{total} (ETA {int(eta)}s)")
 
         self.frontend_conn.close()
         del self.frontend_conn, self.backend_conn
-        return gr.update(interactive=False, visible=False)
+        yield gr.update(interactive=False, visible=False)
 
     def end_connection(self):
         self.image_board_downloader.join()
@@ -326,7 +343,7 @@ class Download_tab:
         temp_config_path = ""
         if not optional_path or optional_path == "":
             if not self.settings_json["batch_folder"] in self.gallery_tab_manager.auto_complete_config_name:
-                self.auto_config_path = os.path.join(self.cwd, "auto_configs")
+                self.auto_config_path = os.path.join(self.settings_json["batch_folder"], "configs")
                 sanitized = self.settings_json['batch_folder'].replace('/', '---').replace('\\', '---')
                 self.gallery_tab_manager.auto_complete_config_name = f"auto_complete_{sanitized}.json"
 
@@ -338,7 +355,7 @@ class Download_tab:
         else:
             if not self.settings_json["batch_folder"] in optional_path:
                 help.eprint("CURRENT LOADED BATCH FOLDER NOT PRESENT IN SPECIFIED PATH!!!")
-                self.auto_config_path = os.path.join(self.cwd, "auto_configs")
+                self.auto_config_path = os.path.join(self.settings_json["batch_folder"], "configs")
                 temp = '\\' if help.is_windows() else '/'
                 name = optional_path.split(temp)[-1]
                 name = name.replace('/', '---').replace('\\', '---')
@@ -479,7 +496,8 @@ class Download_tab:
 
         # get file names & create dictionary mappings to batch file names
         temp = '\\' if help.is_windows() else '/'
-        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
         json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
         batch_names = help.get_batch_names(json_names_full_paths)
         self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
@@ -619,7 +637,8 @@ class Download_tab:
 
         # get file names & create dictionary mappings to batch file names
         temp = '\\' if help.is_windows() else '/'
-        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
         json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
         batch_names = help.get_batch_names(json_names_full_paths)
         self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
@@ -633,6 +652,13 @@ class Download_tab:
                save_searched_list_type, save_searched_list_path, downloaded_posts_folder, png_folder, jpg_folder, webm_folder, gif_folder, swf_folder, save_filename_type, \
                remove_tags_list, replace_tags_list, tag_count_list_folder, all_json_files_checkboxgroup, quick_json_select, proxy_url_textbox, settings_path, \
                custom_csv_path_textbox, use_csv_custom_checkbox, override_download_delay_checkbox, custom_download_delay_slider, custom_retry_attempts_slider
+
+    def change_config_file(self, file_path):
+        """Wrapper to load a config directly from a file picker."""
+        if file_path is None:
+            return [gr.update() for _ in range(48)]  # no-op if no file selected
+        sd = gr.SelectData(value=help.get_batch_name(file_path))
+        return self.change_config(sd, file_path)
 
     def textbox_handler_required(self, tag_string_comp, state, is_textbox):
         # help.verbose_print(f"tag_string_comp:\t{tag_string_comp}")
@@ -907,11 +933,14 @@ class Download_tab:
 
     def create_all_setting_configs(self, json, settings_path):
         settings_copy = copy.deepcopy(self.settings_json)
+        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
         path = settings_path
         temp = '\\' if help.is_windows() else '/'
         if ".json" in path:
             path = (path.split(temp))[:-1]
             path = f'{temp}'.join(path)
+        if temp not in path:
+            path = os.path.join(config_dir, path)
         entries = list(json.keys())
         for entry_key in entries:
             # edit copy
@@ -930,7 +959,8 @@ class Download_tab:
 
         # get file names & create dictionary mappings to batch file names
         temp = '\\' if help.is_windows() else '/'
-        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
         json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
         batch_names = help.get_batch_names(json_names_full_paths)
         self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
@@ -973,7 +1003,8 @@ class Download_tab:
 
         # get file names & create dictionary mappings to batch file names
         temp = '\\' if help.is_windows() else '/'
-        json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
         json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
         batch_names = help.get_batch_names(json_names_full_paths)
         self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
@@ -1000,6 +1031,8 @@ class Download_tab:
                 with gr.Row():
                     with gr.Column(min_width=50, scale=2):
                         batch_folder = gr.Textbox(lines=1, label='Path to Batch Directory', value=self.settings_json["batch_folder"])
+                    with gr.Column(min_width=50, scale=1):
+                        batch_browse = gr.File(label='Browse', type='filepath', file_count='directory')
                     with gr.Column(min_width=50, scale=2):
                         resized_img_folder = gr.Textbox(lines=1, label='Path to Resized Images', value=self.settings_json["resized_img_folder"])
                     with gr.Column(min_width=50, scale=2):
@@ -1054,13 +1087,15 @@ class Download_tab:
 
                     # get file names & create dictionary mappings to batch file names
                     temp = '\\' if help.is_windows() else '/'
-                    json_names_full_paths = glob.glob(os.path.join(self.cwd, f"*.json"))
+                    config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+                    json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
                     json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
                     batch_names = help.get_batch_names(json_names_full_paths)
                     self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
 
                     quick_json_select = gr.Dropdown(choices=batch_names, label='JSON Select', value=self.settings_json["batch_folder"],
                                                     interactive=True)
+                    json_browse = gr.File(label='Browse JSON', type='filepath', file_types=['.json'])
 
             with gr.Accordion("Edit Requirements for Image Stat/s", visible=True, open=False):
                 gr.Markdown(md_.stats_config)
@@ -1279,6 +1314,7 @@ class Download_tab:
 
         self.config_save_var = config_save_var
         self.batch_folder = batch_folder
+        self.batch_browse = batch_browse
         self.resized_img_folder = resized_img_folder
         self.custom_csv_path_textbox = custom_csv_path_textbox
         self.use_csv_custom_checkbox = use_csv_custom_checkbox
@@ -1292,6 +1328,7 @@ class Download_tab:
         self.settings_path = settings_path
         self.create_new_config_checkbox = create_new_config_checkbox
         self.quick_json_select = quick_json_select
+        self.json_browse = json_browse
         self.min_score = min_score
         self.min_fav_count = min_fav_count
         self.min_year = min_year
@@ -1380,6 +1417,7 @@ class Download_tab:
         return [
                 self.config_save_var,
                 self.batch_folder,
+                self.batch_browse,
                 self.resized_img_folder,
                 self.custom_csv_path_textbox,
                 self.use_csv_custom_checkbox,
@@ -1393,6 +1431,7 @@ class Download_tab:
                 self.settings_path,
                 self.create_new_config_checkbox,
                 self.quick_json_select,
+                self.json_browse,
                 self.min_score,
                 self.min_fav_count,
                 self.min_year,
@@ -1623,8 +1662,8 @@ class Download_tab:
             outputs=[self.all_json_files_checkboxgroup]
         )
         self.quick_json_select.select(
-            fn=self.change_config, 
-            inputs=[self.settings_path], 
+            fn=self.change_config,
+            inputs=[self.settings_path],
             outputs=[self.batch_folder, self.resized_img_folder, self.tag_sep, self.tag_order_format,
                      self.prepend_tags, self.append_tags, self.img_ext, self.method_tag_files, self.min_score,
                      self.min_fav_count, self.min_year, self.min_month, self.min_day, self.min_area, self.top_n,
@@ -1637,11 +1676,11 @@ class Download_tab:
                      self.save_filename_type, self.gallery_tab_manager.remove_tags_list, self.gallery_tab_manager.replace_tags_list,
                      self.tag_count_list_folder, self.all_json_files_checkboxgroup, self.quick_json_select,
                      self.proxy_url_textbox, self.settings_path,  self.custom_csv_path_textbox,
-                     self.use_csv_custom_checkbox, self.override_download_delay_checkbox, self.custom_download_delay_slider, 
+                     self.use_csv_custom_checkbox, self.override_download_delay_checkbox, self.custom_download_delay_slider,
                      self.custom_retry_attempts_slider]
         ).then(
-            fn=self.check_to_reload_auto_complete_config, 
-            inputs=[], 
+            fn=self.check_to_reload_auto_complete_config,
+            inputs=[],
             outputs=[]
         ).then(
             fn=self.gallery_tab_manager.reset_gallery_manager,
@@ -1961,6 +2000,25 @@ class Download_tab:
             fn=help.download_negative_tags_file,
             inputs=None,
             outputs=None
+        )
+        self.batch_browse.change(lambda p: p, inputs=self.batch_browse, outputs=self.batch_folder)
+        self.json_browse.change(
+            fn=self.change_config_file,
+            inputs=self.json_browse,
+            outputs=[self.batch_folder, self.resized_img_folder, self.tag_sep, self.tag_order_format,
+                     self.prepend_tags, self.append_tags, self.img_ext, self.method_tag_files, self.min_score,
+                     self.min_fav_count, self.min_year, self.min_month, self.min_day, self.min_area, self.top_n,
+                     self.min_short_side, self.collect_checkbox_group_var, self.download_checkbox_group_var,
+                     self.resize_checkbox_group_var, self.required_tags_group_var, self.blacklist_tags_group_var,
+                     self.skip_posts_file, self.skip_posts_type, self.collect_from_listed_posts_file,
+                     self.collect_from_listed_posts_type, self.apply_filter_to_listed_posts,
+                     self.save_searched_list_type, self.save_searched_list_path, self.downloaded_posts_folder,
+                     self.png_folder, self.jpg_folder, self.webm_folder, self.gif_folder, self.swf_folder,
+                     self.save_filename_type, self.gallery_tab_manager.remove_tags_list, self.gallery_tab_manager.replace_tags_list,
+                     self.tag_count_list_folder, self.all_json_files_checkboxgroup, self.quick_json_select,
+                     self.proxy_url_textbox, self.settings_path,  self.custom_csv_path_textbox,
+                     self.use_csv_custom_checkbox, self.override_download_delay_checkbox, self.custom_download_delay_slider,
+                     self.custom_retry_attempts_slider]
         )
         self.images_full_change_dict_run_button.click(
             fn=self.make_run_visible,
