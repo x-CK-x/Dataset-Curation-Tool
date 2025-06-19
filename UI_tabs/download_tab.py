@@ -162,12 +162,16 @@ class Download_tab:
         help.update_JSON(self.settings_json, self.config_name)
 
         # get file names & create dictionary mappings to batch file names
-        temp = '\\' if help.is_windows() else '/'
-        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-        batch_names = help.get_batch_names(json_names_full_paths)
-        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        if self.db_manager:
+            batch_names, mapping = self.db_manager.list_config_options()
+            self.batch_to_json_map = mapping
+        else:
+            temp = '\\' if help.is_windows() else '/'
+            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
+            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+            batch_names = help.get_batch_names(json_names_full_paths)
+            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
         quick_json_select = gr.update(choices=batch_names)
@@ -272,7 +276,7 @@ class Download_tab:
             progress(idx / total, desc=f"Batch {idx}/{total} - ETA {int(eta)}s")
             yield gr.update(value=f"{idx}/{total} (ETA {int(eta)}s)")
             setting = self.batch_to_json_map[setting]
-            path = os.path.join(self.cwd, setting)
+            path = setting if os.path.isabs(setting) else os.path.join(self.cwd, setting)
             if not ".json" in path:
                 path += ".json"
 
@@ -336,8 +340,12 @@ class Download_tab:
         yield gr.update(interactive=False, visible=False)
 
     def end_connection(self):
-        self.image_board_downloader.join()
-        del self.image_board_downloader
+        if hasattr(self, "image_board_downloader"):
+            self.image_board_downloader.join(timeout=5)
+            if self.image_board_downloader.is_alive():
+                self.image_board_downloader.terminate()
+                self.image_board_downloader.join()
+            del self.image_board_downloader
 
     def check_to_reload_auto_complete_config(self, optional_path=None):
         temp_config_path = ""
@@ -381,8 +389,9 @@ class Download_tab:
         settings_path = None
 
         if name != self.config_name:
-            self.settings_json = help.load_session_config(os.path.join(self.cwd, name))
-            self.config_name = os.path.join(self.cwd, name)
+            path = name if os.path.isabs(name) else os.path.join(self.cwd, name)
+            self.settings_json = help.load_session_config(path)
+            self.config_name = path
             settings_path = gr.update(value=self.config_name)
         else:
             if temp in file_path:
@@ -390,8 +399,9 @@ class Download_tab:
                 self.config_name = file_path
                 settings_path = gr.update(value=self.config_name)
             else:
-                self.settings_json = help.load_session_config(os.path.join(self.cwd, file_path))
-                self.config_name = os.path.join(self.cwd, file_path)
+                path = file_path if os.path.isabs(file_path) else os.path.join(self.cwd, file_path)
+                self.settings_json = help.load_session_config(path)
+                self.config_name = path
                 settings_path = gr.update(value=self.config_name)
 
         self.required_tags_list = help.get_list(self.settings_json["required_tags"], self.settings_json["tag_sep"])
@@ -495,12 +505,16 @@ class Download_tab:
         self.is_csv_loaded = False
 
         # get file names & create dictionary mappings to batch file names
-        temp = '\\' if help.is_windows() else '/'
-        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-        batch_names = help.get_batch_names(json_names_full_paths)
-        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        if self.db_manager:
+            batch_names, mapping = self.db_manager.list_config_options()
+            self.batch_to_json_map = mapping
+        else:
+            temp = '\\' if help.is_windows() else '/'
+            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
+            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+            batch_names = help.get_batch_names(json_names_full_paths)
+            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
         quick_json_select = gr.update(choices=batch_names, value=help.get_batch_name(self.config_name))
@@ -522,8 +536,9 @@ class Download_tab:
         settings_path = None
 
         if selected != self.config_name:
-            self.settings_json = help.load_session_config(os.path.join(self.cwd, selected))
-            self.config_name = os.path.join(self.cwd, selected)
+            path = selected if os.path.isabs(selected) else os.path.join(self.cwd, selected)
+            self.settings_json = help.load_session_config(path)
+            self.config_name = path
             settings_path = gr.update(value=self.config_name)
         else:
             if temp in file_path:
@@ -531,8 +546,9 @@ class Download_tab:
                 self.config_name = file_path
                 settings_path = gr.update(value=self.config_name)
             else:
-                self.settings_json = help.load_session_config(os.path.join(self.cwd, file_path))
-                self.config_name = os.path.join(self.cwd, file_path)
+                path = file_path if os.path.isabs(file_path) else os.path.join(self.cwd, file_path)
+                self.settings_json = help.load_session_config(path)
+                self.config_name = path
                 settings_path = gr.update(value=self.config_name)
 
         self.required_tags_list = help.get_list(self.settings_json["required_tags"], self.settings_json["tag_sep"])
@@ -636,12 +652,16 @@ class Download_tab:
         self.is_csv_loaded = False
 
         # get file names & create dictionary mappings to batch file names
-        temp = '\\' if help.is_windows() else '/'
-        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-        batch_names = help.get_batch_names(json_names_full_paths)
-        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        if self.db_manager:
+            batch_names, mapping = self.db_manager.list_config_options()
+            self.batch_to_json_map = mapping
+        else:
+            temp = '\\' if help.is_windows() else '/'
+            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
+            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+            batch_names = help.get_batch_names(json_names_full_paths)
+            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
         quick_json_select = gr.update(choices=batch_names)
@@ -958,12 +978,16 @@ class Download_tab:
             help.update_JSON(settings_copy, new_path)
 
         # get file names & create dictionary mappings to batch file names
-        temp = '\\' if help.is_windows() else '/'
-        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-        batch_names = help.get_batch_names(json_names_full_paths)
-        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        if self.db_manager:
+            batch_names, mapping = self.db_manager.list_config_options()
+            self.batch_to_json_map = mapping
+        else:
+            temp = '\\' if help.is_windows() else '/'
+            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
+            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+            batch_names = help.get_batch_names(json_names_full_paths)
+            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
         return all_json_files_checkboxgroup
@@ -1002,12 +1026,16 @@ class Download_tab:
                 os.remove(path)
 
         # get file names & create dictionary mappings to batch file names
-        temp = '\\' if help.is_windows() else '/'
-        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-        batch_names = help.get_batch_names(json_names_full_paths)
-        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        if self.db_manager:
+            batch_names, mapping = self.db_manager.list_config_options()
+            self.batch_to_json_map = mapping
+        else:
+            temp = '\\' if help.is_windows() else '/'
+            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
+            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+            batch_names = help.get_batch_names(json_names_full_paths)
+            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
         quick_json_select = gr.update(choices=batch_names)
@@ -1085,16 +1113,24 @@ class Download_tab:
                         settings_path = gr.Textbox(lines=1, label='Path/Name to \"NEW\" JSON (REQUIRED)', value=self.config_name)
                     create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
 
-                    # get file names & create dictionary mappings to batch file names
-                    temp = '\\' if help.is_windows() else '/'
-                    config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-                    json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-                    json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-                    batch_names = help.get_batch_names(json_names_full_paths)
-                    self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+                    if self.db_manager:
+                        batch_names, mapping = self.db_manager.list_config_options()
+                        self.batch_to_json_map = mapping
+                    else:
+                        temp = '\\' if help.is_windows() else '/'
+                        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+                        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
+                        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+                        batch_names = help.get_batch_names(json_names_full_paths)
+                        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
 
-                    quick_json_select = gr.Dropdown(choices=batch_names, label='JSON Select', value=self.settings_json["batch_folder"],
-                                                    interactive=True)
+                    default_val = batch_names[0] if batch_names else None
+                    quick_json_select = gr.Dropdown(
+                        choices=batch_names,
+                        label='JSON Select',
+                        value=default_val,
+                        interactive=True,
+                    )
                     json_browse = gr.File(label='Browse JSON', type='filepath', file_types=['.json'])
 
             with gr.Accordion("Edit Requirements for Image Stat/s", visible=True, open=False):
@@ -1145,7 +1181,7 @@ class Download_tab:
                             with gr.Column(min_width=50, scale=3):
                                 required_tags_textbox = gr.Textbox(lines=1, label='Press Enter/Space to ADD tag/s', value="")
                             with gr.Column(min_width=50, scale=2):
-                                tag_required_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, elem_id="required_dropdown")
+                                tag_required_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, allow_custom_value=True, elem_id="required_dropdown")
                         required_tags_group_var = gr.CheckboxGroup(choices=self.required_tags_list, label='ALL Required Tags',
                                                                    value=[])
                     with gr.Column():
@@ -1185,7 +1221,7 @@ class Download_tab:
                             with gr.Column(min_width=50, scale=3):
                                 blacklist_tags_textbox = gr.Textbox(lines=1, label='Press Enter/Space to ADD tag/s', value="")
                             with gr.Column(min_width=50, scale=2):
-                                tag_blacklist_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, elem_id="blacklist_dropdown")
+                                tag_blacklist_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", choices=[], interactive=True, allow_custom_value=True, elem_id="blacklist_dropdown")
                         blacklist_tags_group_var = gr.CheckboxGroup(choices=self.blacklist_tags, label='ALL Blacklisted Tags',
                                                                value=[])
                     with gr.Column():

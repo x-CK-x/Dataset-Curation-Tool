@@ -219,6 +219,21 @@ class DatabaseManager:
                 return None
         return None
 
+    def list_config_options(self):
+        """Return dropdown options and mapping from name to path for configs."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT id, path FROM configs ORDER BY id")
+            rows = cur.fetchall()
+            cur.close()
+        options = []
+        mapping = {}
+        for cid, path in rows:
+            name = os.path.basename(path) if path else f"config_{cid}.json"
+            options.append(name)
+            mapping[name] = path
+        return options, mapping
+
     def _compute_hash(self, file_path):
         """Return SHA1 hash for the given file."""
         h = hashlib.sha1()

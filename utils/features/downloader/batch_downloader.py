@@ -629,7 +629,7 @@ class E6_Downloader:
                     with open(path, 'w') as f:
                         f.write('\n'.join([str(s) for s in l]))
 
-    def run_download(self, file, length, dwn_log_path, err_log_path, numcpu):
+    def run_download(self, file, length, dwn_log_path, err_log_path, numcpu, progress_conn=None):
         failed_md5 = set()
         start_time = time.time()
         DL = ''
@@ -670,11 +670,14 @@ class E6_Downloader:
                 r.raise_for_status()
 
                 try:
-                    print(f"Attempting to write to: {file_name}")
-                    with open(file_name, 'wb') as file:
-                        for chunk in r.iter_content(chunk_size=1024):
-                            if chunk:
-                                file.write(chunk)
+                    if os.path.isfile(file_name):
+                        print(f"Skipping existing file: {file_name}")
+                    else:
+                        print(f"Attempting to write to: {file_name}")
+                        with open(file_name, 'wb') as file:
+                            for chunk in r.iter_content(chunk_size=1024):
+                                if chunk:
+                                    file.write(chunk)
                 except (OSError, IOError) as e:  # Errors related to file operations
                     print(f"File error with {file_name}: {e}")
 
@@ -684,6 +687,8 @@ class E6_Downloader:
                     print(
                         f'\r## Downloading: {ctr.value: >{padding}}/{length} | {f"{elapsed // 60:02.0f}:{elapsed % 60:02.0f}": >6}',
                         end='')
+                    if progress_conn:
+                        progress_conn.send(1)
             except requests.exceptions.RequestException as err:
                 print(f"Error occurred with {url}: {err}")
                 if url not in failed_downloads:
@@ -724,7 +729,10 @@ class E6_Downloader:
         failed_md5 = set()
         df_list_for_tag_files = []
 
-        total_links = len(batch_nums)
+        total_links = 0
+        for path in posts_save_paths:
+            if os.path.isfile(path):
+                total_links += pl.read_parquet(path).shape[0]
         # send total to progressbar
         if self.backend_conn:
             self.backend_conn.send(total_links)
@@ -798,14 +806,17 @@ class E6_Downloader:
             df_list_for_tag_files.append(
                 df.drop(['cmd_directory', 'cmd_filename']))
 
-            if self.backend_conn:
-                self.backend_conn.send(1)
 
         if not batch_mode:
             print('## Downloading posts')
-            failed_set = self.run_download(prms["batch_folder"][batch_num] + '/__.txt', length,
-                                      prms["batch_folder"][batch_num] + f'/download_log_{batch_num}.txt',
-                                      prms["batch_folder"][batch_num] + f'/download_error_log_{batch_num}.txt', numcpu)
+            failed_set = self.run_download(
+                prms["batch_folder"][batch_num] + '/__.txt',
+                length,
+                prms["batch_folder"][batch_num] + f'/download_log_{batch_num}.txt',
+                prms["batch_folder"][batch_num] + f'/download_error_log_{batch_num}.txt',
+                numcpu,
+                self.backend_conn,
+            )
             if failed_set:
                 print('## Some posts were downloaded unsuccessfully.')
                 failed_md5.update(failed_set)
@@ -816,8 +827,14 @@ class E6_Downloader:
             __df.write_csv(base_folder + '/__.txt', separator='\n', has_header=False)
             print(f"##\n## Found {length} unique posts to save\n##")
             print('## Downloading posts')
-            failed_set = self.run_download(base_folder + '/__.txt', length, base_folder + '/download_log.txt',
-                                      base_folder + '/download_error_log.txt', numcpu)
+            failed_set = self.run_download(
+                base_folder + '/__.txt',
+                length,
+                base_folder + '/download_log.txt',
+                base_folder + '/download_error_log.txt',
+                numcpu,
+                self.backend_conn,
+            )
             if failed_set:
                 print('## Some posts were downloaded unsuccessfully.')
                 failed_md5.update(failed_set)
@@ -827,8 +844,14 @@ class E6_Downloader:
             _file = base_folder + '/___.txt'
             df.filter(pl.col('md5').str.contains('|'.join(failed_md5))).select(
                 ['download_links', 'cmd_directory', 'cmd_filename']).write_csv(_file, separator='\n', has_header=False)
-            failed_set_part_2 = self.run_download(_file, len(failed_md5), base_folder + '/redownload_log.txt',
-                                             base_folder + '/redownload_error_log.txt', numcpu)
+            failed_set_part_2 = self.run_download(
+                _file,
+                len(failed_md5),
+                base_folder + '/redownload_log.txt',
+                base_folder + '/redownload_error_log.txt',
+                numcpu,
+                self.backend_conn,
+            )
             failed_md5 = failed_md5 & failed_set_part_2
 
         validate_redownload = set()
@@ -883,14 +906,23 @@ class E6_Downloader:
                 with open(base_folder + '/____.txt', 'w', encoding="utf-8") as f:
                     f.write(__file)
                 if not batch_mode:
-                    failed_set_part_3 = self.run_download(base_folder + '/____.txt', num_redownload,
-                                                     prms["batch_folder"][batch_num] + f'/redownload_log_b_{batch_num}.txt',
-                                                     prms["batch_folder"][
-                                                         batch_num] + f'/redownload_error_log_b_{batch_num}.txt', numcpu)
+                    failed_set_part_3 = self.run_download(
+                        base_folder + '/____.txt',
+                        num_redownload,
+                        prms["batch_folder"][batch_num] + f'/redownload_log_b_{batch_num}.txt',
+                        prms["batch_folder"][batch_num] + f'/redownload_error_log_b_{batch_num}.txt',
+                        numcpu,
+                        self.backend_conn,
+                    )
                 else:
-                    failed_set_part_3 = self.run_download(base_folder + '/____.txt', num_redownload,
-                                                     base_folder + '/redownload_log_b.txt',
-                                                     base_folder + '/redownload_error_log_b.txt', numcpu)
+                    failed_set_part_3 = self.run_download(
+                        base_folder + '/____.txt',
+                        num_redownload,
+                        base_folder + '/redownload_log_b.txt',
+                        base_folder + '/redownload_error_log_b.txt',
+                        numcpu,
+                        self.backend_conn,
+                    )
                 failed_md5 = (failed_md5 - found_md5) | failed_set_part_3
             else:
                 print('## Found 0 direct file links for redownloading.')
