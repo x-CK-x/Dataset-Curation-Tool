@@ -4,6 +4,7 @@ import os
 import multiprocessing as mp
 import pandas as pd
 import gradio as gr
+import json
 
 from utils import js_constants as js_, md_constants as md_, helper_functions as help
 from utils.features.downloader import batch_downloader
@@ -14,8 +15,8 @@ class Download_tab:
                  download_checkboxes, resize_checkboxes, file_extn_list, config_name, required_tags_list,
                  blacklist_tags, auto_config_path, initial_required_state,
                  initial_required_state_tag, relevant_required_categories, initial_blacklist_state,
-                 initial_blacklist_state_tag, relevant_blacklist_categories, auto_complete_config
-                 ):
+                 initial_blacklist_state_tag, relevant_blacklist_categories, auto_complete_config,
+                 db_manager=None):
         self.settings_json = settings_json
         self.cwd = cwd
         self.image_board = image_board
@@ -36,6 +37,9 @@ class Download_tab:
         self.initial_blacklist_state_tag = initial_blacklist_state_tag
         self.relevant_blacklist_categories = relevant_blacklist_categories
         self.auto_complete_config = auto_complete_config
+
+        self.db_manager = db_manager
+        self.current_download_id = None
 
         self.advanced_settings_tab_manager = None
 
@@ -234,6 +238,16 @@ class Download_tab:
         help.verbose_print(
             f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, cachepostsdb}")
 
+        if self.db_manager is not None:
+            import json
+            cfg_json = json.dumps(self.settings_json)
+            self.current_download_id = self.db_manager.add_download_record(
+                website="e621",
+                config_json=cfg_json,
+            )
+            if self.gallery_tab_manager:
+                self.gallery_tab_manager.set_download_id(self.current_download_id)
+
         #### ADD A PIPE parameter that passes the connection to the other process
         self.frontend_conn, self.backend_conn = mp.Pipe()
         self.image_board_downloader = mp.Process(target=batch_downloader.E6_Downloader, args=(
@@ -253,6 +267,15 @@ class Download_tab:
             path = os.path.join(self.cwd, setting)
             if not ".json" in path:
                 path += ".json"
+
+            if self.db_manager is not None:
+                cfg = help.load_session_config(path)
+                dl_id = self.db_manager.add_download_record(
+                    website="e621",
+                    config_json=json.dumps(cfg),
+                )
+                if self.gallery_tab_manager:
+                    self.gallery_tab_manager.set_download_id(dl_id)
 
             self.image_board_downloader = batch_downloader.E6_Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv,
                                                                          postsparquet, tagsparquet, keepdb, cachepostsdb, None)
@@ -303,7 +326,8 @@ class Download_tab:
         if not optional_path or optional_path == "":
             if not self.settings_json["batch_folder"] in self.gallery_tab_manager.auto_complete_config_name:
                 self.auto_config_path = os.path.join(self.cwd, "auto_configs")
-                self.gallery_tab_manager.auto_complete_config_name = f"auto_complete_{self.settings_json['batch_folder']}.json"
+                sanitized = self.settings_json['batch_folder'].replace('/', '---').replace('\\', '---')
+                self.gallery_tab_manager.auto_complete_config_name = f"auto_complete_{sanitized}.json"
 
                 temp_config_path = os.path.join(self.auto_config_path, self.gallery_tab_manager.auto_complete_config_name)
                 if not os.path.exists(self.auto_config_path):
@@ -315,7 +339,9 @@ class Download_tab:
                 help.eprint("CURRENT LOADED BATCH FOLDER NOT PRESENT IN SPECIFIED PATH!!!")
                 self.auto_config_path = os.path.join(self.cwd, "auto_configs")
                 temp = '\\' if help.is_windows() else '/'
-                self.gallery_tab_manager.auto_complete_config_name = optional_path.split(temp)[-1]
+                name = optional_path.split(temp)[-1]
+                name = name.replace('/', '---').replace('\\', '---')
+                self.gallery_tab_manager.auto_complete_config_name = name
 
                 temp_config_path = os.path.join(self.auto_config_path, self.gallery_tab_manager.auto_complete_config_name)
                 if not os.path.exists(self.auto_config_path):
@@ -1051,7 +1077,7 @@ class Download_tab:
                 with gr.Row():
                     min_area = gr.Slider(minimum=1, maximum=1000000, step=1, label='Filter: Min Area', value=self.settings_json["min_area"], info='ONLY images with LxW > this value will be downloaded')
                 with gr.Row():
-                    top_n = gr.Slider(minimum=0, maximum=10000, step=1, label='Filter: Top N', value=self.settings_json["top_n"], info='ONLY the top N images will be downloaded')
+                    top_n = gr.Slider(minimum=0, maximum=1000000, step=1, label='Filter: Top N', value=self.settings_json["top_n"], info='ONLY the top N images will be downloaded')
                 with gr.Row():
                     min_short_side = gr.Slider(minimum=1, maximum=100000, step=1, label='Resize Param: Min Short Side', value=self.settings_json["min_short_side"], info='ANY image\'s length or width that falls (ABOVE) this number will be resized')
             with gr.Accordion("Edit Requirements for Image Collection & Downloading Pre/Post-Processing", visible=True, open=False):

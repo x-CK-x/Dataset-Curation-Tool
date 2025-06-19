@@ -14,7 +14,8 @@ class Gallery_tab:
                  initial_add_state, initial_add_state_tag, relevant_add_categories, images_tuple_points,
                  download_tab_manager, auto_complete_config_name, all_tags_ever_dict, all_images_dict,
                  selected_image_dict, artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict,
-                 meta_csv_dict, rating_csv_dict, tags_csv_dict, image_creation_times, is_csv_loaded
+                 meta_csv_dict, rating_csv_dict, tags_csv_dict, image_creation_times, is_csv_loaded,
+                 db_manager=None, download_id=None
     ):
         self.file_extn_list = file_extn_list
         self.image_board = image_board
@@ -43,6 +44,9 @@ class Gallery_tab:
         self.tags_csv_dict = tags_csv_dict
         self.image_creation_times = image_creation_times
 
+        self.db_manager = db_manager
+        self.download_id = download_id
+
 
 
         self.advanced_settings_tab_manager = None
@@ -64,6 +68,30 @@ class Gallery_tab:
 
     def set_custom_dataset_tab_manager(self, custom_dataset_tab_manager):
         self.custom_dataset_tab_manager = custom_dataset_tab_manager
+
+    def set_download_id(self, download_id):
+        self.download_id = download_id
+
+    def persist_images_to_db(self, full_path_downloads):
+        """Persist loaded images to the global database."""
+        if not hasattr(self, "db_manager") or self.db_manager is None:
+            return
+        for ext, images in self.all_images_dict.items():
+            if ext == "searched":
+                continue
+            folder = self.download_tab_manager.settings_json[f"{ext}_folder"]
+            for img_id, tags in images.items():
+                file_path = os.path.join(full_path_downloads, folder, f"{img_id}.{ext}")
+                self.db_manager.add_file(
+                    self.download_id,
+                    post_tags=','.join(tags),
+                    post_created_at=None,
+                    downloaded_at=datetime.datetime.utcnow().isoformat(),
+                    cdn_url=None,
+                    local_path=file_path,
+                    tag_local_path=None,
+                    tag_cdn_url=None,
+                )
 
 
 
@@ -268,9 +296,11 @@ class Gallery_tab:
                 self.all_images_dict = {}
 
                 if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-                    self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
-                                                      os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
-                                                      os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+                    self.all_images_dict = help.merge_dict(
+                        os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
+                        os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
+                        os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+                    self.persist_images_to_db(full_path_downloads)
 
                 # populate the timekeeping dictionary
                 self.initialize_posts_timekeeper()
@@ -293,9 +323,11 @@ class Gallery_tab:
         full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
                                            self.download_tab_manager.settings_json["downloaded_posts_folder"])
         if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-            self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
-                                              os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
-                                              os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+            self.all_images_dict = help.merge_dict(
+                os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
+                os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
+                os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+            self.persist_images_to_db(full_path_downloads)
 
         # populate the timekeeping dictionary
         self.initialize_posts_timekeeper()

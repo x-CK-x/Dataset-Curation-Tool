@@ -50,3 +50,7 @@ fast_downloader_config/
 
 # Allow .json files in utils/features/image_boards
 !utils/features/image_boards/*.json
+dataset_curation.db
+# ignore database and data folders
+databases/
+data/

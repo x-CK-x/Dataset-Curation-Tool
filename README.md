@@ -92,8 +92,10 @@ These can be tracked in Both the [Feature List](https://github.com/x-CK-x/Datase
 ## Additional Information
 
 ##### Default folder directory tree
+All downloaded data is placed inside a dedicated `data/` folder to
+keep it separate from application files.
 ```
-base_folder/
+data/
 ├─ batch_folder/
 │  ├─ downloaded_posts_folder/
 │  │  ├─ png_folder/
@@ -110,6 +112,29 @@ base_folder/
 Any file path parameter that are empty will use the default path.
 
 Files/folders that use the same path are merged, not overwritten. For example, using the same path for save_searched_list_path at every batch will result in a combined searched list of every batch in one .txt file.
+
+## SQLite Database
+
+The tool now stores download metadata in a persistent SQLite database
+named `dataset_curation.db` located in the `databases/` folder.  Each
+download run is stored in the `downloads` table and references an entry
+in the `configs` table describing the JSON settings file that produced
+that run.  Each key/value from those configs is also stored in the
+`config_entries` table for easier querying.  Individual posts are tracked
+in the `files` table with
+their CDN URLs, local paths and tag files.  A global `images` table stores
+unique hashes for every image and the `files` table references it to avoid
+duplicates.  If a post is modified in the GUI a related entry is added to
+`modified_files`.  Detected duplicates are stored in the `duplicates`
+table.  The connection is thread‑safe so downloads can be recorded from
+background tasks without errors.
+
+The UI includes a **Database** tab for running custom SQL queries, an
+**Import Data** tab for adding folders of files (with optional JSON
+config files) and a **Merge DB** tab to combine multiple databases.
+
+Each time a download is started from the Download tab, a new record is
+created in the `downloads` table so you can track individual runs.
 
 ### Notes
 * When downloading, if the file already exists, it is skipped, unless, the file exists but was modified, it will download and the modified file will be renamed. Hence, I recommend not setting `delete_original` to `true` if you plan redownloading using the same destination folder.
