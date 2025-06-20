@@ -443,6 +443,14 @@ class DatabaseManager:
         query = f"SELECT * FROM files WHERE {where}"
         return self.run_query(query, params)
 
+    def count_rows(self, table_name):
+        """Return the number of rows in a table."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+            result = cur.fetchone()
+            return result[0] if result else 0
+
     def copy_files_from_table(self, table_name, dest_dir):
         """Copy images referenced in a table to dest_dir."""
         os.makedirs(dest_dir, exist_ok=True)

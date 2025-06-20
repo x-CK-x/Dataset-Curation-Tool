@@ -53,3 +53,13 @@ def test_fetch_table_limits(tmp_path):
     assert len(rows) == 1
     db.close()
 
+def test_count_rows(tmp_path):
+    db = setup_db(tmp_path)
+    dl = db.add_download_record('site')
+    img_path = os.path.join(tmp_path, 'img.png')
+    with open(img_path, 'wb') as f:
+        f.write(b'0')
+    db.add_file(dl, 'tag1', '2020-01-01', '2020-01-01', 'url', img_path, '', '')
+    assert db.count_rows('files') == 1
+    db.close()
+
