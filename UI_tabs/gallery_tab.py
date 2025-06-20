@@ -1261,6 +1261,7 @@ class Gallery_tab:
 
     def show_searched_gallery(self, folder_type_select, sort_images, sort_option):
         # type select
+        self.current_media_mode = folder_type_select
         if "searched" in self.all_images_dict and len(
                 list(self.all_images_dict["searched"].keys())) > 0 and self.get_searched_image_total() > 0:
             images = self.update_search_gallery(sort_images, sort_option, folder_type_select)
@@ -2236,7 +2237,7 @@ class Gallery_tab:
             outputs=[self.multi_select_ckbx_state]
         )
         self.download_folder_type.change(
-            fn=self.show_gallery,
+            fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
             outputs=[self.gallery_comp]).then(
             fn=self.reset_selected_img,

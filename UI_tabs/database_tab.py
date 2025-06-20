@@ -52,8 +52,9 @@ class Database_tab:
         if not table_name:
             return gr.update(), gr.update(value="No table selected")
         try:
-            headers, rows = self.db_manager.fetch_table(table_name)
-            count_msg = f"Total Rows: {len(rows)}"
+            headers, rows = self.db_manager.fetch_table(table_name, limit=100)
+            total = self.db_manager.count_rows(table_name)
+            count_msg = f"Showing {len(rows)} of {total} rows"
             return gr.update(value=rows, headers=headers, visible=True), gr.update(value=count_msg)
         except Exception as e:
             return gr.update(), gr.update(value=f"Error: {e}")
