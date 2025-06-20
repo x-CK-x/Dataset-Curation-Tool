@@ -416,9 +416,15 @@ class DatabaseManager:
         with self.lock:
             cur = self.conn.cursor()
             if limit is None:
-                cur.execute(f"SELECT * FROM {table_name}")
+                query = f"SELECT * FROM {table_name}"
+                cur.execute(query)
             else:
-                cur.execute(f"SELECT * FROM {table_name} LIMIT ?", (limit,))
+                try:
+                    lim = int(limit)
+                except (TypeError, ValueError):
+                    raise ValueError("limit must be an integer or None")
+                query = f"SELECT * FROM {table_name} LIMIT {lim}"
+                cur.execute(query)
             rows = cur.fetchall()
             headers = [description[0] for description in cur.description]
             return headers, rows

@@ -33,3 +33,23 @@ def test_get_latest_config(tmp_path):
     assert loaded == cfg
     db.close()
 
+def test_fetch_table_limits(tmp_path):
+    db = setup_db(tmp_path)
+    dl = db.add_download_record('site')
+    img_path = os.path.join(tmp_path, 'img1.png')
+    with open(img_path, 'wb') as f:
+        f.write(b'0')
+    img_path2 = os.path.join(tmp_path, 'img2.png')
+    with open(img_path2, 'wb') as f:
+        f.write(b'1')
+    # add two distinct rows
+    db.add_file(dl, 'tag1', '2020-01-01', '2020-01-01', 'url1', img_path, '', '')
+    db.add_file(dl, 'tag2', '2020-01-02', '2020-01-02', 'url2', img_path2, '', '')
+
+    headers, rows = db.fetch_table('files', limit=None)
+    assert len(rows) == 2
+
+    headers, rows = db.fetch_table('files', limit=1)
+    assert len(rows) == 1
+    db.close()
+
