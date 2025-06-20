@@ -63,6 +63,15 @@ class Gallery_tab:
         self.image_editor_tab_manager = None
         self.tag_ideas = None
 
+        # map of (ext, img_id) -> absolute path for images loaded from the
+        # database. Used when gallery paths don't follow the default folder
+        # structure.
+        self.search_image_paths = {}
+
+        # stores the currently displayed gallery image paths to avoid passing
+        # filepaths through gradio inputs
+        self.gallery_state = gr.State([])
+
 
 
 
@@ -205,7 +214,10 @@ class Gallery_tab:
                 continue
             search_path = os.path.join(folder_path, self.download_tab_manager.settings_json.get(f"{ext}_folder", ""))
             for img_id in list(self.all_images_dict["searched"][ext].keys()):
-                images.append(os.path.join(search_path, f"{img_id}.{ext}"))
+                img_path = self.search_image_paths.get((ext, img_id))
+                if not img_path:
+                    img_path = os.path.join(search_path, f"{img_id}.{ext}")
+                images.append(img_path)
 
         if sort_images and len(sort_option) > 0 and len(list(self.image_creation_times.keys())) > 0:
             # parse to img_id -> to get the year
@@ -398,6 +410,7 @@ class Gallery_tab:
         path_idx = headers.index("local_path")
         tag_idx = headers.index("post_tags") if "post_tags" in headers else None
         self.all_images_dict["searched"] = {}
+        self.search_image_paths = {}
         for row in rows:
             path = row[path_idx]
             if not path or not os.path.isfile(path):
@@ -410,7 +423,13 @@ class Gallery_tab:
             if ext not in self.all_images_dict["searched"]:
                 self.all_images_dict["searched"][ext] = {}
             self.all_images_dict["searched"][ext][img_id] = tags
+            self.search_image_paths[(ext, img_id)] = path
         images = self.update_search_gallery(False, "", self.current_media_mode)
+        # persist gallery paths in state
+        try:
+            self.gallery_state.value = images
+        except Exception:
+            pass
         return images
 
     def search_tags(self, tag_search_textbox, global_search_opts, sort_images, sort_option):
@@ -418,6 +437,10 @@ class Gallery_tab:
         self.filter_images_by_tags(tag_search_textbox, global_search_opts)
         # return updated gallery
         images = self.update_search_gallery(sort_images, sort_option, self.current_media_mode)
+        try:
+            self.gallery_state.value = images
+        except Exception:
+            pass
         return gr.update(value=images, visible=True)
 
     def add_to_csv_dictionaries(self, string_category, tag, count=1):
@@ -1056,6 +1079,10 @@ class Gallery_tab:
 
         # gallery update
         images = self.update_search_gallery(sort_images, sort_option, self.current_media_mode)
+        try:
+            self.gallery_state.value = images
+        except Exception:
+            pass
         gallery = gr.update(value=images, visible=True)
         # textbox update
         id_box = gr.update(value="")
@@ -1268,6 +1295,10 @@ class Gallery_tab:
         else:
             help.verbose_print(f"in SHOW searched gallery")
             return self.show_gallery(folder_type_select, sort_images, sort_option)
+        try:
+            self.gallery_state.value = images
+        except Exception:
+            pass
         return gr.update(value=images, visible=True)
 
     def clear_categories(self):
@@ -1370,12 +1401,16 @@ class Gallery_tab:
                 # parse to img_id -> to get the year
                 if sort_option == "new-to-old":
                     images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
-                                                                                   float('-inf')),
+                                                                               float('-inf')),
                                     reverse=True)
                 elif sort_option == "old-to-new":
                     images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
-                                                                                   float('-inf')))
+                                                                               float('-inf')))
             # help.verbose_print(f"images:\t{images}")
+        try:
+            self.gallery_state.value = images
+        except Exception:
+            pass
         return gr.update(value=images, visible=True)
 
     def extract_name_and_extention(self, gallery_comp_path):
@@ -1391,15 +1426,15 @@ class Gallery_tab:
         return [download_folder_type, img_name]
 
     ### Select an image
-    def get_img_tags(self, gallery_comp, select_multiple_images_checkbox, images_selected_state,
+    def get_img_tags(self, gallery_images, select_multiple_images_checkbox, images_selected_state,
                      select_between_images_checkbox, images_tuple_points, event_data: gr.SelectData):
         # self.selected_image_dict  # id -> {categories: tag/s}, type -> string
         temp = '\\' if help.is_windows() else '/'
         help.verbose_print(f"event_data:\t{event_data}")
         help.verbose_print(f"event_data.index:\t{event_data.index}")
-        help.verbose_print(f"gallery_comp[event_data.index]:\t{gallery_comp[event_data.index]}")
-        help.verbose_print(f"full_path:\t{(gallery_comp[event_data.index])[0]}")
-        help.verbose_print(f"image name:\t{(gallery_comp[event_data.index])[0].split(temp)[-1]}")
+        help.verbose_print(f"gallery_images[event_data.index]:\t{gallery_images[event_data.index]}")
+        help.verbose_print(f"full_path:\t{(gallery_images[event_data.index])[0] if isinstance(gallery_images[event_data.index], (list, tuple)) else gallery_images[event_data.index]}")
+        help.verbose_print(f"image name:\t{(gallery_images[event_data.index])[0].split(temp)[-1] if isinstance(gallery_images[event_data.index], (list, tuple)) else str(gallery_images[event_data.index]).split(temp)[-1]}")
 
         img_name = None
         artist_comp_checkboxgroup = gr.update(choices=[])
@@ -1437,7 +1472,8 @@ class Gallery_tab:
             help.verbose_print(f"images_selected_states:\t{images_selected_state}")
         else:
             images_selected_state = []
-            download_folder_type, img_name = self.extract_name_and_extention((gallery_comp[event_data.index])[0])# requires full path; returns [ext, img_id]
+            img_path = gallery_images[event_data.index][0] if isinstance(gallery_images[event_data.index], (list, tuple)) else gallery_images[event_data.index]
+            download_folder_type, img_name = self.extract_name_and_extention(img_path)
 
             help.verbose_print(f"download_folder_type:\t{download_folder_type}")
             help.verbose_print(f"img_name:\t{img_name}")
@@ -1463,7 +1499,8 @@ class Gallery_tab:
 
         only_selected_state_object = dict()
         for index in images_selected_state:
-            only_selected_state_object[index] = self.extract_name_and_extention((gallery_comp[index])[0])  # returns index -> [ext, img_id]
+            img_path = gallery_images[index][0] if isinstance(gallery_images[index], (list, tuple)) else gallery_images[index]
+            only_selected_state_object[index] = self.extract_name_and_extention(img_path)
         help.verbose_print(f"only_selected_state_object:\t{only_selected_state_object}")
 
         return gr.update(
@@ -1555,6 +1592,10 @@ class Gallery_tab:
                                                                                float('-inf')))
 
         # help.verbose_print(f"images:\t{images}")
+        try:
+            self.gallery_state.value = images
+        except Exception:
+            pass
         return gr.update(value=images, visible=True)
 
     def reset_gallery_component_only(self):
@@ -2048,7 +2089,8 @@ class Gallery_tab:
                 self.keyword_search_text,
                 self.prepend_text,
                 self.prepend_option,
-                self.prepend_now_button
+                self.prepend_now_button,
+                self.gallery_state
                 ]
 
     def get_event_listeners(self):
@@ -2130,7 +2172,7 @@ class Gallery_tab:
             fn=self.search_tags,
             inputs=[self.tag_search_textbox, self.apply_to_all_type_select_checkboxgroup, self.apply_datetime_sort_ckbx,
                     self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp]).then(
+            outputs=[self.gallery_comp, self.gallery_state]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
@@ -2181,10 +2223,10 @@ class Gallery_tab:
                      self.gallery_comp, self.img_id_textbox, self.only_selected_state_object, self.images_selected_state]).then(
             fn=self.reset_gallery_component_only,
             inputs=[],
-            outputs=[self.gallery_comp]).then(
+            outputs=[self.gallery_comp, self.gallery_state]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp]
+            outputs=[self.gallery_comp, self.gallery_state]
         )
         self.image_save_ids_button.click(
             fn=self.save_image_changes,
@@ -2239,7 +2281,7 @@ class Gallery_tab:
         self.download_folder_type.change(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp]).then(
+            outputs=[self.gallery_comp, self.gallery_state]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
@@ -2249,7 +2291,7 @@ class Gallery_tab:
         # there is a networking "delay" bug for the below feature to work (do NOT click on the same image after selected) i.e. click on a different image before going back to that one
         self.gallery_comp.select(
             fn=self.get_img_tags,
-            inputs=[self.gallery_comp, self.select_multiple_images_checkbox, self.images_selected_state,
+            inputs=[self.gallery_state, self.select_multiple_images_checkbox, self.images_selected_state,
                     self.select_between_images_checkbox, self.images_tuple_points],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
                      self.img_species_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group,
