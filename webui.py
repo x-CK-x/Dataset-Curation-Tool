@@ -112,9 +112,17 @@ def build_ui():
         if not os.path.exists(auto_config_path):
             os.makedirs(auto_config_path)
         auto_complete_config = help.load_session_config(temp_config_path)
+        supported_exts = [
+            "png", "jpg", "jpeg", "gif", "bmp", "tiff", "webp", "heic",
+            "webm", "mp4", "mkv", "avi", "mov", "flv", "gifv", "swf"
+        ]
         if not auto_complete_config:
-            auto_complete_config = {'png': {}, 'jpg': {}, 'gif': {}}
+            auto_complete_config = {ext: {} for ext in supported_exts}
             help.update_JSON(auto_complete_config, temp_config_path)
+        else:
+            for ext in supported_exts:
+                if ext not in auto_complete_config:
+                    auto_complete_config[ext] = {}
         image_creation_times = {}
         all_tags_ever_dict = {}
 

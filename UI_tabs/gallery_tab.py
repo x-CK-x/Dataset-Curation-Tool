@@ -3,7 +3,6 @@ import os
 import copy
 import datetime
 import glob
-from PIL import Image
 
 from utils import js_constants as js_, md_constants as md_, helper_functions as help
 
@@ -137,7 +136,14 @@ class Gallery_tab:
 
         # self.selected_image_dict  # id -> {categories: tag/s}, type -> string
         if img_name:
-            img_tag_list = copy.deepcopy(self.all_images_dict[ext][img_name])
+            if ext not in self.all_images_dict or img_name not in self.all_images_dict.get(ext, {}):
+                folder = self.download_tab_manager.settings_json.get(f"{ext}_folder", "")
+                base = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"],
+                                   self.download_tab_manager.settings_json["downloaded_posts_folder"], folder)
+                tag_file = os.path.join(base, f"{img_name}.txt")
+                img_tag_list = help.parse_single_all_tags(tag_file) if os.path.exists(tag_file) else []
+            else:
+                img_tag_list = copy.deepcopy(self.all_images_dict[ext][img_name])
 
             help.verbose_print(f"img_tag_list:\t\t{img_tag_list}")
             # determine the category of each tag (TAGS WITHOUT A CATEGORY ARE NOT DISPLAYED)
@@ -210,14 +216,6 @@ class Gallery_tab:
                 images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
                                                                                float('-inf')))
         # help.verbose_print(f"images:\t{images}")
-        if media_mode == "images":
-            pil_imgs = []
-            for p in images:
-                try:
-                    pil_imgs.append(Image.open(p))
-                except Exception:
-                    continue
-            images = pil_imgs
         return images
 
     def initialize_posts_timekeeper(self):
@@ -318,10 +316,11 @@ class Gallery_tab:
                 self.all_images_dict = {}
 
                 if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-                    self.all_images_dict = help.merge_dict(
-                        os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
-                        os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
-                        os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+                    folder_paths = []
+                    for key, val in self.download_tab_manager.settings_json.items():
+                        if key.endswith("_folder") and key not in ["batch_folder", "downloaded_posts_folder", "tag_count_list_folder", "resized_img_folder"]:
+                            folder_paths.append(os.path.join(full_path_downloads, val))
+                    self.all_images_dict = help.gather_media_tags(*folder_paths)
                     self.persist_images_to_db(full_path_downloads)
 
                 # populate the timekeeping dictionary
@@ -345,10 +344,11 @@ class Gallery_tab:
         full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
                                            self.download_tab_manager.settings_json["downloaded_posts_folder"])
         if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-            self.all_images_dict = help.merge_dict(
-                os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
-                os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
-                os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+            folder_paths = []
+            for key, val in self.download_tab_manager.settings_json.items():
+                if key.endswith("_folder") and key not in ["batch_folder", "downloaded_posts_folder", "tag_count_list_folder", "resized_img_folder"]:
+                    folder_paths.append(os.path.join(full_path_downloads, val))
+            self.all_images_dict = help.gather_media_tags(*folder_paths)
             self.persist_images_to_db(full_path_downloads)
 
         # populate the timekeeping dictionary
@@ -1336,9 +1336,11 @@ class Gallery_tab:
 
                 if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
                     not self.download_tab_manager.is_csv_loaded:
-                    self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
-                                                      os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
-                                                      os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+                    folder_paths = []
+                    for key, val in self.download_tab_manager.settings_json.items():
+                        if key.endswith("_folder") and key not in ["batch_folder", "downloaded_posts_folder", "tag_count_list_folder", "resized_img_folder"]:
+                            folder_paths.append(os.path.join(full_path_downloads, val))
+                    self.all_images_dict = help.gather_media_tags(*folder_paths)
 
                 # loading images
                 self.add_current_images()
@@ -1373,14 +1375,6 @@ class Gallery_tab:
                     images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
                                                                                    float('-inf')))
             # help.verbose_print(f"images:\t{images}")
-        if folder_type_select == "images":
-            pil_imgs = []
-            for p in images:
-                try:
-                    pil_imgs.append(Image.open(p))
-                except Exception:
-                    continue
-            images = pil_imgs
         return gr.update(value=images, visible=True)
 
     def extract_name_and_extention(self, gallery_comp_path):
@@ -1522,9 +1516,11 @@ class Gallery_tab:
 
             if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
                     not self.download_tab_manager.is_csv_loaded:
-                self.all_images_dict = help.merge_dict(os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"png_folder"]),
-                                                  os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"jpg_folder"]),
-                                                  os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"gif_folder"]))
+                folder_paths = []
+                for key, val in self.download_tab_manager.settings_json.items():
+                    if key.endswith("_folder") and key not in ["batch_folder", "downloaded_posts_folder", "tag_count_list_folder", "resized_img_folder"]:
+                        folder_paths.append(os.path.join(full_path_downloads, val))
+                self.all_images_dict = help.gather_media_tags(*folder_paths)
 
             # loading images
             self.add_current_images()
@@ -1557,14 +1553,6 @@ class Gallery_tab:
                 images = sorted(images, key=lambda x: self.image_creation_times.get(((x.split(temp)[-1]).split(".")[0]),
                                                                                float('-inf')))
 
-        if folder_type_select == "images":
-            pil_imgs = []
-            for p in images:
-                try:
-                    pil_imgs.append(Image.open(p))
-                except Exception:
-                    continue
-            images = pil_imgs
         # help.verbose_print(f"images:\t{images}")
         return gr.update(value=images, visible=True)
 
