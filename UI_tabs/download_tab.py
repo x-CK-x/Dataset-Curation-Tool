@@ -380,6 +380,20 @@ class Download_tab:
             self.auto_complete_config = {'png': {}, 'jpg': {}, 'gif': {}}
             help.update_JSON(self.auto_complete_config, temp_config_path)
 
+    def refresh_json_options(self):
+        """Refresh config dropdown choices from the database or disk."""
+        if self.db_manager:
+            batch_names, mapping = self.db_manager.list_config_options()
+            self.batch_to_json_map = mapping
+        else:
+            temp = '\\' if help.is_windows() else '/'
+            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
+            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
+            batch_names = help.get_batch_names(json_names_full_paths)
+            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        return gr.update(choices=batch_names), gr.update(choices=batch_names)
+
     # load a different config
     def change_config_batch_run(self, json_name_list, file_path):
         temp = '\\' if help.is_windows() else '/'
@@ -1901,6 +1915,10 @@ class Download_tab:
                 self.gallery_tab_manager.img_rating_tag_checkbox_group,
                 self.gallery_tab_manager.gallery_comp
             ]
+        ).then(
+            fn=self.refresh_json_options,
+            inputs=[],
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
         )
         self.run_button_batch.click(
             fn=self.make_run_visible,
@@ -1953,6 +1971,10 @@ class Download_tab:
                 self.gallery_tab_manager.img_rating_tag_checkbox_group,
                 self.gallery_tab_manager.gallery_comp
             ]
+        ).then(
+            fn=self.refresh_json_options,
+            inputs=[],
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
         )
         self.remove_button_required.click(
             fn=self.check_box_group_handler_required,
