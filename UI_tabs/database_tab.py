@@ -100,7 +100,7 @@ class Database_tab:
         headers, rows = self.db_manager.fetch_table(table_name, limit=None)
         images = self.gallery_tab_manager.load_from_db_rows(headers, rows)
         msg = f"Loaded {len(rows)} rows into gallery"
-        return gr.update(value=images, visible=True), gr.update(value=msg)
+        return gr.update(value=images, visible=True), images, gr.update(value=msg)
 
     def send_search_to_gallery(self, required_list, blacklist_list):
         if not self.gallery_tab_manager:
@@ -110,7 +110,7 @@ class Database_tab:
         headers, rows = self.db_manager.search_files(required, blacklist)
         images = self.gallery_tab_manager.load_from_db_rows(headers, rows)
         msg = f"Loaded {len(rows)} rows into gallery"
-        return gr.update(value=images, visible=True), gr.update(value=msg)
+        return gr.update(value=images, visible=True), images, gr.update(value=msg)
 
     def render_tab(self):
         with gr.Tab("Database"):
@@ -248,12 +248,12 @@ class Database_tab:
         self.send_search_btn.click(
             fn=self.send_search_to_gallery,
             inputs=[self.req_state, self.blacklist_state],
-            outputs=[self.gallery_tab_manager.gallery_comp, self.message_box],
+            outputs=[self.gallery_tab_manager.gallery_comp, self.gallery_tab_manager.gallery_state, self.message_box],
         )
         self.send_table_btn.click(
             fn=self.send_table_to_gallery,
             inputs=self.table_dropdown,
-            outputs=[self.gallery_tab_manager.gallery_comp, self.message_box],
+            outputs=[self.gallery_tab_manager.gallery_comp, self.gallery_tab_manager.gallery_state, self.message_box],
         )
 
 

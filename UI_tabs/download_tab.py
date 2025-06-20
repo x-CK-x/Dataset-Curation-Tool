@@ -394,6 +394,37 @@ class Download_tab:
             self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
         return gr.update(choices=batch_names), gr.update(choices=batch_names)
 
+    def import_queries(self, query_file):
+        """Create configs from query file and insert DB entries."""
+        if not query_file:
+            return self.refresh_json_options()
+
+        path = query_file.name if hasattr(query_file, "name") else query_file
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                queries = [ln.strip() for ln in f if ln.strip()]
+        except Exception:
+            return self.refresh_json_options()
+
+        cfg_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+        os.makedirs(cfg_dir, exist_ok=True)
+
+        for idx, q in enumerate(queries):
+            cfg = copy.deepcopy(self.settings_json)
+            cfg["required_tags"] = q
+            safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in q)[:50]
+            fname = f"query_{safe or idx}.json"
+            fpath = os.path.join(cfg_dir, fname)
+            count = 1
+            while os.path.exists(fpath):
+                fpath = os.path.join(cfg_dir, f"{safe or idx}_{count}.json")
+                count += 1
+            help.update_JSON(cfg, fpath)
+            if self.db_manager:
+                self.db_manager.add_download_record("e621", json.dumps(cfg), fpath)
+
+        return self.refresh_json_options()
+
     # load a different config
     def change_config_batch_run(self, json_name_list, file_path):
         temp = '\\' if help.is_windows() else '/'
@@ -1344,6 +1375,10 @@ class Download_tab:
                     images_full_change_dict_textbox = gr.Textbox(lines=1, label='Path to Image Full Change Log JSON (Optional)',
                                                              value=os.path.join(self.auto_config_path, f"auto_complete_{self.settings_json['batch_folder']}.json"))
                     images_full_change_dict_run_button = gr.Button(value="(POST-PROCESSING only) Apply Auto-Config Update Changes", variant='secondary')
+                with gr.Row():
+                    query_file = gr.File(label='Queries File', file_types=['.txt'])
+                    import_queries_btn = gr.Button(value='Import Queries', variant='secondary')
+                    refresh_json_btn = gr.Button(value='Refresh Configs', variant='secondary')
             with gr.Row():
                 run_button = gr.Button(value="Run", variant='primary')
             with gr.Row():
@@ -1432,6 +1467,9 @@ class Download_tab:
         self.tagsparquet = tagsparquet
         self.images_full_change_dict_textbox = images_full_change_dict_textbox
         self.images_full_change_dict_run_button = images_full_change_dict_run_button
+        self.query_file = query_file
+        self.import_queries_btn = import_queries_btn
+        self.refresh_json_btn = refresh_json_btn
         self.run_button = run_button
         self.progress_bar_textbox_collect = progress_bar_textbox_collect
         self.progress_bar_textbox_download = progress_bar_textbox_download
@@ -1535,6 +1573,9 @@ class Download_tab:
                 self.tagsparquet,
                 self.images_full_change_dict_textbox,
                 self.images_full_change_dict_run_button,
+                self.query_file,
+                self.import_queries_btn,
+                self.refresh_json_btn,
                 self.run_button,
                 self.progress_bar_textbox_collect,
                 self.progress_bar_textbox_download,
@@ -1569,6 +1610,16 @@ class Download_tab:
                 ]
 
     def get_event_listeners(self):
+        self.import_queries_btn.click(
+            fn=self.import_queries,
+            inputs=[self.query_file],
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+        )
+        self.refresh_json_btn.click(
+            fn=self.refresh_json_options,
+            inputs=None,
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+        )
         self.remove_json_batch_buttton.click(
             fn=self.remove_json_files,
             inputs=[self.all_json_files_checkboxgroup],
