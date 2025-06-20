@@ -246,20 +246,42 @@ def parse_csv_all_tags(csv_file_path):
     return temp_dict.copy()
 
 def merge_dict(path1, path2, path3):
-    png_list = glob.glob(os.path.join(path1, f"*.png"))
-    png_list = [x.replace(f".png", f".txt") for x in png_list]
+    """Deprecated shim to maintain backwards compatibility."""
+    return gather_media_tags(path1, path2, path3)
 
-    jpg_list = glob.glob(os.path.join(path2, f"*.jpg"))
-    jpg_list = [x.replace(f".jpg", f".txt") for x in jpg_list]
 
-    gif_list = glob.glob(os.path.join(path3, f"*.gif"))
-    gif_list = [x.replace(f".gif", f".txt") for x in gif_list]
+def gather_media_tags(*folders):
+    """Parse tag text files from given folders and group them by media extension.
 
-    temp = {}
-    temp["png"] = parse_files_all_tags(png_list)
-    temp["jpg"] = parse_files_all_tags(jpg_list)
-    temp["gif"] = parse_files_all_tags(gif_list)
-    temp["searched"] = {}
+    Parameters
+    ----------
+    *folders : str
+        One or more directory paths to search for ``*.txt`` tag files.
+
+    Returns
+    -------
+    dict
+        Mapping of extension -> {image_id: [tags]}. Always contains a
+        ``"searched"`` key for temporary search results.
+    """
+
+    temp = {"searched": {}}
+    for folder in folders:
+        if not folder or not os.path.isdir(folder):
+            continue
+        for txt_file in glob.glob(os.path.join(folder, "*.txt")):
+            img_id = os.path.splitext(os.path.basename(txt_file))[0]
+            tags = parse_single_all_tags(txt_file)
+
+            # attempt to find associated media file to determine extension
+            matches = [p for p in glob.glob(os.path.join(folder, f"{img_id}.*")) if not p.endswith(".txt")]
+            if not matches:
+                continue
+            ext = os.path.splitext(matches[0])[1].lstrip(".").lower()
+            if ext not in temp:
+                temp[ext] = {}
+            temp[ext][img_id] = tags
+
     return temp.copy()
 
 def write_tags_to_text_file(input_string, file_path):
