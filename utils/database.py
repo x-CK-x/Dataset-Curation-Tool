@@ -295,6 +295,27 @@ class DatabaseManager:
             )
             self.conn.commit()
 
+    def get_file_id(self, local_path):
+        """Return the database id for a file path or ``None`` if not found."""
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT id FROM files WHERE local_path=?", (local_path,))
+            row = cur.fetchone()
+            cur.close()
+        return row[0] if row else None
+
+    def add_modified_file(self, file_id, mod_image_path=None, mod_tag_path=None):
+        """Record an edited copy of a downloaded file."""
+        now = datetime.utcnow().isoformat()
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute(
+                "INSERT INTO modified_files (file_id, mod_image_path, mod_tag_path, modified_at) VALUES (?, ?, ?, ?)",
+                (file_id, mod_image_path, mod_tag_path, now),
+            )
+            self.conn.commit()
+            return cur.lastrowid
+
     def merge_database(self, other_path):
         """Merge another dataset_curation.db into this one."""
         if not os.path.exists(other_path):
@@ -382,11 +403,22 @@ class DatabaseManager:
             rows = [r[0] for r in cur.fetchall()]
             return rows
 
-    def fetch_table(self, table_name, limit=100):
-        """Return contents of a table."""
+    def fetch_table(self, table_name, limit=None):
+        """Return contents of a table.
+
+        Parameters
+        ----------
+        table_name : str
+            Name of the table to fetch.
+        limit : int or None, optional
+            Maximum number of rows to return. ``None`` returns all rows.
+        """
         with self.lock:
             cur = self.conn.cursor()
-            cur.execute(f"SELECT * FROM {table_name} LIMIT ?", (limit,))
+            if limit is None:
+                cur.execute(f"SELECT * FROM {table_name}")
+            else:
+                cur.execute(f"SELECT * FROM {table_name} LIMIT ?", (limit,))
             rows = cur.fetchall()
             headers = [description[0] for description in cur.description]
             return headers, rows

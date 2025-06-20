@@ -1096,6 +1096,11 @@ class Gallery_tab:
                 full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
                 temp_tag_string = ",".join(self.all_images_dict[ext][img_id])
                 help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
+                if self.db_manager:
+                    img_path = os.path.join(full_path_gallery_type, f"{img_id}.{ext}")
+                    fid = self.db_manager.get_file_id(img_path)
+                    if fid:
+                        self.db_manager.add_modified_file(fid, mod_tag_path=full_path)
         # persist csv changes
         self.csv_persist_to_disk()
 

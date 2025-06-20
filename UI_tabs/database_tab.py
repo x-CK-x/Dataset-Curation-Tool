@@ -91,11 +91,12 @@ class Database_tab:
         return gr.update(value=f"Copied {count} files")
 
     def send_table_to_gallery(self, table_name):
+        """Load the entire table into the gallery."""
         if not table_name:
             return gr.update(), gr.update(value="No table selected")
         if not self.gallery_tab_manager:
             return gr.update(), gr.update(value="Gallery not available")
-        headers, rows = self.db_manager.fetch_table(table_name)
+        headers, rows = self.db_manager.fetch_table(table_name, limit=None)
         images = self.gallery_tab_manager.load_from_db_rows(headers, rows)
         msg = f"Loaded {len(rows)} rows into gallery"
         return gr.update(value=images, visible=True), gr.update(value=msg)
@@ -152,7 +153,7 @@ class Database_tab:
                 create_table_btn = gr.Button(value="Create Table from Search")
                 export_dir = gr.Textbox(label="Export Directory")
                 export_button = gr.Button(value="Export Table Files")
-                send_search_btn = gr.Button(value="Load Search in Gallery")
+                send_search_btn = gr.Button(value="Load Searched Data in Gallery")
             with gr.Row():
                 send_table_btn = gr.Button(value="Load Table in Gallery")
 
