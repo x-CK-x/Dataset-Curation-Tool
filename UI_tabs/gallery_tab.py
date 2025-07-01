@@ -2184,9 +2184,18 @@ class Gallery_tab:
         )
         self.tag_search_textbox.change(
             fn=self.tag_ideas.suggest_search_tags,
-            inputs=[self.tag_search_textbox, self.advanced_settings_tab_manager.total_suggestions_slider, self.previous_search_state_text],
-            outputs=[self.tag_search_suggestion_dropdown, self.previous_search_state_text,
-                    self.current_search_state_placement_tuple, self.relevant_search_categories]
+            inputs=[
+                self.tag_search_textbox,
+                self.advanced_settings_tab_manager.total_suggestions_slider,
+                self.previous_search_state_text,
+                self.advanced_settings_tab_manager.tag_suggestions_checkbox,
+            ],
+            outputs=[
+                self.tag_search_suggestion_dropdown,
+                self.previous_search_state_text,
+                self.current_search_state_placement_tuple,
+                self.relevant_search_categories,
+            ]
         ).then(
             fn=None,
             inputs=[self.tag_search_suggestion_dropdown, self.relevant_search_categories],
