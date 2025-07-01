@@ -157,42 +157,31 @@ class Gallery_tab:
             help.verbose_print(f"img_tag_list:\t\t{img_tag_list}")
             # determine the category of each tag (TAGS WITHOUT A CATEGORY ARE NOT DISPLAYED)
             temp_tag_dict = {}
-            temp_list = [[], [], [], [], [], []]
+            temp_list = [[], [], [], [], [], [], []]  # artist, character, species, invalid, general, meta, rating
             for tag in img_tag_list:
-                if tag in self.all_tags_ever_dict:
-                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'artist':
-                        temp_list[0].append(tag)
-                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'character':
-                        temp_list[1].append(tag)
-                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'species':
-                        temp_list[2].append(tag)
-                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'general':
-                        temp_list[3].append(tag)
-                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'meta':
-                        temp_list[4].append(tag)
-                    if self.image_board.categories_map[self.all_tags_ever_dict[tag][0]] == 'rating':
-                        temp_list[5].append(tag)
+                category = self.get_category_name(tag)
+                if category == 'artist':
+                    temp_list[0].append(tag)
+                elif category == 'character':
+                    temp_list[1].append(tag)
+                elif category == 'species':
+                    temp_list[2].append(tag)
+                elif category == 'general':
+                    temp_list[4].append(tag)
+                elif category == 'meta':
+                    temp_list[5].append(tag)
+                elif category == 'rating':
+                    temp_list[6].append(tag)
                 else:
-                    help.verbose_print(f"tag:\t{tag}\tnot in self.all_tags_ever_dict")
-                    if tag in self.artist_csv_dict:  # artist
-                        temp_list[0].append(tag)
-                    if tag in self.character_csv_dict:  # character
-                        temp_list[1].append(tag)
-                    if tag in self.species_csv_dict:  # species
-                        temp_list[2].append(tag)
-                    if tag in self.general_csv_dict:  # general
-                        temp_list[3].append(tag)
-                    if tag in self.meta_csv_dict:  # meta
-                        temp_list[4].append(tag)
-                    if tag in self.rating_csv_dict:  # rating
-                        temp_list[5].append(tag)
-
+                    temp_list[3].append(tag)
+            
             temp_tag_dict["artist"] = temp_list[0]
             temp_tag_dict["character"] = temp_list[1]
             temp_tag_dict["species"] = temp_list[2]
-            temp_tag_dict["general"] = temp_list[3]
-            temp_tag_dict["meta"] = temp_list[4]
-            temp_tag_dict["rating"] = temp_list[5]
+            temp_tag_dict["invalid"] = temp_list[3]
+            temp_tag_dict["general"] = temp_list[4]
+            temp_tag_dict["meta"] = temp_list[5]
+            temp_tag_dict["rating"] = temp_list[6]
 
             self.selected_image_dict = {}
             self.selected_image_dict[img_name] = copy.deepcopy(temp_tag_dict)
@@ -534,6 +523,7 @@ class Gallery_tab:
             img_artist_tag_checkbox_group = None
             img_character_tag_checkbox_group = None
             img_species_tag_checkbox_group = None
+            img_invalid_tag_checkbox_group = None
             img_general_tag_checkbox_group = None
             img_meta_tag_checkbox_group = None
             img_rating_tag_checkbox_group = None
@@ -544,6 +534,7 @@ class Gallery_tab:
                 img_artist_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['artist'], value=[])
                 img_character_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['character'], value=[])
                 img_species_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['species'], value=[])
+                img_invalid_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['invalid'], value=[])
                 img_general_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['general'], value=[])
                 img_meta_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['meta'], value=[])
                 img_rating_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['rating'], value=[])
@@ -551,12 +542,13 @@ class Gallery_tab:
                 img_artist_tag_checkbox_group = gr.update(choices=[], value=[])
                 img_character_tag_checkbox_group = gr.update(choices=[], value=[])
                 img_species_tag_checkbox_group = gr.update(choices=[], value=[])
+                img_invalid_tag_checkbox_group = gr.update(choices=[], value=[])
                 img_general_tag_checkbox_group = gr.update(choices=[], value=[])
                 img_meta_tag_checkbox_group = gr.update(choices=[], value=[])
                 img_rating_tag_checkbox_group = gr.update(choices=[], value=[])
 
             return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
-                   img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
+                   img_invalid_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
                    new_state_of_suggestion_tag, new_state_of_suggestion_textbox
 
         tag_list.append(tag_string)
@@ -588,7 +580,7 @@ class Gallery_tab:
                 for tag in tag_list:
                     if not tag in self.all_images_dict["searched"][self.selected_image_dict["type"]][img_id]:
                         # get last tag in category
-                        last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
+                        last_tag = self.get_insert_last_tags_name(self.get_category_name(tag),
                                                              self.selected_image_dict["type"], img_id,
                                                              tag)  # i.e. the tag before the new one
                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -609,12 +601,14 @@ class Gallery_tab:
                         self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]][img_id].append(['+', tag, (glob_index)])
 
                         # create or increment category table AND frequency table for (all) tags
-                        self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                        category_key = self.get_category_name(tag)
+                        if category_key != "invalid":
+                            self.add_to_csv_dictionaries(category_key, tag)  # add
             elif img_id in list(self.all_images_dict[self.selected_image_dict["type"]].keys()):  # find image in ( TYPE ) : id
                 for tag in tag_list:
                     if not tag in self.all_images_dict[self.selected_image_dict["type"]][img_id]:
                         # get last tag in category
-                        last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
+                        last_tag = self.get_insert_last_tags_name(self.get_category_name(tag),
                                                              self.selected_image_dict["type"], img_id,
                                                              tag)  # i.e. the tag before the new one
                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -631,7 +625,9 @@ class Gallery_tab:
                         self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]][img_id].append(['+', tag, (glob_index)])
 
                         # create or increment category table AND frequency table for (all) tags
-                        self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                        category_key = self.get_category_name(tag)
+                        if category_key != "invalid":
+                            self.add_to_csv_dictionaries(category_key, tag)  # add
         if len(apply_to_all_type_select_checkboxgroup) > 0:
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
                 if multi_select_ckbx_state[0]:
@@ -643,9 +639,9 @@ class Gallery_tab:
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict["searched"][ext][img_id]:  # add tag
                                         # get last tag in category
-                                        last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
-                                                                             ext, img_id,
-                                                                             tag)  # i.e. the tag before the new one
+                                        last_tag = self.get_insert_last_tags_name(self.get_category_name(tag),
+                                                                         ext, img_id,
+                                                                         tag)  # i.e. the tag before the new one
                                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                                         # get its index on the global list
@@ -665,14 +661,16 @@ class Gallery_tab:
                                         self.download_tab_manager.auto_complete_config[ext][img_id].append(['+', tag, (glob_index)])
 
                                         # create or increment category table AND frequency table for (all) tags
-                                        self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                                        category_key = self.get_category_name(tag)
+                                        if category_key != "invalid":
+                                            self.add_to_csv_dictionaries(category_key, tag)  # add
                 else:
                     for key_type in list(self.all_images_dict["searched"].keys()):
                         for img_id in list(self.all_images_dict["searched"][key_type].keys()):
                             for tag in tag_list:
                                 if not tag in self.all_images_dict["searched"][key_type][img_id]:  # add tag
                                     # get last tag in category
-                                    last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
+                                    last_tag = self.get_insert_last_tags_name(self.get_category_name(tag),
                                                                          key_type, img_id,
                                                                          tag)  # i.e. the tag before the new one
                                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -694,7 +692,9 @@ class Gallery_tab:
                                     self.download_tab_manager.auto_complete_config[key_type][img_id].append(['+', tag, (glob_index)])
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                                    category_key = self.get_category_name(tag)
+                                    if category_key != "invalid":
+                                        self.add_to_csv_dictionaries(category_key, tag)  # add
             else:
                 if multi_select_ckbx_state[0]:
                     ##### returns index -> [ext, img_id]
@@ -705,9 +705,9 @@ class Gallery_tab:
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict[ext][img_id]:
                                         # get last tag in category
-                                        last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
-                                                                             ext, img_id,
-                                                                             tag)  # i.e. the tag before the new one
+                                    last_tag = self.get_insert_last_tags_name(self.get_category_name(tag),
+                                                                         ext, img_id,
+                                                                         tag)  # i.e. the tag before the new one
                                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                                         # get its index on the global list
@@ -727,14 +727,16 @@ class Gallery_tab:
                                             self.all_images_dict["searched"][ext][img_id].insert(glob_index, tag)
 
                                         # create or increment category table AND frequency table for (all) tags
-                                        self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                                    category_key = self.get_category_name(tag)
+                                    if category_key != "invalid":
+                                        self.add_to_csv_dictionaries(category_key, tag)  # add
                 else:
                     for key_type in apply_to_all_type_select_checkboxgroup:
                         for img_id in list(self.all_images_dict[key_type].keys()):
                             for tag in tag_list:
                                 if not tag in self.all_images_dict[key_type][img_id]:
                                     # get last tag in category
-                                    last_tag = self.get_insert_last_tags_name(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
+                                    last_tag = self.get_insert_last_tags_name(self.get_category_name(tag),
                                                                          key_type, img_id,
                                                                          tag)  # i.e. the tag before the new one
                                     help.verbose_print(f"LAST TAG IS:\t{last_tag}")
@@ -756,7 +758,9 @@ class Gallery_tab:
                                         self.all_images_dict["searched"][key_type][img_id].insert(glob_index, tag)
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    self.add_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # add
+                                    category_key = self.get_category_name(tag)
+                                    if category_key != "invalid":
+                                        self.add_to_csv_dictionaries(category_key, tag)  # add
 
         # find type of selected image
         temp_ext = None
@@ -773,12 +777,13 @@ class Gallery_tab:
         img_artist_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['artist'], value=[])
         img_character_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['character'], value=[])
         img_species_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['species'], value=[])
+        img_invalid_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['invalid'], value=[])
         img_general_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['general'], value=[])
         img_meta_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['meta'], value=[])
         img_rating_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['rating'], value=[])
 
         return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
-               img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
+               img_invalid_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
                new_state_of_suggestion_tag, new_state_of_suggestion_textbox
 
     def remove_tag_changes(self, category_tag_checkbox_group, apply_to_all_type_select_checkboxgroup, img_id,
@@ -814,9 +819,10 @@ class Gallery_tab:
             "type"] in apply_to_all_type_select_checkboxgroup:
             # update info for selected image
             for tag in tag_list:
-                if tag in self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]]:
-                    while tag in self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]]:
-                        self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]].remove(tag)
+                category_key = self.get_category_name(tag)
+                if tag in self.selected_image_dict[img_id][category_key]:
+                    while tag in self.selected_image_dict[img_id][category_key]:
+                        self.selected_image_dict[img_id][category_key].remove(tag)
             # update info for category components
             img_artist_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['artist'], value=[])
             img_character_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['character'], value=[])
@@ -830,9 +836,10 @@ class Gallery_tab:
                 not apply_to_all_type_select_checkboxgroup or len(apply_to_all_type_select_checkboxgroup) == 0):
             # update info for selected image
             for tag in tag_list:
-                if tag in self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]]:
-                    while tag in self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]]:
-                        self.selected_image_dict[img_id][self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]].remove(tag)
+                category_key = self.get_category_name(tag)
+                if tag in self.selected_image_dict[img_id][category_key]:
+                    while tag in self.selected_image_dict[img_id][category_key]:
+                        self.selected_image_dict[img_id][category_key].remove(tag)
             # update info for category components
             img_artist_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['artist'], value=[])
             img_character_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['character'], value=[])
@@ -859,7 +866,9 @@ class Gallery_tab:
                             self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]][img_id].append(['-', tag])
 
                         # create or increment category table AND frequency table for (all) tags
-                        self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # remove
+                        category_key = self.get_category_name(tag)
+                        if category_key != "invalid":
+                            self.remove_to_csv_dictionaries(category_key, tag)  # remove
             elif img_id in list(self.all_images_dict[self.selected_image_dict["type"]].keys()):  # find image in ( TYPE ) : id
                 for tag in tag_list:
                     if tag in self.all_images_dict[self.selected_image_dict["type"]][img_id]:
@@ -871,7 +880,9 @@ class Gallery_tab:
                             self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]][img_id].append(['-', tag])
 
                         # create or increment category table AND frequency table for (all) tags
-                        self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]], tag)  # remove
+                        category_key = self.get_category_name(tag)
+                        if category_key != "invalid":
+                            self.remove_to_csv_dictionaries(category_key, tag)  # remove
 
         if len(apply_to_all_type_select_checkboxgroup) > 0:
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
@@ -894,8 +905,9 @@ class Gallery_tab:
                                             self.download_tab_manager.auto_complete_config[ext][img_id].append(['-', tag])
 
                                         # create or increment category table AND frequency table for (all) tags
-                                        self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
-                                                                   tag)  # remove
+                                        category_key = self.get_category_name(tag)
+                                        if category_key != "invalid":
+                                            self.remove_to_csv_dictionaries(category_key, tag)  # remove
                 else:
                     for key_type in list(self.all_images_dict["searched"].keys()):
                         for img_id in list(self.all_images_dict["searched"][key_type].keys()):
@@ -912,7 +924,9 @@ class Gallery_tab:
                                         self.download_tab_manager.auto_complete_config[key_type][img_id].append(['-', tag])
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
+                                    category_key = self.get_category_name(tag)
+                                    if category_key != "invalid":
+                                        self.remove_to_csv_dictionaries(category_key,
                                                                tag)  # remove
             else:
                 if multi_select_ckbx_state[0]:
@@ -936,7 +950,9 @@ class Gallery_tab:
                                                 self.all_images_dict["searched"][ext][img_id].remove(tag)
 
                                         # create or increment category table AND frequency table for (all) tags
-                                        self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
+                                        category_key = self.get_category_name(tag)
+                                        if category_key != "invalid":
+                                            self.remove_to_csv_dictionaries(category_key,
                                                                    tag)  # remove
                 else:
                     for key_type in apply_to_all_type_select_checkboxgroup:
@@ -956,11 +972,13 @@ class Gallery_tab:
                                             self.all_images_dict["searched"][key_type][img_id].remove(tag)
 
                                     # create or increment category table AND frequency table for (all) tags
-                                    self.remove_to_csv_dictionaries(self.image_board.categories_map[self.all_tags_ever_dict[tag][0]],
+                                    category_key = self.get_category_name(tag)
+                                    if category_key != "invalid":
+                                        self.remove_to_csv_dictionaries(category_key,
                                                                tag)  # remove
 
         return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
-               img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
+               img_invalid_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
 
     def remove_all(self, artist, character, species, general, meta, rating, apply_to_all_type_select_checkboxgroup,
                    img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state):
@@ -980,9 +998,11 @@ class Gallery_tab:
 
     def get_category_name(self, tag):
         if tag in self.all_tags_ever_dict:
-            return self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]
-        else:
-            return None
+            category = self.image_board.categories_map[self.all_tags_ever_dict[tag][0]]
+            if category in self.image_board.valid_categories:
+                return category
+            return "invalid"
+        return "invalid"
 
     ### if "searched" is selected in apply_to_all_type_select_checkboxgroup, then all SEARCHED images will be deleted!
     def remove_images(self, apply_to_all_type_select_checkboxgroup, image_id, sort_images, sort_option,
@@ -1209,21 +1229,23 @@ class Gallery_tab:
         # load/re-load selected image
         self.reload_selected_image_dict(download_folder_type, img_name)
 
-        all_available_tags = [[], [], [], [], [], []]
+        all_available_tags = [[], [], [], [], [], [], []]
         all_available_tags[0] = self.selected_image_dict[img_name]["artist"]
         all_available_tags[1] = self.selected_image_dict[img_name]["character"]
         all_available_tags[2] = self.selected_image_dict[img_name]["species"]
-        all_available_tags[3] = self.selected_image_dict[img_name]["general"]
-        all_available_tags[4] = self.selected_image_dict[img_name]["meta"]
-        all_available_tags[5] = self.selected_image_dict[img_name]["rating"]
+        all_available_tags[3] = self.selected_image_dict[img_name]["invalid"]
+        all_available_tags[4] = self.selected_image_dict[img_name]["general"]
+        all_available_tags[5] = self.selected_image_dict[img_name]["meta"]
+        all_available_tags[6] = self.selected_image_dict[img_name]["rating"]
 
-        all_selected_tags = [[], [], [], [], [], []]
+        all_selected_tags = [[], [], [], [], [], [], []]
         all_selected_tags[0] = artist_comp_checkboxgroup
         all_selected_tags[1] = character_comp_checkboxgroup
         all_selected_tags[2] = species_comp_checkboxgroup
-        all_selected_tags[3] = general_comp_checkboxgroup
-        all_selected_tags[4] = meta_comp_checkboxgroup
-        all_selected_tags[5] = rating_comp_checkboxgroup
+        all_selected_tags[3] = invalid_comp_checkboxgroup
+        all_selected_tags[4] = general_comp_checkboxgroup
+        all_selected_tags[5] = meta_comp_checkboxgroup
+        all_selected_tags[6] = rating_comp_checkboxgroup
 
         if tag_effects_dropdown is None or len(tag_effects_dropdown) == 0:
             return gr.update(choices=all_available_tags[0], value=all_selected_tags[0]), \
@@ -1231,7 +1253,8 @@ class Gallery_tab:
                    gr.update(choices=all_available_tags[2], value=all_selected_tags[2]), \
                    gr.update(choices=all_available_tags[3], value=all_selected_tags[3]), \
                    gr.update(choices=all_available_tags[4], value=all_selected_tags[4]), \
-                   gr.update(choices=all_available_tags[5], value=all_selected_tags[5])
+                   gr.update(choices=all_available_tags[5], value=all_selected_tags[5]), \
+                   gr.update(choices=all_available_tags[6], value=all_selected_tags[6])
         else:
             for i in range(0, len(all_available_tags)):
                 if "(Category) Select Any" in tag_effects_dropdown:
@@ -1257,7 +1280,8 @@ class Gallery_tab:
                    gr.update(choices=all_available_tags[2], value=all_selected_tags[2]), \
                    gr.update(choices=all_available_tags[3], value=all_selected_tags[3]), \
                    gr.update(choices=all_available_tags[4], value=all_selected_tags[4]), \
-                   gr.update(choices=all_available_tags[5], value=all_selected_tags[5])
+                   gr.update(choices=all_available_tags[5], value=all_selected_tags[5]), \
+                   gr.update(choices=all_available_tags[6], value=all_selected_tags[6])
 
 
 
@@ -1274,10 +1298,11 @@ class Gallery_tab:
         img_artist_tag_checkbox_group = gr.update(choices=[])
         img_character_tag_checkbox_group = gr.update(choices=[])
         img_species_tag_checkbox_group = gr.update(choices=[])
+        img_invalid_tag_checkbox_group = gr.update(choices=[])
         img_general_tag_checkbox_group = gr.update(choices=[])
         img_meta_tag_checkbox_group = gr.update(choices=[])
         img_rating_tag_checkbox_group = gr.update(choices=[])
-        return img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
+        return img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_invalid_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
 
     def get_searched_image_total(self):
         total_img_count = 0
@@ -1305,10 +1330,11 @@ class Gallery_tab:
         artist_comp_checkboxgroup = gr.update(choices=[])
         character_comp_checkboxgroup = gr.update(choices=[])
         species_comp_checkboxgroup = gr.update(choices=[])
+        invalid_comp_checkboxgroup = gr.update(choices=[])
         general_comp_checkboxgroup = gr.update(choices=[])
         meta_comp_checkboxgroup = gr.update(choices=[])
         rating_comp_checkboxgroup = gr.update(choices=[])
-        return artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, general_comp_checkboxgroup, \
+        return artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, invalid_comp_checkboxgroup, general_comp_checkboxgroup, \
                meta_comp_checkboxgroup, rating_comp_checkboxgroup, gr.update(value="")
 
     def set_ckbx_state(self, select_multiple_images_checkbox,
@@ -1990,6 +2016,7 @@ class Gallery_tab:
                         img_character_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Character Tag/s',
                                                                             value=[])
                         img_species_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Species Tag/s', value=[])
+                        img_invalid_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Invalid Tag/s', value=[])
                         img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                         img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                         img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
@@ -2038,6 +2065,7 @@ class Gallery_tab:
         self.img_artist_tag_checkbox_group = img_artist_tag_checkbox_group
         self.img_character_tag_checkbox_group = img_character_tag_checkbox_group
         self.img_species_tag_checkbox_group = img_species_tag_checkbox_group
+        self.img_invalid_tag_checkbox_group = img_invalid_tag_checkbox_group
         self.img_general_tag_checkbox_group = img_general_tag_checkbox_group
         self.img_meta_tag_checkbox_group = img_meta_tag_checkbox_group
         self.img_rating_tag_checkbox_group = img_rating_tag_checkbox_group
@@ -2077,6 +2105,7 @@ class Gallery_tab:
                 self.img_artist_tag_checkbox_group,
                 self.img_character_tag_checkbox_group,
                 self.img_species_tag_checkbox_group,
+                self.img_invalid_tag_checkbox_group,
                 self.img_general_tag_checkbox_group,
                 self.img_meta_tag_checkbox_group,
                 self.img_rating_tag_checkbox_group,
@@ -2100,6 +2129,7 @@ class Gallery_tab:
                 self.img_artist_tag_checkbox_group,
                 self.img_character_tag_checkbox_group,
                 self.img_species_tag_checkbox_group,
+                self.img_invalid_tag_checkbox_group,
                 self.img_general_tag_checkbox_group,
                 gr.State([str(year) for year in range(2000,2025,1)]),
                 self.img_rating_tag_checkbox_group,
@@ -2113,6 +2143,7 @@ class Gallery_tab:
                 self.img_artist_tag_checkbox_group,
                 self.img_character_tag_checkbox_group,
                 self.img_species_tag_checkbox_group,
+                self.img_invalid_tag_checkbox_group,
                 self.img_general_tag_checkbox_group,
                 self.img_meta_tag_checkbox_group,
                 self.img_rating_tag_checkbox_group
@@ -2147,10 +2178,11 @@ class Gallery_tab:
             fn=self.update_generated_gallery_tag_selection,
             inputs=[self.category_filter_gallery_dropdown, self.img_id_textbox,
                    self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
-                   self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group],
+                   self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group],
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
-                   self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group]
+                   self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group]
         )
+
         self.tag_search_textbox.change(
             fn=self.tag_ideas.suggest_search_tags,
             inputs=[
@@ -2159,8 +2191,12 @@ class Gallery_tab:
                 self.previous_search_state_text,
                 self.advanced_settings_tab_manager.tag_suggestions_checkbox,
             ],
-            outputs=[self.tag_search_suggestion_dropdown, self.previous_search_state_text,
-                    self.current_search_state_placement_tuple, self.relevant_search_categories]
+            outputs=[
+                self.tag_search_suggestion_dropdown,
+                self.previous_search_state_text,
+                self.current_search_state_placement_tuple,
+                self.relevant_search_categories,
+            ]
         ).then(
             fn=None,
             inputs=[self.tag_search_suggestion_dropdown, self.relevant_search_categories],
@@ -2181,7 +2217,7 @@ class Gallery_tab:
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
-                     self.img_species_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group,
+                     self.img_species_tag_checkbox_group, self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group,
                      self.img_rating_tag_checkbox_group]
         )
         self.tag_add_textbox.change(
@@ -2199,7 +2235,7 @@ class Gallery_tab:
                     self.multi_select_ckbx_state, self.only_selected_state_object, self.images_selected_state,
                     self.initial_add_state, gr.State(False)],
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
-                     self.img_species_tag_checkbox_group, self.img_general_tag_checkbox_group,
+                     self.img_species_tag_checkbox_group, self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group,
                      self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group, self.initial_add_state_tag,
                      self.tag_add_textbox]).then(
             fn=None,
@@ -2212,7 +2248,7 @@ class Gallery_tab:
              inputs=[self.tag_add_textbox, self.apply_to_all_type_select_checkboxgroup, self.img_id_textbox, self.multi_select_ckbx_state,
                      self.only_selected_state_object, self.images_selected_state, self.initial_add_state, gr.State(True)],
              outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
-                      self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
+                      self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
                       self.initial_add_state_tag, self.tag_add_textbox]
         )
         self.tag_add_suggestion_dropdown.select(
@@ -2220,7 +2256,7 @@ class Gallery_tab:
              inputs=[self.apply_to_all_type_select_checkboxgroup, self.img_id_textbox, self.multi_select_ckbx_state,
                      self.only_selected_state_object, self.images_selected_state, self.initial_add_state],
              outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
-                      self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
+                      self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
                       self.tag_add_textbox, self.tag_add_suggestion_dropdown, self.initial_add_state, self.initial_add_state_tag]
         )
         self.image_remove_button.click(
@@ -2229,7 +2265,7 @@ class Gallery_tab:
                     self.apply_datetime_choice_menu, self.multi_select_ckbx_state, self.only_selected_state_object,
                     self.images_selected_state],
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
-                     self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
+                     self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
                      self.gallery_comp, self.img_id_textbox, self.only_selected_state_object, self.images_selected_state]).then(
             fn=self.reset_gallery_component_only,
             inputs=[],
@@ -2249,6 +2285,7 @@ class Gallery_tab:
                 self.img_artist_tag_checkbox_group,
                 self.img_character_tag_checkbox_group,
                 self.img_species_tag_checkbox_group,
+                self.img_invalid_tag_checkbox_group,
                 self.img_general_tag_checkbox_group,
                 self.img_meta_tag_checkbox_group,
                 self.img_rating_tag_checkbox_group,
@@ -2262,6 +2299,7 @@ class Gallery_tab:
                 self.img_artist_tag_checkbox_group,
                 self.img_character_tag_checkbox_group,
                 self.img_species_tag_checkbox_group,
+                self.img_invalid_tag_checkbox_group,
                 self.img_general_tag_checkbox_group,
                 self.img_meta_tag_checkbox_group,
                 self.img_rating_tag_checkbox_group
@@ -2280,7 +2318,7 @@ class Gallery_tab:
             fn=self.clear_categories,
             inputs=[],
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
-                     self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
+                     self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group,
                      self.img_id_textbox]
         )
         self.select_multiple_images_checkbox.change(
@@ -2304,7 +2342,7 @@ class Gallery_tab:
             inputs=[self.gallery_state, self.select_multiple_images_checkbox, self.images_selected_state,
                     self.select_between_images_checkbox, self.images_tuple_points],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
-                     self.img_species_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group,
+                     self.img_species_tag_checkbox_group, self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group,
                      self.img_rating_tag_checkbox_group, self.images_selected_state, self.only_selected_state_object,
                      self.images_tuple_points]).then(
             None,

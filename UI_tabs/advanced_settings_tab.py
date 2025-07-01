@@ -3,7 +3,6 @@ import gradio as gr
 class Advanced_settings_tab:
     def render_tab(self):
         with gr.Tab("Advanced Settings"):
-            tag_suggestions_checkbox = gr.Checkbox(label="Enable Tag Suggestions", value=True)
             total_suggestions_slider = gr.Slider(
                 info="Limit Number of Tag Suggestions",
                 minimum=0,
@@ -13,7 +12,13 @@ class Advanced_settings_tab:
                 show_label=False,
             )
 
-        self.tag_suggestions_checkbox = tag_suggestions_checkbox
+            tag_suggestions_checkbox = gr.Checkbox(
+                label="Tag Suggestions",
+                value=True,
+                info="Enable search tag suggestions",
+            )
+
         self.total_suggestions_slider = total_suggestions_slider
+        self.tag_suggestions_checkbox = tag_suggestions_checkbox
 
         return self.total_suggestions_slider, self.tag_suggestions_checkbox

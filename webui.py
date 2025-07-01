@@ -128,8 +128,12 @@ def build_ui():
 
         help.verbose_print(f"EVERYTHING INITIALIZING")
         help.verbose_print(f"Initial check to download & load tags CSV")
-        help.preprocess_csv(proxy_url=args.proxy_url, settings_json=settings_json,
-                            all_tags_ever_dict=all_tags_ever_dict, invalid_categories=image_board.get_invalid_categories())
+        help.preprocess_csv(
+            proxy_url=args.proxy_url,
+            settings_json=settings_json,
+            all_tags_ever_dict=all_tags_ever_dict,
+            invalid_categories=None,
+        )
         all_tags_ever_dict = help.load_tags_csv_fast()
 
         #####################

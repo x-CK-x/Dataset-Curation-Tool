@@ -37,7 +37,7 @@
 "include_questionable_tag": true,
 "include_safe_tag": true,
 "reorder_tags": true,
-"tag_order_format": "artist, character, species, general, meta, rating",
+"tag_order_format": "character, species, invalid, artist, general, meta, rating",
 "prepend_tags": "",
 "append_tags": "",
 "replace_underscores": false,

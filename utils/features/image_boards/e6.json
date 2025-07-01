@@ -19,9 +19,10 @@
         "rating"
     ],
     "tag_order": [
-        "artist",
         "character",
         "species",
+        "invalid",
+        "artist",
         "general",
         "meta",
         "rating"

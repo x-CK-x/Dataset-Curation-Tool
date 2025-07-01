@@ -213,12 +213,12 @@ class Tag_Suggest:
         # If we're here, it means there was no change
         return (0, "")
 
-    def suggest_search_tags(self, input_string, num_suggestions, previous_text, enable_suggestions=True):
-        if not enable_suggestions:
-            generic_dropdown = gr.update(choices=[], value=None)
-            current_placement_tuple = (0, "")
-            return generic_dropdown, input_string, current_placement_tuple, []
+    def suggest_search_tags(self, input_string, num_suggestions, previous_text, suggestions_enabled=True):
         # obtain the current information
+        if not suggestions_enabled:
+            previous_text = input_string
+            return gr.update(choices=[], value=None), previous_text, (0, ""), []
+
         current_placement_tuple = self.identify_changing_tag(previous_text, input_string)
 
         # print(f"previous_text:\t{(previous_text)}")
