@@ -715,9 +715,9 @@ class Gallery_tab:
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict[ext][img_id]:
                                         # get last tag in category
-                                    last_tag = self.get_insert_last_tags_name(self.get_category_name(tag),
-                                                                         ext, img_id,
-                                                                         tag)  # i.e. the tag before the new one
+                                        last_tag = self.get_insert_last_tags_name(self.get_category_name(tag),
+                                                                                 ext, img_id,
+                                                                                 tag)  # i.e. the tag before the new one
                                         help.verbose_print(f"LAST TAG IS:\t{last_tag}")
 
                                         # get its index on the global list
