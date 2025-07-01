@@ -263,7 +263,12 @@ def build_ui():
         ################################################################################################################
 
         # initialize tag suggestion feature
-        tag_ideas = Tag_Suggest(all_tags_ever_dict, gallery_tab_manager, download_tab_manager)
+        tag_ideas = Tag_Suggest(
+            all_tags_ever_dict,
+            gallery_tab_manager,
+            download_tab_manager,
+            advanced_settings_tab_manager,
+        )
         download_tab_manager.set_tag_ideas(tag_ideas)
         gallery_tab_manager.set_tag_ideas(tag_ideas)
 
