@@ -2182,6 +2182,7 @@ class Gallery_tab:
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
                    self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group]
         )
+
         self.tag_search_textbox.change(
             fn=self.tag_ideas.suggest_search_tags,
             inputs=[
@@ -2221,8 +2222,13 @@ class Gallery_tab:
         )
         self.tag_add_textbox.change(
             fn=self.tag_ideas.suggest_tags,
-            inputs=[self.tag_add_textbox, self.initial_add_state, self.advanced_settings_tab_manager.total_suggestions_slider,
-                    self.initial_add_state_tag],
+            inputs=[
+                self.tag_add_textbox,
+                self.initial_add_state,
+                self.advanced_settings_tab_manager.total_suggestions_slider,
+                self.initial_add_state_tag,
+                self.advanced_settings_tab_manager.tag_suggestions_checkbox,
+            ],
             outputs=[self.tag_add_suggestion_dropdown, self.initial_add_state, self.initial_add_state_tag, self.relevant_add_categories]).then(
             fn=self.add_tag_changes,
             inputs=[self.initial_add_state_tag, self.apply_to_all_type_select_checkboxgroup, self.img_id_textbox,

@@ -6,11 +6,12 @@ from utils import helper_functions as help
 
 class Tag_Suggest:
 
-    def __init__(self, all_tags_ever_dict, gallery_tab_manager, download_tab_manager):
+    def __init__(self, all_tags_ever_dict, gallery_tab_manager, download_tab_manager, advanced_settings_tab_manager):
         self.trie = datrie.Trie(string.printable)
         help.load_trie(self.trie, all_tags_ever_dict)
         self.gallery_tab_manager = gallery_tab_manager
         self.download_tab_manager = download_tab_manager
+        self.advanced_settings_tab_manager = advanced_settings_tab_manager
 
     # Function to color code categories
     def category_color(self, category):
@@ -61,7 +62,10 @@ class Tag_Suggest:
         return tag_textbox, tag_suggestion_dropdown, state, state_tag, tag_categories
 
     # get the suggestions and populate the dropdown menu
-    def suggest_tags(self, input_string, state, num_suggestions, state_tag):
+    def suggest_tags(self, input_string, state, num_suggestions, state_tag, enable_suggestions=True):
+        if not enable_suggestions:
+            generic_dropdown = gr.update(choices=[], value=None)
+            return generic_dropdown, state, state_tag, []
         # print(f"input_string:\t{(input_string)}")
         # print(f"state:\t{(state)}")
         # print(f"num_suggestions:\t{(num_suggestions)}")

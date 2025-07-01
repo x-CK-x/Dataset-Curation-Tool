@@ -11,6 +11,7 @@ class Advanced_settings_tab:
                 value=10,
                 show_label=False,
             )
+
             tag_suggestions_checkbox = gr.Checkbox(
                 label="Tag Suggestions",
                 value=True,
@@ -21,4 +22,3 @@ class Advanced_settings_tab:
         self.tag_suggestions_checkbox = tag_suggestions_checkbox
 
         return self.total_suggestions_slider, self.tag_suggestions_checkbox
-
