@@ -996,7 +996,12 @@ class Custom_dataset_tab:
                             with gr.Column(min_width=50, scale=1):
                                 copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
                             with gr.Column(min_width=50, scale=1):
-                                include_invalid_tags_ckbx = gr.Checkbox(label="Keep Invalid", info="Include Invalid tag/s")
+                                include_invalid_tags_ckbx = gr.Checkbox(
+                                    label="Keep Invalid",
+                                    info="Include Invalid tag/s",
+                                    value=True,
+                                    interactive=False,
+                                )
                         with gr.Row():
                             with gr.Column(min_width=50, scale=2):
                                 save_custom_images_button = gr.Button(value="Save/Add Images", variant='primary')
