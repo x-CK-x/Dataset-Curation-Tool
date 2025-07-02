@@ -255,13 +255,17 @@ class Gallery_tab:
 
     def load_external_dataset(self, folder_path):
         """Load images and tags from a user provided directory."""
+        help.verbose_print(f"load_external_dataset folder_path:\t{folder_path}")
         if not folder_path or not os.path.isdir(folder_path):
+            help.verbose_print("load_external_dataset: invalid path")
             return gr.update(), gr.update()
 
         self.custom_dataset_dir = folder_path
 
         # gather tags
+        help.verbose_print("gathering tags")
         self.all_images_dict = help.gather_media_tags(folder_path)
+        help.verbose_print(f"found extensions:\t{list(self.all_images_dict.keys())}")
 
         # build search dict and image path map
         self.search_image_paths = {}
@@ -284,6 +288,7 @@ class Gallery_tab:
             self.gallery_state.value = images
         except Exception:
             pass
+        help.verbose_print(f"gallery images loaded:\t{len(images)}")
         count = self.get_total_image_count()
         return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
 
@@ -1532,6 +1537,7 @@ class Gallery_tab:
         artist_comp_checkboxgroup = gr.update(choices=[])
         character_comp_checkboxgroup = gr.update(choices=[])
         species_comp_checkboxgroup = gr.update(choices=[])
+        invalid_comp_checkboxgroup = gr.update(choices=[])
         general_comp_checkboxgroup = gr.update(choices=[])
         meta_comp_checkboxgroup = gr.update(choices=[])
         rating_comp_checkboxgroup = gr.update(choices=[])
@@ -1585,6 +1591,7 @@ class Gallery_tab:
             artist_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["artist"])
             character_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["character"])
             species_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["species"])
+            invalid_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["invalid"])
             general_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["general"])
             meta_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["meta"])
             rating_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["rating"])
@@ -1597,7 +1604,7 @@ class Gallery_tab:
 
         return gr.update(
             value=img_name), artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, \
-               general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup, images_selected_state, only_selected_state_object, \
+               invalid_comp_checkboxgroup, general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup, images_selected_state, only_selected_state_object, \
                images_tuple_points
 
     ######
@@ -1691,6 +1698,11 @@ class Gallery_tab:
         return gr.update(value=images, visible=True)
 
     def reset_gallery_component_only(self):
+        help.verbose_print("reset_gallery_component_only")
+        try:
+            self.gallery_state.value = []
+        except Exception:
+            pass
         return gr.update(value=[], visible=True)
 
     def reset_gallery_manager(self):
