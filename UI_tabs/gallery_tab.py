@@ -2280,7 +2280,7 @@ class Gallery_tab:
             fn=self.search_tags,
             inputs=[self.tag_search_textbox, self.apply_to_all_type_select_checkboxgroup, self.apply_datetime_sort_ckbx,
                     self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.gallery_state, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
@@ -2316,7 +2316,7 @@ class Gallery_tab:
             outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.gallery_state]
+            outputs=[self.gallery_comp, self.total_image_counter]
         )
         self.image_save_ids_button.click(
             fn=self.save_image_changes,
@@ -2358,7 +2358,7 @@ class Gallery_tab:
             outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp]).then(
+            outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.clear_categories,
             inputs=[],
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
@@ -2373,7 +2373,7 @@ class Gallery_tab:
         self.download_folder_type.change(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.gallery_state, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
