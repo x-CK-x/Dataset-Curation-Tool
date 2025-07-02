@@ -863,9 +863,11 @@ class Gallery_tab:
     def remove_tag_changes(self, category_tag_checkbox_group, apply_to_all_type_select_checkboxgroup, img_id,
                            multi_select_ckbx_state, only_selected_state_object, images_selected_state):
 
+        # Initialize checkbox groups so the function always returns valid values
         img_artist_tag_checkbox_group = None
         img_character_tag_checkbox_group = None
         img_species_tag_checkbox_group = None
+        img_invalid_tag_checkbox_group = None
         img_general_tag_checkbox_group = None
         img_meta_tag_checkbox_group = None
         img_rating_tag_checkbox_group = None
