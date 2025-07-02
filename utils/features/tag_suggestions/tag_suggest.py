@@ -71,6 +71,8 @@ class Tag_Suggest:
     def suggest_tags(self, input_string, state, num_suggestions, state_tag, enable_suggestions=True):
         if not enable_suggestions:
             generic_dropdown = gr.update(choices=[], value=None)
+            # preserve whatever the user has typed so far
+            state = input_string
             return generic_dropdown, state, state_tag, []
         # print(f"input_string:\t{(input_string)}")
         # print(f"state:\t{(state)}")
