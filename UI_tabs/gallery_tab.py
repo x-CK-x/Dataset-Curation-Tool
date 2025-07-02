@@ -1218,7 +1218,7 @@ class Gallery_tab:
         for ext in temp_list:
             for img_id in list(self.all_images_dict[ext]):
                 img_path, tag_path = self._get_media_paths(ext, img_id)
-                temp_tag_string = ",".join(self.all_images_dict[ext][img_id])
+                temp_tag_string = ", ".join(self.all_images_dict[ext][img_id])
                 help.write_tags_to_text_file(temp_tag_string, tag_path)
                 if self.db_manager:
                     fid = self.db_manager.get_file_id(img_path)
@@ -1707,7 +1707,9 @@ class Gallery_tab:
             self.gallery_state.value = []
         except Exception:
             pass
-        return gr.update(value=[], visible=True)
+        gallery_comp = gr.update(value=[], visible=True)
+        total_count = gr.update(value="Total Images: 0")
+        return gallery_comp, total_count
 
     def reset_gallery_manager(self):
         download_folder_type = gr.update(value=None)
@@ -1822,7 +1824,7 @@ class Gallery_tab:
             for img_id in list(self.all_images_dict[ext].keys()):
                 full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
                 full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ",".join(self.all_images_dict[ext][img_id])
+                temp_tag_string = ", ".join(self.all_images_dict[ext][img_id])
                 help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
 
         self.add_current_images()
@@ -1907,7 +1909,7 @@ class Gallery_tab:
             for img_id in list(self.all_images_dict[ext].keys()):
                 full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
                 full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ",".join(self.all_images_dict[ext][img_id])
+                temp_tag_string = ", ".join(self.all_images_dict[ext][img_id])
                 help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
 
         self.add_current_images()
@@ -1993,7 +1995,7 @@ class Gallery_tab:
             for img_id in list(self.all_images_dict[ext].keys()):
                 full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
                 full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ",".join(self.all_images_dict[ext][img_id])
+                temp_tag_string = ", ".join(self.all_images_dict[ext][img_id])
                 help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
 
         self.add_current_images()
@@ -2278,7 +2280,7 @@ class Gallery_tab:
             fn=self.search_tags,
             inputs=[self.tag_search_textbox, self.apply_to_all_type_select_checkboxgroup, self.apply_datetime_sort_ckbx,
                     self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.gallery_state, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
@@ -2311,10 +2313,10 @@ class Gallery_tab:
                      self.gallery_comp, self.img_id_textbox, self.only_selected_state_object, self.images_selected_state]).then(
             fn=self.reset_gallery_component_only,
             inputs=[],
-            outputs=[self.gallery_comp, self.gallery_state, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.gallery_state]
+            outputs=[self.gallery_comp, self.total_image_counter]
         )
         self.image_save_ids_button.click(
             fn=self.save_image_changes,
@@ -2356,7 +2358,7 @@ class Gallery_tab:
             outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp]).then(
+            outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.clear_categories,
             inputs=[],
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
@@ -2371,7 +2373,7 @@ class Gallery_tab:
         self.download_folder_type.change(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.gallery_state, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,

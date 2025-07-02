@@ -1483,7 +1483,7 @@ class Custom_dataset_tab:
         self.load_dataset_gallery_button.click(
             fn=self.gallery_tab_manager.reset_gallery_component_only,
             inputs=None,
-            outputs=[self.gallery_tab_manager.gallery_comp]
+            outputs=[self.gallery_tab_manager.gallery_comp, self.gallery_tab_manager.total_image_counter]
         ).then(
             fn=self.gallery_tab_manager.load_external_dataset,
             inputs=[self.dataset_gallery_path_textbox],
