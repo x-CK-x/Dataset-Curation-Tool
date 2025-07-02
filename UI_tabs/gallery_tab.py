@@ -1218,7 +1218,9 @@ class Gallery_tab:
         for ext in temp_list:
             for img_id in list(self.all_images_dict[ext]):
                 img_path, tag_path = self._get_media_paths(ext, img_id)
-                temp_tag_string = ", ".join(self.all_images_dict[ext][img_id])
+                ordered = help.sort_tags_by_priority(self.all_images_dict[ext][img_id], self.get_category_name)
+                self.all_images_dict[ext][img_id] = ordered
+                temp_tag_string = ", ".join(ordered)
                 help.write_tags_to_text_file(temp_tag_string, tag_path)
                 if self.db_manager:
                     fid = self.db_manager.get_file_id(img_path)
@@ -1824,7 +1826,9 @@ class Gallery_tab:
             for img_id in list(self.all_images_dict[ext].keys()):
                 full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
                 full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ", ".join(self.all_images_dict[ext][img_id])
+                ordered = help.sort_tags_by_priority(self.all_images_dict[ext][img_id], self.get_category_name)
+                self.all_images_dict[ext][img_id] = ordered
+                temp_tag_string = ", ".join(ordered)
                 help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
 
         self.add_current_images()
@@ -1909,7 +1913,9 @@ class Gallery_tab:
             for img_id in list(self.all_images_dict[ext].keys()):
                 full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
                 full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ", ".join(self.all_images_dict[ext][img_id])
+                ordered = help.sort_tags_by_priority(self.all_images_dict[ext][img_id], self.get_category_name)
+                self.all_images_dict[ext][img_id] = ordered
+                temp_tag_string = ", ".join(ordered)
                 help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
 
         self.add_current_images()
@@ -1995,7 +2001,9 @@ class Gallery_tab:
             for img_id in list(self.all_images_dict[ext].keys()):
                 full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
                 full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-                temp_tag_string = ", ".join(self.all_images_dict[ext][img_id])
+                ordered = help.sort_tags_by_priority(self.all_images_dict[ext][img_id], self.get_category_name)
+                self.all_images_dict[ext][img_id] = ordered
+                temp_tag_string = ", ".join(ordered)
                 help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
 
         self.add_current_images()

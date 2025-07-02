@@ -40,3 +40,19 @@ def test_gather_media_tags(tmp_path):
     assert result["png"]["img1"] == ["tag1"]
     assert result["webp"]["img2"] == ["tag3"]
     assert "searched" in result
+
+
+def test_sort_tags_by_priority():
+    tags = ["tagA", "artist1", "2024", "charA", "dog"]
+
+    def cat(tag):
+        mapping = {
+            "charA": "character",
+            "dog": "species",
+            "artist1": "artist",
+            "tagA": "general",
+        }
+        return mapping.get(tag, "invalid")
+
+    sorted_tags = hf.sort_tags_by_priority(tags, cat)
+    assert sorted_tags == ["charA", "dog", "artist1", "2024", "tagA"]
