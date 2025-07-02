@@ -993,6 +993,8 @@ class Custom_dataset_tab:
                                                                      info="Folder should contain both (tag/s & image/s) if no video",
                                                                      interactive=True)
                         with gr.Row():
+                            load_dataset_gallery_button = gr.Button(value="Load Dataset to Gallery", variant='secondary')
+                        with gr.Row():
                             with gr.Column(min_width=50, scale=1):
                                 copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
                             with gr.Column(min_width=50, scale=1):
@@ -1116,6 +1118,7 @@ class Custom_dataset_tab:
         self.confidence_threshold_slider = confidence_threshold_slider
         self.interrogate_button = interrogate_button
         self.image_with_tag_path_textbox = image_with_tag_path_textbox
+        self.load_dataset_gallery_button = load_dataset_gallery_button
         self.copy_mode_ckbx = copy_mode_ckbx
         self.save_custom_images_button = save_custom_images_button
         self.save_custom_tags_button = save_custom_tags_button
@@ -1174,6 +1177,7 @@ class Custom_dataset_tab:
                 self.confidence_threshold_slider,
                 self.interrogate_button,
                 self.image_with_tag_path_textbox,
+                self.load_dataset_gallery_button,
                 self.copy_mode_ckbx,
                 self.save_custom_images_button,
                 self.save_custom_tags_button,
@@ -1470,6 +1474,15 @@ class Custom_dataset_tab:
             fn=self.set_image_with_tag_path_textbox,
             inputs=[self.image_with_tag_path_textbox],
             outputs=[]
+        )
+        self.load_dataset_gallery_button.click(
+            fn=self.gallery_tab_manager.reset_gallery_component_only,
+            inputs=None,
+            outputs=[self.gallery_tab_manager.gallery_comp]
+        ).then(
+            fn=self.gallery_tab_manager.load_external_dataset,
+            inputs=[self.image_with_tag_path_textbox],
+            outputs=[self.gallery_tab_manager.gallery_comp, self.gallery_tab_manager.total_image_counter]
         )
         self.copy_mode_ckbx.change(
             fn=self.set_copy_mode_ckbx,

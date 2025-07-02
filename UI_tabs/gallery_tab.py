@@ -72,6 +72,10 @@ class Gallery_tab:
         # filepaths through gradio inputs
         self.gallery_state = gr.State([])
 
+        # optional path to a user provided dataset loaded via the
+        # custom dataset tab
+        self.custom_dataset_dir = None
+
 
 
 
@@ -202,15 +206,22 @@ class Gallery_tab:
     ### Update gellery component
     def update_search_gallery(self, sort_images, sort_option, media_mode="images"):
         temp = '\\' if help.is_windows() else '/'
-        folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
-        folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+        if self.custom_dataset_dir:
+            folder_path = self.custom_dataset_dir
+        else:
+            folder_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            folder_path = os.path.join(folder_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+
         images = []
         for ext in list(self.all_images_dict["searched"].keys()):
             if media_mode == "images" and ext in self.video_formats:
                 continue
             if media_mode == "videos" and ext not in self.video_formats:
                 continue
-            search_path = os.path.join(folder_path, self.download_tab_manager.settings_json.get(f"{ext}_folder", ""))
+            if self.custom_dataset_dir:
+                search_path = self.custom_dataset_dir
+            else:
+                search_path = os.path.join(folder_path, self.download_tab_manager.settings_json.get(f"{ext}_folder", ""))
             for img_id in list(self.all_images_dict["searched"][ext].keys()):
                 img_path = self.search_image_paths.get((ext, img_id))
                 if not img_path:
@@ -227,6 +238,54 @@ class Gallery_tab:
                                                                                float('-inf')))
         # help.verbose_print(f"images:\t{images}")
         return images
+
+    def _get_dataset_folder(self, ext):
+        """Return directory where media files should be read/written."""
+        if self.custom_dataset_dir:
+            return self.custom_dataset_dir
+        full_path_downloads = os.path.join(
+            os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+            self.download_tab_manager.settings_json["downloaded_posts_folder"],
+        )
+        return os.path.join(full_path_downloads, self.download_tab_manager.settings_json.get(f"{ext}_folder", ""))
+
+    def _get_media_paths(self, ext, img_id):
+        base = self._get_dataset_folder(ext)
+        return os.path.join(base, f"{img_id}.{ext}"), os.path.join(base, f"{img_id}.txt")
+
+    def load_external_dataset(self, folder_path):
+        """Load images and tags from a user provided directory."""
+        if not folder_path or not os.path.isdir(folder_path):
+            return gr.update(), gr.update()
+
+        self.custom_dataset_dir = folder_path
+
+        # gather tags
+        self.all_images_dict = help.gather_media_tags(folder_path)
+
+        # build search dict and image path map
+        self.search_image_paths = {}
+        filtered = {}
+        for ext, images in self.all_images_dict.items():
+            if ext == "searched":
+                continue
+            filtered[ext] = {}
+            for img_id, tags in images.items():
+                filtered[ext][img_id] = tags
+                self.search_image_paths[(ext, img_id)] = os.path.join(folder_path, f"{img_id}.{ext}")
+        self.all_images_dict["searched"] = copy.deepcopy(filtered)
+
+        # compute creation times for sorting
+        self.image_creation_times = {}
+        self.initialize_posts_timekeeper()
+
+        images = self.update_search_gallery(False, "", self.current_media_mode)
+        try:
+            self.gallery_state.value = images
+        except Exception:
+            pass
+        count = self.get_total_image_count()
+        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
 
     def initialize_posts_timekeeper(self):
         start_year_temp = int(self.download_tab_manager.settings_json["min_year"])
@@ -1134,8 +1193,6 @@ class Gallery_tab:
 
     def save_tag_changes(self):
         # do a full save of all tags
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
-                                           self.download_tab_manager.settings_json["downloaded_posts_folder"])
         if not self.all_images_dict or not "png" in self.all_images_dict:
             raise ValueError('radio button not pressed i.e. image type button')
 
@@ -1150,16 +1207,14 @@ class Gallery_tab:
             help.verbose_print(f"removing searched key")
             help.verbose_print(f"temp_list:\t\t{temp_list}")
         for ext in temp_list:
-            full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
             for img_id in list(self.all_images_dict[ext]):
-                full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
+                img_path, tag_path = self._get_media_paths(ext, img_id)
                 temp_tag_string = ",".join(self.all_images_dict[ext][img_id])
-                help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
+                help.write_tags_to_text_file(temp_tag_string, tag_path)
                 if self.db_manager:
-                    img_path = os.path.join(full_path_gallery_type, f"{img_id}.{ext}")
                     fid = self.db_manager.get_file_id(img_path)
                     if fid:
-                        self.db_manager.add_modified_file(fid, mod_tag_path=full_path)
+                        self.db_manager.add_modified_file(fid, mod_tag_path=tag_path)
         # persist csv changes
         self.csv_persist_to_disk()
 
@@ -1176,8 +1231,6 @@ class Gallery_tab:
         help.verbose_print(f"SAVE COMPLETE")
 
     def save_image_changes(self):
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
-                                           self.download_tab_manager.settings_json["downloaded_posts_folder"])
         if not self.all_images_dict or not "png" in self.all_images_dict:
             raise ValueError('radio button not pressed i.e. image type button')
         help.verbose_print(f"++++++++++++++++++++++++++")
@@ -1193,10 +1246,9 @@ class Gallery_tab:
 
         temp = '\\' if help.is_windows() else '/'
         for ext in temp_list:
-            full_path_gallery_type = os.path.join(full_path_downloads, self.download_tab_manager.settings_json[f"{ext}_folder"])
-            # type select
+            full_path_gallery_type = self._get_dataset_folder(ext)
             images = [name.split(temp)[-1].split(".")[0] for name in glob.glob(os.path.join(full_path_gallery_type,
-                                                                                            f"*.{ext}"))]  # getting the names of the files w.r.t. the directory
+                    f"*.{ext}"))]
             for img_id in images:
                 if not img_id in list(self.all_images_dict[ext]):
                     # delete img & txt files
