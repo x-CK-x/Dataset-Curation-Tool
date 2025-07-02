@@ -69,6 +69,11 @@ The "DUPLICATE" run files (run.bat, mac_run.sh, linux_run.sh) residing in the Da
 ./RUN_FILE --server_port 7860
 ```
 
+> Skip loading tag suggestions to speed up startup
+```
+./RUN_FILE --disable_tag_suggestions
+```
+
 > OR CHOOSE ANY COMBINATION OF ^
 
 ## Important Information
