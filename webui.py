@@ -9,7 +9,7 @@ from utils.features.tag_suggestions.tag_suggest import Tag_Suggest
 from utils.features.image_boards.image_board_manager import Image_Board
 
 
-def build_ui():
+def build_ui(enable_tag_suggestions=True):
     from UI_tabs.download_tab import Download_tab
     from UI_tabs.gallery_tab import Gallery_tab
     from UI_tabs.stats_tab import Stats_tab
@@ -247,7 +247,7 @@ def build_ui():
         # advanced settings tab init
         advanced_settings_tab_manager = Advanced_settings_tab()
         # render tab
-        advanced_settings_tab_manager.render_tab()
+        advanced_settings_tab_manager.render_tab(enable_tag_suggestions)
         # share object reference
         download_tab_manager.set_advanced_settings_tab_manager(advanced_settings_tab_manager)
         gallery_tab_manager.set_advanced_settings_tab_manager(advanced_settings_tab_manager)
@@ -272,6 +272,7 @@ def build_ui():
             gallery_tab_manager,
             download_tab_manager,
             advanced_settings_tab_manager,
+            enable_tag_suggestions,
         )
         download_tab_manager.set_tag_ideas(tag_ideas)
         gallery_tab_manager.set_tag_ideas(tag_ideas)
@@ -332,9 +333,14 @@ if __name__ == "__main__":
         default=None,
         help='(Optional) Proxy URL for downloading tags.csv.gz file',
     )
+    parser.add_argument(
+        '--disable_tag_suggestions',
+        action='store_true',
+        help='Disable loading of tag suggestions to speed up startup',
+    )
     args = parser.parse_args()
 
-    demo = build_ui()
+    demo = build_ui(enable_tag_suggestions=not args.disable_tag_suggestions)
 
     UI(
         username=args.username,

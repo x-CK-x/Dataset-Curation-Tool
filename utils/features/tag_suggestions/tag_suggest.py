@@ -6,12 +6,15 @@ from utils import helper_functions as help
 
 class Tag_Suggest:
 
-    def __init__(self, all_tags_ever_dict, gallery_tab_manager, download_tab_manager, advanced_settings_tab_manager):
-        self.trie = datrie.Trie(string.printable)
-        help.load_trie(self.trie, all_tags_ever_dict)
+    def __init__(self, all_tags_ever_dict, gallery_tab_manager, download_tab_manager,
+                 advanced_settings_tab_manager, enable_suggestions=True):
+        self.trie = datrie.Trie(string.printable) if enable_suggestions else None
+        if enable_suggestions:
+            help.load_trie(self.trie, all_tags_ever_dict)
         self.gallery_tab_manager = gallery_tab_manager
         self.download_tab_manager = download_tab_manager
         self.advanced_settings_tab_manager = advanced_settings_tab_manager
+        self.enable_suggestions = enable_suggestions
 
     # Function to color code categories
     def category_color(self, category):
@@ -36,6 +39,9 @@ class Tag_Suggest:
             return str(count)
 
     def get_tag_options(self, input_string, num_suggestions):
+        if not self.trie:
+            return gr.update(value=input_string), gr.update(choices=[], value=None), input_string, "", []
+
         # Get a list of all tags that start with the edited part
         suggested_tags = self.trie.keys(input_string)
 
@@ -169,6 +175,9 @@ class Tag_Suggest:
 
     def get_search_tag_options(self, partial_tag, num_suggestions):
         tag_categories = []
+        if not self.trie:
+            return gr.update(choices=[], value=None), tag_categories
+
         if (partial_tag[0] == "-" and len(partial_tag) == 1):
             return gr.update(choices=[], value=None), tag_categories
         # check for leading "-" with additional text afterwards i.e. length exceeding 1 :: remove "-" if condition is true
