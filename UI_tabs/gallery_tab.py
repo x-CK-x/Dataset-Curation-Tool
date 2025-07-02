@@ -541,9 +541,11 @@ class Gallery_tab:
 
         # list of orderings
         temp_category_list = [self.selected_image_dict[img_id]["artist"], self.selected_image_dict[img_id]["character"],
-                              self.selected_image_dict[img_id]["species"], self.selected_image_dict[img_id]["general"],
-                              self.selected_image_dict[img_id]["meta"], self.selected_image_dict[img_id]["rating"]]
-        category_order_dict = {"artist": 0, "character": 1, "species": 2, "general": 3, "meta": 4, "rating": 5}
+                              self.selected_image_dict[img_id]["species"], self.selected_image_dict[img_id]["invalid"],
+                              self.selected_image_dict[img_id]["general"], self.selected_image_dict[img_id]["meta"],
+                              self.selected_image_dict[img_id]["rating"]]
+        category_order_dict = {"artist": 0, "character": 1, "species": 2, "invalid": 3,
+                              "general": 4, "meta": 5, "rating": 6}
 
         # determine the initial dictionary number
         current_dict_num = category_order_dict[string_category]
@@ -863,9 +865,11 @@ class Gallery_tab:
     def remove_tag_changes(self, category_tag_checkbox_group, apply_to_all_type_select_checkboxgroup, img_id,
                            multi_select_ckbx_state, only_selected_state_object, images_selected_state):
 
+        # Initialize checkbox groups so the function always returns valid values
         img_artist_tag_checkbox_group = None
         img_character_tag_checkbox_group = None
         img_species_tag_checkbox_group = None
+        img_invalid_tag_checkbox_group = None
         img_general_tag_checkbox_group = None
         img_meta_tag_checkbox_group = None
         img_rating_tag_checkbox_group = None
@@ -2300,29 +2304,6 @@ class Gallery_tab:
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
                      self.img_species_tag_checkbox_group, self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group,
                      self.img_rating_tag_checkbox_group]
-        )
-        self.tag_add_textbox.change(
-            fn=self.tag_ideas.suggest_tags,
-            inputs=[
-                self.tag_add_textbox,
-                self.initial_add_state,
-                self.advanced_settings_tab_manager.total_suggestions_slider,
-                self.initial_add_state_tag,
-                self.advanced_settings_tab_manager.tag_suggestions_checkbox,
-            ],
-            outputs=[self.tag_add_suggestion_dropdown, self.initial_add_state, self.initial_add_state_tag, self.relevant_add_categories]).then(
-            fn=self.add_tag_changes,
-            inputs=[self.initial_add_state_tag, self.apply_to_all_type_select_checkboxgroup, self.img_id_textbox,
-                    self.multi_select_ckbx_state, self.only_selected_state_object, self.images_selected_state,
-                    self.initial_add_state, gr.State(False)],
-            outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
-                     self.img_species_tag_checkbox_group, self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group,
-                     self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group, self.initial_add_state_tag,
-                     self.tag_add_textbox]).then(
-            fn=None,
-            inputs=[self.tag_add_suggestion_dropdown, self.relevant_add_categories],
-            outputs=None,
-            js=js_.js_set_colors_on_list_add_tag
         )
         self.tag_add_textbox.submit(
              fn=self.add_tag_changes,
