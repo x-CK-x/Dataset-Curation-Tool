@@ -541,9 +541,11 @@ class Gallery_tab:
 
         # list of orderings
         temp_category_list = [self.selected_image_dict[img_id]["artist"], self.selected_image_dict[img_id]["character"],
-                              self.selected_image_dict[img_id]["species"], self.selected_image_dict[img_id]["general"],
-                              self.selected_image_dict[img_id]["meta"], self.selected_image_dict[img_id]["rating"]]
-        category_order_dict = {"artist": 0, "character": 1, "species": 2, "general": 3, "meta": 4, "rating": 5}
+                              self.selected_image_dict[img_id]["species"], self.selected_image_dict[img_id]["invalid"],
+                              self.selected_image_dict[img_id]["general"], self.selected_image_dict[img_id]["meta"],
+                              self.selected_image_dict[img_id]["rating"]]
+        category_order_dict = {"artist": 0, "character": 1, "species": 2, "invalid": 3,
+                              "general": 4, "meta": 5, "rating": 6}
 
         # determine the initial dictionary number
         current_dict_num = category_order_dict[string_category]
