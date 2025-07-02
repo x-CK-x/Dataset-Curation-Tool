@@ -990,13 +990,15 @@ class Gallery_tab:
         return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
                img_invalid_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group
 
-    def remove_all(self, artist, character, species, general, meta, rating, apply_to_all_type_select_checkboxgroup,
+    def remove_all(self, artist, character, species, invalid, general, meta, rating, apply_to_all_type_select_checkboxgroup,
                    img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state):
         self.remove_tag_changes(artist, apply_to_all_type_select_checkboxgroup,
                            img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
         self.remove_tag_changes(character, apply_to_all_type_select_checkboxgroup,
                            img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
         self.remove_tag_changes(species, apply_to_all_type_select_checkboxgroup,
+                           img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
+        self.remove_tag_changes(invalid, apply_to_all_type_select_checkboxgroup,
                            img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
         self.remove_tag_changes(general, apply_to_all_type_select_checkboxgroup,
                            img_id_textbox, multi_select_ckbx_state, only_selected_state_object, images_selected_state)
@@ -1224,7 +1226,7 @@ class Gallery_tab:
 
     def update_generated_gallery_tag_selection(self, tag_effects_dropdown: gr.SelectData, category_filter_dropdown, img_name,
                                                artist_comp_checkboxgroup, character_comp_checkboxgroup,
-                                               species_comp_checkboxgroup,
+                                               species_comp_checkboxgroup, invalid_comp_checkboxgroup,
                                                general_comp_checkboxgroup, meta_comp_checkboxgroup,
                                                rating_comp_checkboxgroup):
         tag_effects_dropdown = tag_effects_dropdown.value  # tag selection effect
@@ -2146,9 +2148,9 @@ class Gallery_tab:
                 self.img_species_tag_checkbox_group,
                 self.img_invalid_tag_checkbox_group,
                 self.img_general_tag_checkbox_group,
-                gr.State([str(year) for year in range(2000,2025,1)]),
+                self.img_meta_tag_checkbox_group,
                 self.img_rating_tag_checkbox_group,
-                gr.State(["png", "jpg", "gif"]),
+                self.apply_to_all_type_select_checkboxgroup,
                 self.img_id_textbox,
                 self.multi_select_ckbx_state,
                 self.only_selected_state_object,
