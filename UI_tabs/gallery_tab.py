@@ -663,13 +663,17 @@ class Gallery_tab:
 
                         # get its index on the global list
                         glob_index = 0
-                        if last_tag:
-                            glob_index = (self.all_images_dict["searched"][self.selected_image_dict["type"]][img_id]).index(
-                                last_tag)
-                            glob_index += 1  # puts the pointer at end of category list
+                        if last_tag and last_tag in self.all_images_dict["searched"][self.selected_image_dict["type"]][img_id]:
+                            glob_index = (
+                                self.all_images_dict["searched"][self.selected_image_dict["type"]][img_id]
+                            ).index(last_tag) + 1
                         self.all_images_dict["searched"][self.selected_image_dict["type"]][img_id].insert(glob_index, tag)
 
-                        glob_index = (self.all_images_dict[self.selected_image_dict["type"]][img_id]).index(last_tag)
+                        glob_index = 0
+                        if last_tag and last_tag in self.all_images_dict[self.selected_image_dict["type"]][img_id]:
+                            glob_index = (
+                                self.all_images_dict[self.selected_image_dict["type"]][img_id]
+                            ).index(last_tag) + 1
                         self.all_images_dict[self.selected_image_dict["type"]][img_id].insert(glob_index, tag)
 
                         if not img_id in self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]]:
@@ -691,9 +695,10 @@ class Gallery_tab:
 
                         # get its index on the global list
                         glob_index = 0
-                        if last_tag:
-                            glob_index = (self.all_images_dict[self.selected_image_dict["type"]][img_id]).index(last_tag)
-                            glob_index += 1  # puts the pointer at end of category list
+                        if last_tag and last_tag in self.all_images_dict[self.selected_image_dict["type"]][img_id]:
+                            glob_index = (
+                                self.all_images_dict[self.selected_image_dict["type"]][img_id]
+                            ).index(last_tag) + 1
                         self.all_images_dict[self.selected_image_dict["type"]][img_id].insert(glob_index, tag)
 
                         if not img_id in self.download_tab_manager.auto_complete_config[self.selected_image_dict["type"]]:
@@ -722,9 +727,10 @@ class Gallery_tab:
 
                                         # get its index on the global list
                                         glob_index = 0
-                                        if last_tag:
-                                            glob_index = (self.all_images_dict["searched"][ext][img_id]).index(last_tag)
-                                            glob_index += 1  # puts the pointer at end of category list
+                                        if last_tag and last_tag in self.all_images_dict["searched"][ext][img_id]:
+                                            glob_index = (
+                                                self.all_images_dict["searched"][ext][img_id]
+                                            ).index(last_tag) + 1
 
                                         help.verbose_print(f"tag:\t\t{tag}")
 
@@ -753,9 +759,10 @@ class Gallery_tab:
 
                                     # get its index on the global list
                                     glob_index = 0
-                                    if last_tag:
-                                        glob_index = (self.all_images_dict["searched"][key_type][img_id]).index(last_tag)
-                                        glob_index += 1  # puts the pointer at end of category list
+                                    if last_tag and last_tag in self.all_images_dict["searched"][key_type][img_id]:
+                                        glob_index = (
+                                            self.all_images_dict["searched"][key_type][img_id]
+                                        ).index(last_tag) + 1
 
                                     help.verbose_print(f"tag:\t\t{tag}")
 
@@ -788,9 +795,10 @@ class Gallery_tab:
 
                                         # get its index on the global list
                                         glob_index = 0
-                                        if last_tag:
-                                            glob_index = (self.all_images_dict[ext][img_id]).index(last_tag)
-                                            glob_index += 1  # puts the pointer at end of category list
+                                        if last_tag and last_tag in self.all_images_dict[ext][img_id]:
+                                            glob_index = (
+                                                self.all_images_dict[ext][img_id]
+                                            ).index(last_tag) + 1
 
                                         self.all_images_dict[ext][img_id].insert(glob_index, tag)
 
@@ -819,9 +827,10 @@ class Gallery_tab:
 
                                     # get its index on the global list
                                     glob_index = 0
-                                    if last_tag:
-                                        glob_index = (self.all_images_dict[key_type][img_id]).index(last_tag)
-                                        glob_index += 1  # puts the pointer at end of category list
+                                    if last_tag and last_tag in self.all_images_dict[key_type][img_id]:
+                                        glob_index = (
+                                            self.all_images_dict[key_type][img_id]
+                                        ).index(last_tag) + 1
 
                                     self.all_images_dict[key_type][img_id].insert(glob_index, tag)
 
