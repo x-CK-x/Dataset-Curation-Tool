@@ -2268,26 +2268,6 @@ class Gallery_tab:
                    self.img_invalid_tag_checkbox_group, self.img_general_tag_checkbox_group, self.img_meta_tag_checkbox_group, self.img_rating_tag_checkbox_group]
         )
 
-        self.tag_search_textbox.change(
-            fn=self.tag_ideas.suggest_search_tags,
-            inputs=[
-                self.tag_search_textbox,
-                self.advanced_settings_tab_manager.total_suggestions_slider,
-                self.previous_search_state_text,
-                self.advanced_settings_tab_manager.tag_suggestions_checkbox,
-            ],
-            outputs=[
-                self.tag_search_suggestion_dropdown,
-                self.previous_search_state_text,
-                self.current_search_state_placement_tuple,
-                self.relevant_search_categories,
-            ]
-        ).then(
-            fn=None,
-            inputs=[self.tag_search_suggestion_dropdown, self.relevant_search_categories],
-            outputs=None,
-            js=js_.js_set_colors_on_list_searchbar
-        )
         self.tag_search_suggestion_dropdown.select(
             fn=self.tag_ideas.dropdown_search_handler,
             inputs=[self.tag_search_textbox, self.previous_search_state_text, self.current_search_state_placement_tuple],

@@ -2047,25 +2047,6 @@ class Download_tab:
             inputs=[self.file_all_tags_list_blacklist],
             outputs=[self.blacklist_tags_group_var]
         )
-        self.required_tags_textbox.change(
-            fn=self.tag_ideas.suggest_tags,
-            inputs=[
-                self.required_tags_textbox,
-                self.initial_required_state,
-                self.advanced_settings_tab_manager.total_suggestions_slider,
-                self.initial_required_state_tag,
-                self.advanced_settings_tab_manager.tag_suggestions_checkbox,
-            ],
-            outputs=[self.tag_required_suggestion_dropdown, self.initial_required_state, self.initial_required_state_tag,
-                     self.relevant_required_categories]).then(
-            fn=self.textbox_handler_required,
-            inputs=[self.initial_required_state_tag, self.initial_required_state, gr.State(False)],
-            outputs=[self.initial_required_state_tag, self.required_tags_group_var, self.required_tags_textbox]).then(
-            fn=None,
-            inputs=[self.tag_required_suggestion_dropdown, self.relevant_required_categories],
-            outputs=None,
-            js=js_.js_set_colors_on_list_required
-        )
         self.required_tags_textbox.submit(
              fn=self.textbox_handler_required,
              inputs=[self.required_tags_textbox, self.initial_required_state, gr.State(True)],
@@ -2076,25 +2057,6 @@ class Download_tab:
             inputs=[],
             outputs=[self.required_tags_textbox, self.tag_required_suggestion_dropdown, self.initial_required_state,
                      self.initial_required_state_tag, self.required_tags_group_var]
-        )
-        self.blacklist_tags_textbox.change(
-            fn=self.tag_ideas.suggest_tags,
-            inputs=[
-                self.blacklist_tags_textbox,
-                self.initial_blacklist_state,
-                self.advanced_settings_tab_manager.total_suggestions_slider,
-                self.initial_blacklist_state_tag,
-                self.advanced_settings_tab_manager.tag_suggestions_checkbox,
-            ],
-            outputs=[self.tag_blacklist_suggestion_dropdown, self.initial_blacklist_state, self.initial_blacklist_state_tag,
-                     self.relevant_blacklist_categories]).then(
-            fn=self.textbox_handler_blacklist,
-            inputs=[self.initial_blacklist_state_tag, self.initial_blacklist_state, gr.State(False)],
-            outputs=[self.initial_blacklist_state_tag, self.blacklist_tags_group_var, self.blacklist_tags_textbox]).then(
-            fn=None,
-            inputs=[self.tag_blacklist_suggestion_dropdown, self.relevant_blacklist_categories],
-            outputs=None,
-            js=js_.js_set_colors_on_list_blacklist
         )
         self.blacklist_tags_textbox.submit(
             fn=self.textbox_handler_blacklist,
