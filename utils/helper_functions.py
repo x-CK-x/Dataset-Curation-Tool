@@ -345,10 +345,51 @@ def update_all_csv_dictionaries(artist_csv_dict, character_csv_dict, species_csv
     if tag in list(tags_csv_dict.keys()):
         tags_csv_dict[tag] = ops[op](tags_csv_dict[tag], count)
     else:
-        tags_csv_dict[tag] = ops[op](0, count)
+           tags_csv_dict[tag] = ops[op](0, count)
 
     return artist_csv_dict.copy(), character_csv_dict.copy(), species_csv_dict.copy(), general_csv_dict.copy(), \
            meta_csv_dict.copy(), rating_csv_dict.copy(), tags_csv_dict.copy()
+
+
+def sort_tags_by_priority(tags, get_category):
+    """Return ``tags`` sorted according to gallery priority rules.
+
+    Priority order is character, species, invalid, artist, year, general,
+    meta, rating. ``get_category`` should be a callable that accepts a tag
+    and returns its category name.
+    """
+
+    characters = []
+    species = []
+    invalid = []
+    artists = []
+    years = []
+    general = []
+    meta = []
+    rating = []
+
+    for tag in tags:
+        if re.fullmatch(r"\d{4}", str(tag)):
+            years.append(tag)
+            continue
+
+        category = get_category(tag) if get_category else None
+        if category == "character":
+            characters.append(tag)
+        elif category == "species":
+            species.append(tag)
+        elif category == "artist":
+            artists.append(tag)
+        elif category == "general":
+            general.append(tag)
+        elif category == "meta":
+            meta.append(tag)
+        elif category == "rating":
+            rating.append(tag)
+        else:
+            invalid.append(tag)
+
+    return characters + species + invalid + artists + years + general + meta + rating
 
 # one entry per line
 def get_text_file_data(file_path, tag_per_line):
