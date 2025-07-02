@@ -302,6 +302,8 @@ def UI(**kwargs):
     if kwargs.get('share', True):
         launch_kwargs['share'] = True
 
+    launch_kwargs['allowed_paths'] = [os.path.abspath(os.sep)]
+
     print(launch_kwargs)
     demo.queue().launch(**launch_kwargs)
 

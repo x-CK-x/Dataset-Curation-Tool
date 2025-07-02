@@ -993,6 +993,9 @@ class Custom_dataset_tab:
                                                                      info="Folder should contain both (tag/s & image/s) if no video",
                                                                      interactive=True)
                         with gr.Row():
+                            dataset_gallery_path_textbox = gr.Textbox(label="Dataset Folder Path",
+                                                                      info="Folder with images and tag txt files",
+                                                                      interactive=True)
                             load_dataset_gallery_button = gr.Button(value="Load Dataset to Gallery", variant='secondary')
                         with gr.Row():
                             with gr.Column(min_width=50, scale=1):
@@ -1118,6 +1121,7 @@ class Custom_dataset_tab:
         self.confidence_threshold_slider = confidence_threshold_slider
         self.interrogate_button = interrogate_button
         self.image_with_tag_path_textbox = image_with_tag_path_textbox
+        self.dataset_gallery_path_textbox = dataset_gallery_path_textbox
         self.load_dataset_gallery_button = load_dataset_gallery_button
         self.copy_mode_ckbx = copy_mode_ckbx
         self.save_custom_images_button = save_custom_images_button
@@ -1176,6 +1180,7 @@ class Custom_dataset_tab:
                 self.portrait_crop_dropdown,
                 self.confidence_threshold_slider,
                 self.interrogate_button,
+                self.dataset_gallery_path_textbox,
                 self.image_with_tag_path_textbox,
                 self.load_dataset_gallery_button,
                 self.copy_mode_ckbx,
@@ -1481,7 +1486,7 @@ class Custom_dataset_tab:
             outputs=[self.gallery_tab_manager.gallery_comp]
         ).then(
             fn=self.gallery_tab_manager.load_external_dataset,
-            inputs=[self.image_with_tag_path_textbox],
+            inputs=[self.dataset_gallery_path_textbox],
             outputs=[self.gallery_tab_manager.gallery_comp, self.gallery_tab_manager.total_image_counter]
         )
         self.copy_mode_ckbx.change(
