@@ -1532,6 +1532,7 @@ class Gallery_tab:
         artist_comp_checkboxgroup = gr.update(choices=[])
         character_comp_checkboxgroup = gr.update(choices=[])
         species_comp_checkboxgroup = gr.update(choices=[])
+        invalid_comp_checkboxgroup = gr.update(choices=[])
         general_comp_checkboxgroup = gr.update(choices=[])
         meta_comp_checkboxgroup = gr.update(choices=[])
         rating_comp_checkboxgroup = gr.update(choices=[])
@@ -1585,6 +1586,7 @@ class Gallery_tab:
             artist_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["artist"])
             character_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["character"])
             species_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["species"])
+            invalid_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["invalid"])
             general_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["general"])
             meta_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["meta"])
             rating_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["rating"])
@@ -1597,7 +1599,7 @@ class Gallery_tab:
 
         return gr.update(
             value=img_name), artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, \
-               general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup, images_selected_state, only_selected_state_object, \
+               invalid_comp_checkboxgroup, general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup, images_selected_state, only_selected_state_object, \
                images_tuple_points
 
     ######
