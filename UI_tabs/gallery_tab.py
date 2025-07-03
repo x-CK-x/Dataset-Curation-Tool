@@ -251,6 +251,13 @@ class Gallery_tab:
 
     def _get_media_paths(self, ext, img_id):
         base = self._get_dataset_folder(ext)
+        # when using a custom dataset, individual files may reside in nested
+        # subdirectories. rely on the search_image_paths map built during
+        # dataset loading to locate the correct folder.
+        if self.custom_dataset_dir and (ext, img_id) in self.search_image_paths:
+            img_path = self.search_image_paths[(ext, img_id)]
+            tag_path = os.path.splitext(img_path)[0] + ".txt"
+            return img_path, tag_path
         return os.path.join(base, f"{img_id}.{ext}"), os.path.join(base, f"{img_id}.txt")
 
     def load_external_dataset(self, folder_path):
@@ -261,10 +268,22 @@ class Gallery_tab:
             return gr.update(), gr.update()
 
         self.custom_dataset_dir = folder_path
-
-        # gather tags
+        # gather tags from the provided folder. if no tag files are found,
+        # recursively search all subdirectories as a fallback so that nested
+        # datasets still load properly.
         help.verbose_print("gathering tags")
         self.all_images_dict = help.gather_media_tags(folder_path)
+        if set(self.all_images_dict.keys()) == {"searched"}:
+            subfolders = []
+            for root, dirs, _ in os.walk(folder_path):
+                for d in dirs:
+                    subfolders.append(os.path.join(root, d))
+            if subfolders:
+                found = help.gather_media_tags(*subfolders)
+                for k, v in found.items():
+                    if k == "searched":
+                        continue
+                    self.all_images_dict.setdefault(k, {}).update(v)
         help.verbose_print(f"found extensions:\t{list(self.all_images_dict.keys())}")
 
         # build search dict and image path map
@@ -276,7 +295,12 @@ class Gallery_tab:
             filtered[ext] = {}
             for img_id, tags in images.items():
                 filtered[ext][img_id] = tags
-                self.search_image_paths[(ext, img_id)] = os.path.join(folder_path, f"{img_id}.{ext}")
+                # locate the actual file path which may be nested in subfolders
+                matches = glob.glob(os.path.join(folder_path, "**", f"{img_id}.{ext}"), recursive=True)
+                if matches:
+                    self.search_image_paths[(ext, img_id)] = matches[0]
+                else:
+                    self.search_image_paths[(ext, img_id)] = os.path.join(folder_path, f"{img_id}.{ext}")
         self.all_images_dict["searched"] = copy.deepcopy(filtered)
 
         # compute creation times for sorting
@@ -857,16 +881,51 @@ class Gallery_tab:
             if img_id in list(self.all_images_dict[each_key]):
                 temp_ext = each_key
                 break
-        # reload the categories for the self.selected_image_dict
-        self.reload_selected_image_dict(temp_ext, img_id)
+        # reload the categories for the self.selected_image_dict only if an image
+        # id is provided. Without a selected image, the checkbox groups should
+        # simply be cleared to avoid NoneType errors
+        if img_id:
+            self.reload_selected_image_dict(temp_ext, img_id)
+        else:
+            self.selected_image_dict = None
 
-        img_artist_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['artist'], value=[])
-        img_character_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['character'], value=[])
-        img_species_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['species'], value=[])
-        img_invalid_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['invalid'], value=[])
-        img_general_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['general'], value=[])
-        img_meta_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['meta'], value=[])
-        img_rating_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['rating'], value=[])
+        if self.selected_image_dict and img_id in self.selected_image_dict:
+            img_artist_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("artist", []),
+                value=[],
+            )
+            img_character_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("character", []),
+                value=[],
+            )
+            img_species_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("species", []),
+                value=[],
+            )
+            img_invalid_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("invalid", []),
+                value=[],
+            )
+            img_general_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("general", []),
+                value=[],
+            )
+            img_meta_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("meta", []),
+                value=[],
+            )
+            img_rating_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("rating", []),
+                value=[],
+            )
+        else:
+            img_artist_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_character_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_species_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_invalid_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_general_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_meta_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_rating_tag_checkbox_group = gr.update(choices=[], value=[])
 
         return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
                img_invalid_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
