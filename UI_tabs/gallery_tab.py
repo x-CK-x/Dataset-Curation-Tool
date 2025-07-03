@@ -268,7 +268,6 @@ class Gallery_tab:
             return gr.update(), gr.update()
 
         self.custom_dataset_dir = folder_path
-
         # gather tags from the provided folder. if no tag files are found,
         # recursively search all subdirectories as a fallback so that nested
         # datasets still load properly.
