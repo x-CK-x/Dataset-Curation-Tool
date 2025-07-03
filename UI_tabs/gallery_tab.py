@@ -710,12 +710,13 @@ class Gallery_tab:
                         if category_key != "invalid":
                             self.add_to_csv_dictionaries(category_key, tag)  # add
         if len(apply_to_all_type_select_checkboxgroup) > 0:
+            searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
                 if multi_select_ckbx_state[0]:
                     ##### returns index -> [ext, img_id]
                     for index in images_selected_state:
                         ext, img_id = only_selected_state_object[index]
-                        if ext in apply_to_all_type_select_checkboxgroup:
+                        if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                             if img_id in list(self.all_images_dict["searched"][ext].keys()):
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict["searched"][ext][img_id]:  # add tag
@@ -783,7 +784,7 @@ class Gallery_tab:
                     ##### returns index -> [ext, img_id]
                     for index in images_selected_state:
                         ext, img_id = only_selected_state_object[index]
-                        if ext in apply_to_all_type_select_checkboxgroup:
+                        if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                             if img_id in list(self.all_images_dict[ext].keys()):
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict[ext][img_id]:
@@ -974,12 +975,13 @@ class Gallery_tab:
                             self.remove_to_csv_dictionaries(category_key, tag)  # remove
 
         if len(apply_to_all_type_select_checkboxgroup) > 0:
+            searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
                 if multi_select_ckbx_state[0]:
                     ##### returns index -> [ext, img_id]
                     for index in images_selected_state:
                         ext, img_id = only_selected_state_object[index]
-                        if ext in apply_to_all_type_select_checkboxgroup:
+                        if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                             if img_id in list(self.all_images_dict["searched"][ext].keys()):
                                 for tag in tag_list:
                                     if tag in self.all_images_dict["searched"][ext][img_id]:  # remove tag
@@ -1022,7 +1024,7 @@ class Gallery_tab:
                     ##### returns index -> [ext, img_id]
                     for index in images_selected_state:
                         ext, img_id = only_selected_state_object[index]
-                        if ext in apply_to_all_type_select_checkboxgroup:
+                        if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                             if img_id in list(self.all_images_dict[ext].keys()):
                                 for tag in tag_list:
                                     if tag in self.all_images_dict[ext][img_id]:
