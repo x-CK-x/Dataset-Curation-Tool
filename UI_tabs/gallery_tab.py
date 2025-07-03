@@ -1494,6 +1494,39 @@ class Gallery_tab:
         multi_select_ckbx_state = [select_multiple_images_checkbox]
         return multi_select_ckbx_state
 
+    def select_all(self, gallery_images):
+        """Return indices of all images for selection."""
+        return list(range(len(gallery_images)))
+
+    def deselect_all(self):
+        """Return empty selection list."""
+        return []
+
+    def invert_selected(self, gallery_images, images_selected_state):
+        all_indices = set(range(len(gallery_images)))
+        selected = set(images_selected_state)
+        return sorted(list(all_indices - selected))
+
+    def handle_select_all(self, gallery_images):
+        return self.select_all(gallery_images)
+
+    def handle_deselect_all(self):
+        return self.deselect_all()
+
+    def handle_invert_selection(self, gallery_images, images_selected_state):
+        return self.invert_selected(gallery_images, images_selected_state)
+
+    def compare_selected(self, gallery_images, images_selected_state):
+        if len(images_selected_state) != 2:
+            return gr.update(value=""), gr.update(value="")
+        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                 for idx in images_selected_state]
+        tags_a = help.parse_single_all_tags(os.path.splitext(paths[0])[0] + ".txt")
+        tags_b = help.parse_single_all_tags(os.path.splitext(paths[1])[0] + ".txt")
+        text_a = "\n".join(tags_a)
+        text_b = "\n".join(tags_b)
+        return gr.update(value=text_a), gr.update(value=text_b)
+
     ######
     # self.all_images_dict ->
     ### image_type -> {img_id, tags}
@@ -1797,6 +1830,9 @@ class Gallery_tab:
         apply_to_all_type_select_checkboxgroup = gr.update(value=[])
         select_multiple_images_checkbox = gr.update(value=False)
         select_between_images_checkbox = gr.update(value=False)
+        select_all_checkbox = gr.update(value=False)
+        deselect_all_checkbox = gr.update(value=False)
+        invert_selection_checkbox = gr.update(value=False)
         apply_datetime_sort_ckbx = gr.update(value=False)
         apply_datetime_choice_menu = gr.update(value=None)
         send_img_from_gallery_dropdown = gr.update(value=None)
@@ -1812,6 +1848,9 @@ class Gallery_tab:
         img_meta_tag_checkbox_group = gr.update(value=[])
         img_rating_tag_checkbox_group = gr.update(value=[])
         gallery_comp = gr.update(value=None)
+        compare_button = gr.update()
+        compare_tags_left = gr.update(value="")
+        compare_tags_right = gr.update(value="")
 
         self.multi_select_ckbx_state = gr.JSON([False], visible=False) # JSON boolean component wrapped in a list
         self.only_selected_state_object = gr.State(dict()) # state of image mappings represented by index -> [ext, img_id]
@@ -1832,6 +1871,9 @@ class Gallery_tab:
                 apply_to_all_type_select_checkboxgroup,
                 select_multiple_images_checkbox,
                 select_between_images_checkbox,
+                select_all_checkbox,
+                deselect_all_checkbox,
+                invert_selection_checkbox,
                 apply_datetime_sort_ckbx,
                 apply_datetime_choice_menu,
                 send_img_from_gallery_dropdown,
@@ -1846,7 +1888,10 @@ class Gallery_tab:
                 img_general_tag_checkbox_group,
                 img_meta_tag_checkbox_group,
                 img_rating_tag_checkbox_group,
-                gallery_comp
+                gallery_comp,
+                compare_button,
+                compare_tags_left,
+                compare_tags_right
                 ]
 
 
@@ -2139,6 +2184,13 @@ class Gallery_tab:
                                                                              info="Selects All Between Two Images")
                         with gr.Row():
                             with gr.Column(min_width=50, scale=1):
+                                select_all_checkbox = gr.Checkbox(label="Select All", value=False)
+                            with gr.Column(min_width=50, scale=1):
+                                deselect_all_checkbox = gr.Checkbox(label="Deselect All", value=False)
+                            with gr.Column(min_width=50, scale=1):
+                                invert_selection_checkbox = gr.Checkbox(label="Invert", value=False)
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=1):
                                 apply_datetime_sort_ckbx = gr.Checkbox(label="Sort", value=False,
                                                                        info="Image/s by date")
                             with gr.Column(min_width=50, scale=4):
@@ -2157,6 +2209,11 @@ class Gallery_tab:
                             with gr.Column(min_width=50, scale=3):
                                 send_img_from_gallery_button = gr.Button(value="Send Image to (Other) Tab",
                                                                          variant='primary')
+                        with gr.Row():
+                            compare_button = gr.Button(value="Compare Selected", variant='secondary')
+                        with gr.Row():
+                            compare_tags_left = gr.Markdown()
+                            compare_tags_right = gr.Markdown()
 
                     with gr.Accordion("Tag Edit & Selection Options"):
                         with gr.Row():
@@ -2218,6 +2275,9 @@ class Gallery_tab:
         self.apply_to_all_type_select_checkboxgroup = apply_to_all_type_select_checkboxgroup
         self.select_multiple_images_checkbox = select_multiple_images_checkbox
         self.select_between_images_checkbox = select_between_images_checkbox
+        self.select_all_checkbox = select_all_checkbox
+        self.deselect_all_checkbox = deselect_all_checkbox
+        self.invert_selection_checkbox = invert_selection_checkbox
         self.apply_datetime_sort_ckbx = apply_datetime_sort_ckbx
         self.apply_datetime_choice_menu = apply_datetime_choice_menu
         self.image_remove_button = image_remove_button
@@ -2225,6 +2285,9 @@ class Gallery_tab:
         self.send_img_from_gallery_dropdown = send_img_from_gallery_dropdown
         self.batch_send_from_gallery_checkbox = batch_send_from_gallery_checkbox
         self.send_img_from_gallery_button = send_img_from_gallery_button
+        self.compare_button = compare_button
+        self.compare_tags_left = compare_tags_left
+        self.compare_tags_right = compare_tags_right
         self.tag_remove_button = tag_remove_button
         self.tag_save_button = tag_save_button
         self.tag_add_textbox = tag_add_textbox
@@ -2259,6 +2322,9 @@ class Gallery_tab:
                 self.apply_to_all_type_select_checkboxgroup,
                 self.select_multiple_images_checkbox,
                 self.select_between_images_checkbox,
+                self.select_all_checkbox,
+                self.deselect_all_checkbox,
+                self.invert_selection_checkbox,
                 self.apply_datetime_sort_ckbx,
                 self.apply_datetime_choice_menu,
                 self.image_remove_button,
@@ -2266,6 +2332,9 @@ class Gallery_tab:
                 self.send_img_from_gallery_dropdown,
                 self.batch_send_from_gallery_checkbox,
                 self.send_img_from_gallery_button,
+                self.compare_button,
+                self.compare_tags_left,
+                self.compare_tags_right,
                 self.tag_remove_button,
                 self.tag_save_button,
                 self.tag_add_textbox,
@@ -2453,6 +2522,26 @@ class Gallery_tab:
             fn=self.set_ckbx_state,
             inputs=[self.select_multiple_images_checkbox, self.multi_select_ckbx_state],
             outputs=[self.multi_select_ckbx_state]
+        )
+        self.select_all_checkbox.change(
+            fn=self.handle_select_all,
+            inputs=[self.gallery_state],
+            outputs=[self.images_selected_state]
+        )
+        self.deselect_all_checkbox.change(
+            fn=self.handle_deselect_all,
+            inputs=[],
+            outputs=[self.images_selected_state]
+        )
+        self.invert_selection_checkbox.change(
+            fn=self.handle_invert_selection,
+            inputs=[self.gallery_state, self.images_selected_state],
+            outputs=[self.images_selected_state]
+        )
+        self.compare_button.click(
+            fn=self.compare_selected,
+            inputs=[self.gallery_state, self.images_selected_state],
+            outputs=[self.compare_tags_left, self.compare_tags_right]
         )
         self.download_folder_type.change(
             fn=self.show_searched_gallery,
