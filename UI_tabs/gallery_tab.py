@@ -1014,7 +1014,6 @@ class Gallery_tab:
                         category_key = self.get_category_name(tag)
                         if category_key != "invalid":
                             self.remove_to_csv_dictionaries(category_key, tag)  # remove
-
         if apply_to_all_type_select_checkboxgroup and len(apply_to_all_type_select_checkboxgroup) > 0:
             searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
