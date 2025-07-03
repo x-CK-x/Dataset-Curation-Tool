@@ -1160,13 +1160,17 @@ class Gallery_tab:
     def remove_images(self, apply_to_all_type_select_checkboxgroup, image_id, sort_images, sort_option,
                       multi_select_ckbx_state, only_selected_state_object, images_selected_state):
         image_id = str(image_id)
+        if apply_to_all_type_select_checkboxgroup is None:
+            apply_to_all_type_select_checkboxgroup = []
 
-        if apply_to_all_type_select_checkboxgroup is not None and not "searched" in apply_to_all_type_select_checkboxgroup:
+        searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
+
+        if not "searched" in apply_to_all_type_select_checkboxgroup:
             if multi_select_ckbx_state[0] and len(apply_to_all_type_select_checkboxgroup) > 0:
                 ##### returns index -> [ext, img_id]
                 for index in images_selected_state:
                     ext, img_id = only_selected_state_object[index]
-                    if ext in apply_to_all_type_select_checkboxgroup:
+                    if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                         # iterate over all the tags for each image
                         for tag in self.all_images_dict[ext][img_id]:
                             category_key = self.get_category_name(tag)
@@ -1213,7 +1217,7 @@ class Gallery_tab:
                 ##### returns index -> [ext, img_id]
                 for index in images_selected_state:
                     ext, img_id = only_selected_state_object[index]
-                    if ext in apply_to_all_type_select_checkboxgroup:
+                    if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                         # delete searched images and use the global dictionary to update the CSVs before deleting those as well
                         del self.all_images_dict["searched"][ext][img_id]
                         # iterate over all the tags for each image
@@ -1229,7 +1233,7 @@ class Gallery_tab:
             else:
                 # remove all images that are "searched"
                 for key_type in list(self.all_images_dict["searched"].keys()):
-                    if key_type in apply_to_all_type_select_checkboxgroup:
+                    if key_type in apply_to_all_type_select_checkboxgroup or searched_only:
                         for img_id in list(self.all_images_dict["searched"][key_type].keys()):
                             # delete searched images and use the global dictionary to update the CSVs before deleting those as well
                             del self.all_images_dict["searched"][key_type][img_id]
