@@ -251,6 +251,13 @@ class Gallery_tab:
 
     def _get_media_paths(self, ext, img_id):
         base = self._get_dataset_folder(ext)
+        # when using a custom dataset, individual files may reside in nested
+        # subdirectories. rely on the search_image_paths map built during
+        # dataset loading to locate the correct folder.
+        if self.custom_dataset_dir and (ext, img_id) in self.search_image_paths:
+            img_path = self.search_image_paths[(ext, img_id)]
+            tag_path = os.path.splitext(img_path)[0] + ".txt"
+            return img_path, tag_path
         return os.path.join(base, f"{img_id}.{ext}"), os.path.join(base, f"{img_id}.txt")
 
     def load_external_dataset(self, folder_path):
@@ -261,16 +268,22 @@ class Gallery_tab:
             return gr.update(), gr.update()
 
         self.custom_dataset_dir = folder_path
-
-        # gather tags
+        # gather tags from the provided folder. if no tag files are found,
+        # recursively search all subdirectories as a fallback so that nested
+        # datasets still load properly.
         help.verbose_print("gathering tags")
         self.all_images_dict = help.gather_media_tags(folder_path)
-        # attempt to search immediate subfolders when no tags found
         if set(self.all_images_dict.keys()) == {"searched"}:
-            subfolders = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
-                          if os.path.isdir(os.path.join(folder_path, f))]
+            subfolders = []
+            for root, dirs, _ in os.walk(folder_path):
+                for d in dirs:
+                    subfolders.append(os.path.join(root, d))
             if subfolders:
-                self.all_images_dict = help.gather_media_tags(*subfolders)
+                found = help.gather_media_tags(*subfolders)
+                for k, v in found.items():
+                    if k == "searched":
+                        continue
+                    self.all_images_dict.setdefault(k, {}).update(v)
         help.verbose_print(f"found extensions:\t{list(self.all_images_dict.keys())}")
 
         # build search dict and image path map
@@ -282,7 +295,12 @@ class Gallery_tab:
             filtered[ext] = {}
             for img_id, tags in images.items():
                 filtered[ext][img_id] = tags
-                self.search_image_paths[(ext, img_id)] = os.path.join(folder_path, f"{img_id}.{ext}")
+                # locate the actual file path which may be nested in subfolders
+                matches = glob.glob(os.path.join(folder_path, "**", f"{img_id}.{ext}"), recursive=True)
+                if matches:
+                    self.search_image_paths[(ext, img_id)] = matches[0]
+                else:
+                    self.search_image_paths[(ext, img_id)] = os.path.join(folder_path, f"{img_id}.{ext}")
         self.all_images_dict["searched"] = copy.deepcopy(filtered)
 
         # compute creation times for sorting
@@ -1014,6 +1032,7 @@ class Gallery_tab:
                         category_key = self.get_category_name(tag)
                         if category_key != "invalid":
                             self.remove_to_csv_dictionaries(category_key, tag)  # remove
+
         if apply_to_all_type_select_checkboxgroup and len(apply_to_all_type_select_checkboxgroup) > 0:
             searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
