@@ -265,6 +265,12 @@ class Gallery_tab:
         # gather tags
         help.verbose_print("gathering tags")
         self.all_images_dict = help.gather_media_tags(folder_path)
+        # attempt to search immediate subfolders when no tags found
+        if set(self.all_images_dict.keys()) == {"searched"}:
+            subfolders = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
+                          if os.path.isdir(os.path.join(folder_path, f))]
+            if subfolders:
+                self.all_images_dict = help.gather_media_tags(*subfolders)
         help.verbose_print(f"found extensions:\t{list(self.all_images_dict.keys())}")
 
         # build search dict and image path map
@@ -709,7 +715,7 @@ class Gallery_tab:
                         category_key = self.get_category_name(tag)
                         if category_key != "invalid":
                             self.add_to_csv_dictionaries(category_key, tag)  # add
-        if len(apply_to_all_type_select_checkboxgroup) > 0:
+        if apply_to_all_type_select_checkboxgroup and len(apply_to_all_type_select_checkboxgroup) > 0:
             searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
                 if multi_select_ckbx_state[0]:
@@ -1008,8 +1014,7 @@ class Gallery_tab:
                         category_key = self.get_category_name(tag)
                         if category_key != "invalid":
                             self.remove_to_csv_dictionaries(category_key, tag)  # remove
-
-        if len(apply_to_all_type_select_checkboxgroup) > 0:
+        if apply_to_all_type_select_checkboxgroup and len(apply_to_all_type_select_checkboxgroup) > 0:
             searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
                 if multi_select_ckbx_state[0]:
@@ -1137,7 +1142,7 @@ class Gallery_tab:
                       multi_select_ckbx_state, only_selected_state_object, images_selected_state):
         image_id = str(image_id)
 
-        if not "searched" in apply_to_all_type_select_checkboxgroup:
+        if apply_to_all_type_select_checkboxgroup is not None and not "searched" in apply_to_all_type_select_checkboxgroup:
             if multi_select_ckbx_state[0] and len(apply_to_all_type_select_checkboxgroup) > 0:
                 ##### returns index -> [ext, img_id]
                 for index in images_selected_state:
