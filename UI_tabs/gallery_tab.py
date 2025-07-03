@@ -265,6 +265,12 @@ class Gallery_tab:
         # gather tags
         help.verbose_print("gathering tags")
         self.all_images_dict = help.gather_media_tags(folder_path)
+        # attempt to search immediate subfolders when no tags found
+        if set(self.all_images_dict.keys()) == {"searched"}:
+            subfolders = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
+                          if os.path.isdir(os.path.join(folder_path, f))]
+            if subfolders:
+                self.all_images_dict = help.gather_media_tags(*subfolders)
         help.verbose_print(f"found extensions:\t{list(self.all_images_dict.keys())}")
 
         # build search dict and image path map
@@ -709,13 +715,14 @@ class Gallery_tab:
                         category_key = self.get_category_name(tag)
                         if category_key != "invalid":
                             self.add_to_csv_dictionaries(category_key, tag)  # add
-        if len(apply_to_all_type_select_checkboxgroup) > 0:
+        if apply_to_all_type_select_checkboxgroup and len(apply_to_all_type_select_checkboxgroup) > 0:
+            searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
                 if multi_select_ckbx_state[0]:
                     ##### returns index -> [ext, img_id]
                     for index in images_selected_state:
                         ext, img_id = only_selected_state_object[index]
-                        if ext in apply_to_all_type_select_checkboxgroup:
+                        if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                             if img_id in list(self.all_images_dict["searched"][ext].keys()):
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict["searched"][ext][img_id]:  # add tag
@@ -783,7 +790,7 @@ class Gallery_tab:
                     ##### returns index -> [ext, img_id]
                     for index in images_selected_state:
                         ext, img_id = only_selected_state_object[index]
-                        if ext in apply_to_all_type_select_checkboxgroup:
+                        if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                             if img_id in list(self.all_images_dict[ext].keys()):
                                 for tag in tag_list:
                                     if not tag in self.all_images_dict[ext][img_id]:
@@ -856,16 +863,51 @@ class Gallery_tab:
             if img_id in list(self.all_images_dict[each_key]):
                 temp_ext = each_key
                 break
-        # reload the categories for the self.selected_image_dict
-        self.reload_selected_image_dict(temp_ext, img_id)
+        # reload the categories for the self.selected_image_dict only if an image
+        # id is provided. Without a selected image, the checkbox groups should
+        # simply be cleared to avoid NoneType errors
+        if img_id:
+            self.reload_selected_image_dict(temp_ext, img_id)
+        else:
+            self.selected_image_dict = None
 
-        img_artist_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['artist'], value=[])
-        img_character_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['character'], value=[])
-        img_species_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['species'], value=[])
-        img_invalid_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['invalid'], value=[])
-        img_general_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['general'], value=[])
-        img_meta_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['meta'], value=[])
-        img_rating_tag_checkbox_group = gr.update(choices=self.selected_image_dict[img_id]['rating'], value=[])
+        if self.selected_image_dict and img_id in self.selected_image_dict:
+            img_artist_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("artist", []),
+                value=[],
+            )
+            img_character_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("character", []),
+                value=[],
+            )
+            img_species_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("species", []),
+                value=[],
+            )
+            img_invalid_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("invalid", []),
+                value=[],
+            )
+            img_general_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("general", []),
+                value=[],
+            )
+            img_meta_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("meta", []),
+                value=[],
+            )
+            img_rating_tag_checkbox_group = gr.update(
+                choices=self.selected_image_dict[img_id].get("rating", []),
+                value=[],
+            )
+        else:
+            img_artist_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_character_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_species_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_invalid_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_general_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_meta_tag_checkbox_group = gr.update(choices=[], value=[])
+            img_rating_tag_checkbox_group = gr.update(choices=[], value=[])
 
         return img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, \
                img_invalid_tag_checkbox_group, img_general_tag_checkbox_group, img_meta_tag_checkbox_group, img_rating_tag_checkbox_group, \
@@ -973,13 +1015,14 @@ class Gallery_tab:
                         if category_key != "invalid":
                             self.remove_to_csv_dictionaries(category_key, tag)  # remove
 
-        if len(apply_to_all_type_select_checkboxgroup) > 0:
+        if apply_to_all_type_select_checkboxgroup and len(apply_to_all_type_select_checkboxgroup) > 0:
+            searched_only = set(apply_to_all_type_select_checkboxgroup) == {"searched"}
             if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
                 if multi_select_ckbx_state[0]:
                     ##### returns index -> [ext, img_id]
                     for index in images_selected_state:
                         ext, img_id = only_selected_state_object[index]
-                        if ext in apply_to_all_type_select_checkboxgroup:
+                        if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                             if img_id in list(self.all_images_dict["searched"][ext].keys()):
                                 for tag in tag_list:
                                     if tag in self.all_images_dict["searched"][ext][img_id]:  # remove tag
@@ -1022,7 +1065,7 @@ class Gallery_tab:
                     ##### returns index -> [ext, img_id]
                     for index in images_selected_state:
                         ext, img_id = only_selected_state_object[index]
-                        if ext in apply_to_all_type_select_checkboxgroup:
+                        if ext in apply_to_all_type_select_checkboxgroup or searched_only:
                             if img_id in list(self.all_images_dict[ext].keys()):
                                 for tag in tag_list:
                                     if tag in self.all_images_dict[ext][img_id]:
@@ -1100,7 +1143,7 @@ class Gallery_tab:
                       multi_select_ckbx_state, only_selected_state_object, images_selected_state):
         image_id = str(image_id)
 
-        if not "searched" in apply_to_all_type_select_checkboxgroup:
+        if apply_to_all_type_select_checkboxgroup is not None and not "searched" in apply_to_all_type_select_checkboxgroup:
             if multi_select_ckbx_state[0] and len(apply_to_all_type_select_checkboxgroup) > 0:
                 ##### returns index -> [ext, img_id]
                 for index in images_selected_state:
