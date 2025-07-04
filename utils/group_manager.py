@@ -4,21 +4,22 @@ import json
 import os
 from typing import Dict, Iterable, List
 
-Group = List[List[str]]  # [[ext, img_id], ...]
+# groups map a name to a list of image paths
+Group = List[str]
 
 
-def _unique_items(items: Iterable[Iterable[str]]) -> Group:
+def _unique_items(items: Iterable[str]) -> Group:
+    """Return items with duplicates removed while preserving order."""
     seen = set()
     unique: Group = []
     for item in items:
-        tup = tuple(item)
-        if tup not in seen:
-            seen.add(tup)
-            unique.append(list(tup))
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
     return unique
 
 
-def save_group(groups: Dict[str, Group], name: str, items: Iterable[Iterable[str]]) -> Dict[str, Group]:
+def save_group(groups: Dict[str, Group], name: str, items: Iterable[str]) -> Dict[str, Group]:
     """Save a group of items under a given name."""
     if not name:
         return groups
@@ -60,6 +61,7 @@ def load_groups(groups: Dict[str, Group], names: Iterable[str]) -> Group:
         items.extend(groups.get(n, []))
     return _unique_items(items)
 
+
 def save_groups_file(groups: Dict[str, Group], path: str) -> None:
     """Write groups dictionary to ``path`` as JSON."""
     dir_name = os.path.dirname(path)
@@ -78,8 +80,8 @@ def load_groups_file(path: str) -> Dict[str, Group]:
             data = json.load(f)
     except json.JSONDecodeError:
         return {}
-    # ensure lists of lists
     groups: Dict[str, Group] = {}
     for k, v in data.items():
-        groups[k] = [list(item) for item in v]
+        if isinstance(v, list):
+            groups[k] = [str(item) for item in v]
     return groups

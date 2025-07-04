@@ -6,6 +6,8 @@ import glob
 
 from utils import group_manager
 
+from utils import group_manager
+
 from utils import js_constants as js_, md_constants as md_, helper_functions as help, image_tag_tools
 
 
@@ -73,6 +75,10 @@ class Gallery_tab:
         # stores the currently displayed gallery image paths to avoid passing
         # filepaths through gradio inputs
         self.gallery_state = gr.State([])
+
+        # mapping of group name -> list of [ext, img_id]
+        self.groups_config_path = os.path.join(self.cwd, "groups.json")
+        self.groups_state = gr.State(group_manager.load_groups_file(self.groups_config_path))
 
         # mapping of group name -> list of [ext, img_id]
         self.groups_config_path = os.path.join(self.cwd, "groups.json")
@@ -3502,6 +3508,7 @@ class Gallery_tab:
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", object_fit="contain", interactive=True, columns=3, height=1356,
                          elem_classes="custom-gallery")
 
+
         self.refresh_aspect_btn = refresh_aspect_btn
         self.download_folder_type = download_folder_type
         self.img_id_textbox = img_id_textbox
@@ -4125,7 +4132,7 @@ class Gallery_tab:
         )
         self.save_group_button.click(
             fn=self.save_group,
-            inputs=[self.group_name_text, self.groups_state, self.only_selected_state_object],
+            inputs=[self.group_name_text, self.groups_state, self.gallery_state, self.images_selected_state],
             outputs=[self.groups_state, self.groups_dropdown, self.group_name_text]
         )
         self.delete_group_button.click(
@@ -4165,8 +4172,13 @@ class Gallery_tab:
         )
  
 
-    def save_group(self, name, groups_state, mapping):
-        groups = group_manager.save_group(groups_state or {}, name, mapping.values())
+    def save_group(self, name, groups_state, gallery_images, indices):
+        paths = []
+        for idx in indices:
+            if 0 <= idx < len(gallery_images):
+                path = gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                paths.append(path)
+        groups = group_manager.save_group(groups_state or {}, name, paths)
         self.groups_state.value = groups
         return groups, gr.update(choices=list(groups.keys())), gr.update(value="")
 
@@ -4190,17 +4202,15 @@ class Gallery_tab:
         return groups, gr.update(choices=list(groups.keys()), value=new_name if new_name in groups else None), gr.update(value="")
 
     def load_group(self, gallery_images, groups_state, group_names):
-        targets = group_manager.load_groups(groups_state or {}, group_names)
+        targets = set(group_manager.load_groups(groups_state or {}, group_names))
         indices = []
         mapping = {}
         for idx, img in enumerate(gallery_images):
             path = img[0] if isinstance(img, (list, tuple)) else img
-            ext, img_id = self.extract_name_and_extention(path)
-            for t_ext, t_id in targets:
-                if ext == t_ext and img_id == t_id:
-                    if idx not in indices:
-                        indices.append(idx)
-                        mapping[idx] = [ext, img_id]
+            if path in targets:
+                ext, img_id = self.extract_name_and_extention(path)
+                indices.append(idx)
+                mapping[idx] = [ext, img_id]
         self._update_search_from_mapping(mapping)
         self.images_selected_state.value = indices
         self.only_selected_state_object.value = mapping
