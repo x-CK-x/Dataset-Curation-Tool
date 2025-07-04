@@ -1607,6 +1607,76 @@ class Gallery_tab:
             image_tag_tools.apply_tag_modifications(paths, remove_tags=self.remove_buffer)
         return []
 
+    def select_all(self, gallery_images):
+        """Return indices of all images for selection."""
+        return list(range(len(gallery_images)))
+
+    def deselect_all(self):
+        """Return empty selection list."""
+        return []
+
+    def invert_selected(self, gallery_images, images_selected_state):
+        all_indices = set(range(len(gallery_images)))
+        selected = set(images_selected_state)
+        return sorted(list(all_indices - selected))
+
+    def handle_select_all(self, gallery_images):
+        return self.select_all(gallery_images)
+
+    def handle_deselect_all(self):
+        return self.deselect_all()
+
+    def handle_invert_selection(self, gallery_images, images_selected_state):
+        return self.invert_selected(gallery_images, images_selected_state)
+
+    def compare_selected(self, gallery_images, images_selected_state):
+        if len(images_selected_state) != 2:
+            empty = [gr.update(value=None)] + [gr.update(choices=[], value=[]) for _ in range(7)]
+            return empty + empty
+        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                 for idx in images_selected_state]
+        self.compare_left_path = paths[0]
+        self.compare_right_path = paths[1]
+
+        left_tags = help.parse_single_all_tags(os.path.splitext(paths[0])[0] + ".txt")
+        right_tags = help.parse_single_all_tags(os.path.splitext(paths[1])[0] + ".txt")
+
+        def categorize(tags):
+            groups = {"artist": [], "character": [], "species": [], "invalid": [], "general": [], "meta": [], "rating": []}
+            for t in tags:
+                cat = self.get_category_name(t)
+                if cat not in groups:
+                    cat = "invalid"
+                groups[cat].append(t)
+            return groups
+
+        left_groups = categorize(left_tags)
+        right_groups = categorize(right_tags)
+
+        outputs = [gr.update(value=paths[0])]
+        outputs += [gr.update(choices=left_groups[k], value=[]) for k in ["artist","character","species","invalid","general","meta","rating"]]
+        outputs.append(gr.update(value=paths[1]))
+        outputs += [gr.update(choices=right_groups[k], value=[]) for k in ["artist","character","species","invalid","general","meta","rating"]]
+        return outputs
+
+    def transfer_left_to_right(self, left_artist, left_character, left_species, left_invalid,
+                               left_general, left_meta, left_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = left_artist + left_character + left_species + left_invalid + left_general + left_meta + left_rating
+        image_tag_tools.transfer_tags(self.compare_left_path, self.compare_right_path, tags, remove=False)
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[8:]
+        return groups[1:]
+
+    def remove_left_from_right(self, left_artist, left_character, left_species, left_invalid,
+                               left_general, left_meta, left_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = left_artist + left_character + left_species + left_invalid + left_general + left_meta + left_rating
+        image_tag_tools.apply_tag_modifications([self.compare_right_path], remove_tags=tags)
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[8:]
+        return groups[1:]
+
     ######
     # self.all_images_dict ->
     ### image_type -> {img_id, tags}
