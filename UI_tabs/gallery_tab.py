@@ -75,7 +75,8 @@ class Gallery_tab:
         self.gallery_state = gr.State([])
 
         # mapping of group name -> list of [ext, img_id]
-        self.groups_state = gr.State({})
+        self.groups_config_path = os.path.join(self.cwd, "groups.json")
+        self.groups_state = gr.State(group_manager.load_groups_file(self.groups_config_path))
 
         # buffers holding tags transferred/removed during compare operations
         self.transfer_buffer = []  # tags to add when applying to other images
@@ -1613,6 +1614,7 @@ class Gallery_tab:
     def _debug_selection(self, images_selected_state, mapping):
         help.verbose_print(f"images_selected_states:\t{images_selected_state}")
         help.verbose_print(f"only_selected_state_object:\t{mapping}")
+        help.verbose_print(f"number_selected:\t{len(images_selected_state)}")
 
     def select_all(self, gallery_images):
         """Return indices of all images for selection."""
@@ -3466,6 +3468,19 @@ class Gallery_tab:
                         img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                         img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                         img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
+                    with gr.Accordion("Groups", open=False):
+                        groups_dropdown = gr.Dropdown(label="Saved Groups", choices=list(self.groups_state.value.keys()), multiselect=True)
+                        group_name_text = gr.Textbox(label="Group Name", lines=1)
+                        with gr.Row():
+                            save_group_button = gr.Button(value="Save Group", variant='primary')
+                            load_group_button = gr.Button(value="Load Group", variant='secondary')
+                            delete_group_button = gr.Button(value="Delete Group", variant='stop')
+                        with gr.Row():
+                            rename_group_button = gr.Button(value="Rename Group")
+                            duplicate_group_button = gr.Button(value="Duplicate Group")
+                        with gr.Row():
+                            save_groups_cfg_button = gr.Button(value="Save Config")
+                            load_groups_cfg_button = gr.Button(value="Load Config")
                     with gr.Accordion("Advanced (Valid) Tag Options", open=False):
                         with gr.Row():
                             gr.Info(message="Uses file_type selection CheckBoxGroup at top of page to select which images are affected")
@@ -3486,17 +3501,6 @@ class Gallery_tab:
                             prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", object_fit="contain", interactive=True, columns=3, height=1356,
                          elem_classes="custom-gallery")
-
-                with gr.Accordion("Groups", open=False):
-                    groups_dropdown = gr.Dropdown(label="Saved Groups", choices=[], multiselect=True)
-                    group_name_text = gr.Textbox(label="Group Name", lines=1)
-                    with gr.Row():
-                        save_group_button = gr.Button(value="Save Group", variant='primary')
-                        load_group_button = gr.Button(value="Load Group", variant='secondary')
-                        delete_group_button = gr.Button(value="Delete Group", variant='stop')
-                    with gr.Row():
-                        rename_group_button = gr.Button(value="Rename Group")
-                        duplicate_group_button = gr.Button(value="Duplicate Group")
 
         self.refresh_aspect_btn = refresh_aspect_btn
         self.download_folder_type = download_folder_type
@@ -3575,6 +3579,8 @@ class Gallery_tab:
         self.delete_group_button = delete_group_button
         self.rename_group_button = rename_group_button
         self.duplicate_group_button = duplicate_group_button
+        self.save_groups_cfg_button = save_groups_cfg_button
+        self.load_groups_cfg_button = load_groups_cfg_button
 
         return [
                 self.refresh_aspect_btn,
@@ -3654,7 +3660,9 @@ class Gallery_tab:
                 self.load_group_button,
                 self.delete_group_button,
                 self.rename_group_button,
-                self.duplicate_group_button
+                self.duplicate_group_button,
+                self.save_groups_cfg_button,
+                self.load_groups_cfg_button
                 ]
 
     def get_event_listeners(self):
@@ -4145,6 +4153,16 @@ class Gallery_tab:
             inputs=[self.groups_state, self.groups_dropdown, self.group_name_text],
             outputs=[self.groups_state, self.groups_dropdown, self.group_name_text]
         )
+        self.save_groups_cfg_button.click(
+            fn=self.save_groups_config,
+            inputs=[self.groups_state],
+            outputs=[]
+        )
+        self.load_groups_cfg_button.click(
+            fn=self.load_groups_config,
+            inputs=[],
+            outputs=[self.groups_state, self.groups_dropdown]
+        )
  
 
     def save_group(self, name, groups_state, mapping):
@@ -4187,3 +4205,11 @@ class Gallery_tab:
         self.images_selected_state.value = indices
         self.only_selected_state_object.value = mapping
         return indices, mapping
+
+    def save_groups_config(self, groups_state):
+        group_manager.save_groups_file(groups_state or {}, self.groups_config_path)
+
+    def load_groups_config(self):
+        groups = group_manager.load_groups_file(self.groups_config_path)
+        self.groups_state.value = groups
+        return groups, gr.update(choices=list(groups.keys()))

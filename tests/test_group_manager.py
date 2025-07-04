@@ -22,3 +22,11 @@ def test_rename_duplicate():
     assert "g2" in groups and "g1" not in groups
     groups = gm.duplicate_group(groups, "g2", "g3")
     assert groups["g2"] == groups["g3"]
+
+
+def test_file_roundtrip(tmp_path):
+    groups = gm.save_group({}, "grp", [["png", "1"], ["jpg", "2"]])
+    fp = tmp_path / "groups.json"
+    gm.save_groups_file(groups, fp)
+    loaded = gm.load_groups_file(fp)
+    assert loaded == groups

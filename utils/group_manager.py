@@ -1,5 +1,7 @@
 """Utility functions for managing image selection groups."""
 
+import json
+import os
 from typing import Dict, Iterable, List
 
 Group = List[List[str]]  # [[ext, img_id], ...]
@@ -58,3 +60,26 @@ def load_groups(groups: Dict[str, Group], names: Iterable[str]) -> Group:
         items.extend(groups.get(n, []))
     return _unique_items(items)
 
+def save_groups_file(groups: Dict[str, Group], path: str) -> None:
+    """Write groups dictionary to ``path`` as JSON."""
+    dir_name = os.path.dirname(path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(groups, f, indent=2)
+
+
+def load_groups_file(path: str) -> Dict[str, Group]:
+    """Load groups dictionary from ``path`` if it exists."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return {}
+    # ensure lists of lists
+    groups: Dict[str, Group] = {}
+    for k, v in data.items():
+        groups[k] = [list(item) for item in v]
+    return groups
