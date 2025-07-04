@@ -1509,7 +1509,6 @@ class Gallery_tab:
         rating_comp_checkboxgroup = gr.update(choices=[])
         return artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, invalid_comp_checkboxgroup, general_comp_checkboxgroup, \
                meta_comp_checkboxgroup, rating_comp_checkboxgroup, gr.update(value="")
-
     def set_ckbx_state(self, select_multiple_images_checkbox,
                        multi_select_ckbx_state):  # UI boolean component, JSON boolean component wrapped in a list
         multi_select_ckbx_state = [select_multiple_images_checkbox]
