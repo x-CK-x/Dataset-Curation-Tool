@@ -1513,7 +1513,8 @@ class Gallery_tab:
     def set_ckbx_state(self, select_multiple_images_checkbox,
                        multi_select_ckbx_state):  # UI boolean component, JSON boolean component wrapped in a list
         multi_select_ckbx_state = [select_multiple_images_checkbox]
-        return multi_select_ckbx_state
+        toggle_state = gr.update(interactive=select_multiple_images_checkbox)
+        return multi_select_ckbx_state, toggle_state, toggle_state, toggle_state, toggle_state
 
     def _build_selection_mapping(self, gallery_images, indices):
         mapping = {}
@@ -3604,7 +3605,18 @@ class Gallery_tab:
         self.select_multiple_images_checkbox.change(
             fn=self.set_ckbx_state,
             inputs=[self.select_multiple_images_checkbox, self.multi_select_ckbx_state],
-            outputs=[self.multi_select_ckbx_state]
+            outputs=[
+                self.multi_select_ckbx_state,
+                self.select_between_images_checkbox,
+                self.select_all_checkbox,
+                self.deselect_all_checkbox,
+                self.invert_selection_checkbox,
+            ]
+        ).then(
+            None,
+            inputs=[self.images_selected_state, self.multi_select_ckbx_state],
+            outputs=None,
+            js=js_.js_do_everything
         )
         self.select_all_checkbox.change(
             fn=self.handle_select_all,
