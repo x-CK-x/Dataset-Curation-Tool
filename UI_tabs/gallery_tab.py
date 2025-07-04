@@ -1513,7 +1513,23 @@ class Gallery_tab:
     def set_ckbx_state(self, select_multiple_images_checkbox,
                        multi_select_ckbx_state):  # UI boolean component, JSON boolean component wrapped in a list
         multi_select_ckbx_state = [select_multiple_images_checkbox]
-        return multi_select_ckbx_state
+        toggle_state = gr.update(interactive=select_multiple_images_checkbox)
+        return multi_select_ckbx_state, toggle_state, toggle_state, toggle_state, toggle_state
+
+    def _build_selection_mapping(self, gallery_images, indices):
+        mapping = {}
+        for idx in indices:
+            path = gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+            mapping[idx] = self.extract_name_and_extention(path)
+        return mapping
+
+    def _update_search_from_mapping(self, mapping):
+        self.all_images_dict["searched"] = {}
+        for ext, img_id in mapping.values():
+            if ext not in self.all_images_dict["searched"]:
+                self.all_images_dict["searched"][ext] = {}
+            tags = self.all_images_dict.get(ext, {}).get(img_id, [])
+            self.all_images_dict["searched"][ext][img_id] = tags.copy()
 
     def select_all(self, gallery_images):
         """Return indices of all images for selection."""
@@ -1529,13 +1545,22 @@ class Gallery_tab:
         return sorted(list(all_indices - selected))
 
     def handle_select_all(self, gallery_images):
-        return self.select_all(gallery_images)
+        images_selected_state = self.select_all(gallery_images)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self):
-        return self.deselect_all()
+        images_selected_state = self.deselect_all()
+        mapping = {}
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state):
-        return self.invert_selected(gallery_images, images_selected_state)
+        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
         if len(images_selected_state) != 2:
@@ -1720,13 +1745,22 @@ class Gallery_tab:
         return sorted(list(all_indices - selected))
 
     def handle_select_all(self, gallery_images):
-        return self.select_all(gallery_images)
+        images_selected_state = self.select_all(gallery_images)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self):
-        return self.deselect_all()
+        images_selected_state = self.deselect_all()
+        mapping = {}
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state):
-        return self.invert_selected(gallery_images, images_selected_state)
+        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
         if len(images_selected_state) != 2:
@@ -1911,13 +1945,22 @@ class Gallery_tab:
         return sorted(list(all_indices - selected))
 
     def handle_select_all(self, gallery_images):
-        return self.select_all(gallery_images)
+        images_selected_state = self.select_all(gallery_images)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self):
-        return self.deselect_all()
+        images_selected_state = self.deselect_all()
+        mapping = {}
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state):
-        return self.invert_selected(gallery_images, images_selected_state)
+        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
         if len(images_selected_state) != 2:
@@ -2102,13 +2145,22 @@ class Gallery_tab:
         return sorted(list(all_indices - selected))
 
     def handle_select_all(self, gallery_images):
-        return self.select_all(gallery_images)
+        images_selected_state = self.select_all(gallery_images)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self):
-        return self.deselect_all()
+        images_selected_state = self.deselect_all()
+        mapping = {}
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state):
-        return self.invert_selected(gallery_images, images_selected_state)
+        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
         if len(images_selected_state) != 2:
@@ -2251,13 +2303,22 @@ class Gallery_tab:
         return sorted(list(all_indices - selected))
 
     def handle_select_all(self, gallery_images):
-        return self.select_all(gallery_images)
+        images_selected_state = self.select_all(gallery_images)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self):
-        return self.deselect_all()
+        images_selected_state = self.deselect_all()
+        mapping = {}
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state):
-        return self.invert_selected(gallery_images, images_selected_state)
+        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
         if len(images_selected_state) != 2:
@@ -2360,13 +2421,22 @@ class Gallery_tab:
         return sorted(list(all_indices - selected))
 
     def handle_select_all(self, gallery_images):
-        return self.select_all(gallery_images)
+        images_selected_state = self.select_all(gallery_images)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self):
-        return self.deselect_all()
+        images_selected_state = self.deselect_all()
+        mapping = {}
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state):
-        return self.invert_selected(gallery_images, images_selected_state)
+        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
         if len(images_selected_state) != 2:
@@ -2537,14 +2607,14 @@ class Gallery_tab:
         help.verbose_print(f"full_path:\t{(gallery_images[event_data.index])[0] if isinstance(gallery_images[event_data.index], (list, tuple)) else gallery_images[event_data.index]}")
         help.verbose_print(f"image name:\t{(gallery_images[event_data.index])[0].split(temp)[-1] if isinstance(gallery_images[event_data.index], (list, tuple)) else str(gallery_images[event_data.index]).split(temp)[-1]}")
 
-        img_name = None
-        artist_comp_checkboxgroup = gr.update(choices=[])
-        character_comp_checkboxgroup = gr.update(choices=[])
-        species_comp_checkboxgroup = gr.update(choices=[])
-        invalid_comp_checkboxgroup = gr.update(choices=[])
-        general_comp_checkboxgroup = gr.update(choices=[])
-        meta_comp_checkboxgroup = gr.update(choices=[])
-        rating_comp_checkboxgroup = gr.update(choices=[])
+        img_name_update = gr.update()
+        artist_comp_checkboxgroup = gr.update()
+        character_comp_checkboxgroup = gr.update()
+        species_comp_checkboxgroup = gr.update()
+        invalid_comp_checkboxgroup = gr.update()
+        general_comp_checkboxgroup = gr.update()
+        meta_comp_checkboxgroup = gr.update()
+        rating_comp_checkboxgroup = gr.update()
 
         if select_multiple_images_checkbox:
             if (event_data.index in images_selected_state):  # toggles images clicked
@@ -2592,6 +2662,7 @@ class Gallery_tab:
             # load/re-load selected image
             self.reload_selected_image_dict(download_folder_type, img_name)
 
+            img_name_update = gr.update(value=img_name)
             artist_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["artist"])
             character_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["character"])
             species_comp_checkboxgroup = gr.update(choices=self.selected_image_dict[img_name]["species"])
@@ -2606,8 +2677,7 @@ class Gallery_tab:
             only_selected_state_object[index] = self.extract_name_and_extention(img_path)
         help.verbose_print(f"only_selected_state_object:\t{only_selected_state_object}")
 
-        return gr.update(
-            value=img_name), artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, \
+        return img_name_update, artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, \
                invalid_comp_checkboxgroup, general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup, images_selected_state, only_selected_state_object, \
                images_tuple_points
 
@@ -3535,22 +3605,48 @@ class Gallery_tab:
         self.select_multiple_images_checkbox.change(
             fn=self.set_ckbx_state,
             inputs=[self.select_multiple_images_checkbox, self.multi_select_ckbx_state],
-            outputs=[self.multi_select_ckbx_state]
+            outputs=[
+                self.multi_select_ckbx_state,
+                self.select_between_images_checkbox,
+                self.select_all_checkbox,
+                self.deselect_all_checkbox,
+                self.invert_selection_checkbox,
+            ]
+        ).then(
+            None,
+            inputs=[self.images_selected_state, self.multi_select_ckbx_state],
+            outputs=None,
+            js=js_.js_do_everything
         )
         self.select_all_checkbox.change(
             fn=self.handle_select_all,
             inputs=[self.gallery_state],
-            outputs=[self.images_selected_state]
+            outputs=[self.images_selected_state, self.only_selected_state_object, self.select_all_checkbox]
+        ).then(
+            None,
+            inputs=[self.images_selected_state, self.multi_select_ckbx_state],
+            outputs=None,
+            js=js_.js_do_everything
         )
         self.deselect_all_checkbox.change(
             fn=self.handle_deselect_all,
             inputs=[],
-            outputs=[self.images_selected_state]
+            outputs=[self.images_selected_state, self.only_selected_state_object, self.deselect_all_checkbox]
+        ).then(
+            None,
+            inputs=[self.images_selected_state, self.multi_select_ckbx_state],
+            outputs=None,
+            js=js_.js_do_everything
         )
         self.invert_selection_checkbox.change(
             fn=self.handle_invert_selection,
             inputs=[self.gallery_state, self.images_selected_state],
-            outputs=[self.images_selected_state]
+            outputs=[self.images_selected_state, self.only_selected_state_object, self.invert_selection_checkbox]
+        ).then(
+            None,
+            inputs=[self.images_selected_state, self.multi_select_ckbx_state],
+            outputs=None,
+            js=js_.js_do_everything
         )
         self.compare_button.click(
             fn=self.compare_selected,
