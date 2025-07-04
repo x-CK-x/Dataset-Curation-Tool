@@ -37,7 +37,7 @@ def test_gather_media_tags(tmp_path):
 
     result = hf.gather_media_tags(str(folder))
     assert "png" in result and "webp" in result
-    assert result["png"]["img1"] == ["tag1"]
+    assert result["png"]["img1"] == ["tag1", "tag2"]
     assert result["webp"]["img2"] == ["tag3"]
     assert "searched" in result
 

@@ -5,6 +5,7 @@ from utils.image_tag_tools import (
     invert_selection,
     compare_tags,
     apply_tag_modifications,
+    write_image_tags,
 )
 
 
@@ -73,3 +74,13 @@ def test_apply_modifications_strips_newlines(tmp_path):
     apply_tag_modifications([str(img)], add_tags=["z\n"], remove_tags=["x\n"])
 
     assert load_image_tags(str(img)) == ["y", "z"]
+
+
+def test_write_image_tags_format(tmp_path):
+    img = tmp_path / "imgD.png"
+    img.write_bytes(b"1")
+
+    write_image_tags(str(img), ["a", "b", "c"])
+
+    content = (tmp_path / "imgD.txt").read_text()
+    assert content == "a, b, c"

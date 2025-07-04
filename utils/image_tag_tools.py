@@ -21,11 +21,14 @@ def load_image_tags(image_path, strip=True):
 
 
 def write_image_tags(image_path, tags):
-    """Write ``tags`` to the text file for ``image_path``."""
-    tag_path = os.path.splitext(image_path)[0] + '.txt'
-    output = "\n".join(tags)
-    if tags:
-        output += "\n"
+    """Write ``tags`` to the text file for ``image_path``.
+
+    Tags are saved on a single line separated by a comma and space to
+    match the format expected by ``parse_single_all_tags``.
+    """
+    tag_path = os.path.splitext(image_path)[0] + ".txt"
+    cleaned = [t.strip() for t in tags if t.strip()]
+    output = ", ".join(cleaned)
     write_tags_to_text_file(output, tag_path)
 
 
@@ -44,7 +47,7 @@ def transfer_tags(src_image, dest_image, tags, remove=False):
     tags = [t.strip() for t in tags]
     for t in tags:
         if t not in stripped_dest:
-            dest_tags.append(t + "\n")
+            dest_tags.append(t)
         if remove and t in stripped_src:
             idx = stripped_src.index(t)
             src_tags.pop(idx)
