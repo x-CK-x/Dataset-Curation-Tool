@@ -195,28 +195,23 @@ def unzip_all():
         unzip_file(gz)
 
 def parse_single_all_tags(file_path):
-    all_tags = []
-    # verbose_print(f"file_path:\t\t{file_path}")
+    """Return list of tags from ``file_path``.
+
+    This helper accepts tag files formatted either as a single comma separated
+    line or with one tag per line. Whitespace characters are stripped from each
+    token and empty entries are ignored.
+    """
+
     if not os.path.exists(file_path):
-        return all_tags.copy()
-    with open(file_path, 'r', encoding='utf-8') as read_file:
-        while True:
-            line = read_file.readline()
-            if not line:
-                break
+        return []
 
-            line = line.replace(" ", "")
-            length = len(line.split(","))
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = f.read()
 
-            if length > 3:  # assume everything on one line
-                tags = line.split(",")
-                for tag in tags:
-                    all_tags.append(tag)
-            else:  # assume cascaded tags
-                tag = line.split(",")[0]
-                all_tags.append(tag)
-        read_file.close()
-    return all_tags.copy()
+    # unify newlines with commas and remove spaces
+    data = data.replace("\n", ",").replace(" ", "")
+    tags = [t for t in data.split(",") if t]
+    return tags
 
 def parse_files_all_tags(file_list):
     all_tags_all_files = {}
