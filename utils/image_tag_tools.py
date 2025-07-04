@@ -41,6 +41,7 @@ def transfer_tags(src_image, dest_image, tags, remove=False):
     stripped_src = [t.strip() for t in src_tags]
     stripped_dest = [t.strip() for t in dest_tags]
 
+    tags = [t.strip() for t in tags]
     for t in tags:
         if t not in stripped_dest:
             dest_tags.append(t + "\n")
@@ -99,8 +100,8 @@ def apply_tag_modifications(image_paths, add_tags=None, remove_tags=None):
     remove_tags : Iterable[str], optional
         Tags to remove from each image if present.
     """
-    add_tags = set(add_tags or [])
-    remove_tags = set(remove_tags or [])
+    add_tags = {t.strip() for t in (add_tags or [])}
+    remove_tags = {t.strip() for t in (remove_tags or [])}
 
     for img in image_paths:
         tags = load_image_tags(img, strip=False)

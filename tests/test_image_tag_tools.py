@@ -63,3 +63,13 @@ def test_apply_modifications_multiple(tmp_path):
 
     assert load_image_tags(str(img1)) == ["b", "d"]
     assert load_image_tags(str(img2)) == ["b", "c", "d"]
+
+
+def test_apply_modifications_strips_newlines(tmp_path):
+    img = tmp_path / "imgC.png"
+    img.write_bytes(b"1")
+    (tmp_path / "imgC.txt").write_text("x\ny\n")
+
+    apply_tag_modifications([str(img)], add_tags=["z\n"], remove_tags=["x\n"])
+
+    assert load_image_tags(str(img)) == ["y", "z"]
