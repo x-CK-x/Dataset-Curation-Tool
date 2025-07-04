@@ -1584,7 +1584,6 @@ class Gallery_tab:
         rating_comp_checkboxgroup = gr.update(choices=[])
         return artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, invalid_comp_checkboxgroup, general_comp_checkboxgroup, \
                meta_comp_checkboxgroup, rating_comp_checkboxgroup, gr.update(value="")
-
     def set_ckbx_state(self, select_multiple_images_checkbox,
                        multi_select_ckbx_state):  # UI boolean component, JSON boolean component wrapped in a list
         multi_select_ckbx_state = [select_multiple_images_checkbox]
@@ -1606,6 +1605,10 @@ class Gallery_tab:
             tags = self.all_images_dict.get(ext, {}).get(img_id, [])
             self.all_images_dict["searched"][ext][img_id] = tags.copy()
 
+    def _debug_selection(self, images_selected_state, mapping):
+        help.verbose_print(f"images_selected_states:\t{images_selected_state}")
+        help.verbose_print(f"only_selected_state_object:\t{mapping}")
+
     def select_all(self, gallery_images):
         """Return indices of all images for selection."""
         return list(range(len(gallery_images)))
@@ -1624,6 +1627,9 @@ class Gallery_tab:
             images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
@@ -1631,6 +1637,9 @@ class Gallery_tab:
             images_selected_state = self.deselect_all()
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
@@ -1638,6 +1647,9 @@ class Gallery_tab:
             images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
@@ -1827,6 +1839,9 @@ class Gallery_tab:
             images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
@@ -1834,6 +1849,9 @@ class Gallery_tab:
             images_selected_state = self.deselect_all()
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
@@ -1841,6 +1859,9 @@ class Gallery_tab:
             images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
@@ -2030,6 +2051,9 @@ class Gallery_tab:
             images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
@@ -2037,6 +2061,9 @@ class Gallery_tab:
             images_selected_state = self.deselect_all()
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
@@ -2044,6 +2071,9 @@ class Gallery_tab:
             images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
@@ -2233,6 +2263,9 @@ class Gallery_tab:
             images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
@@ -2240,6 +2273,9 @@ class Gallery_tab:
             images_selected_state = self.deselect_all()
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
@@ -2247,6 +2283,9 @@ class Gallery_tab:
             images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
@@ -2394,6 +2433,9 @@ class Gallery_tab:
             images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
@@ -2401,6 +2443,9 @@ class Gallery_tab:
             images_selected_state = self.deselect_all()
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
@@ -2408,6 +2453,9 @@ class Gallery_tab:
             images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
@@ -2515,6 +2563,9 @@ class Gallery_tab:
             images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
@@ -2522,6 +2573,9 @@ class Gallery_tab:
             images_selected_state = self.deselect_all()
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
@@ -2529,6 +2583,9 @@ class Gallery_tab:
             images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = images_selected_state
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(images_selected_state, mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
     def compare_selected(self, gallery_images, images_selected_state):
