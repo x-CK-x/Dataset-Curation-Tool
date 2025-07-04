@@ -2,15 +2,31 @@ import os
 from .helper_functions import parse_single_all_tags, write_tags_to_text_file
 
 
-def load_image_tags(image_path):
-    """Return list of tags for given image path.
+def load_image_tags(image_path, strip=True):
+    """Return list of tags for ``image_path``.
 
-    Looks for a sibling ``.txt`` file with the same basename.
-    Returns an empty list if the tag file does not exist.
+    Parameters
+    ----------
+    image_path : str
+        Path to the image file.
+    strip : bool, optional
+        Remove whitespace characters (including newlines) from each tag.
+        ``True`` by default.
     """
     tag_path = os.path.splitext(image_path)[0] + '.txt'
     tags = parse_single_all_tags(tag_path)
-    return [t.strip() for t in tags if t.strip()]
+    if strip:
+        tags = [t.strip() for t in tags]
+    return [t for t in tags if t]
+
+
+def write_image_tags(image_path, tags):
+    """Write ``tags`` to the text file for ``image_path``."""
+    tag_path = os.path.splitext(image_path)[0] + '.txt'
+    output = "\n".join(tags)
+    if tags:
+        output += "\n"
+    write_tags_to_text_file(output, tag_path)
 
 
 def transfer_tags(src_image, dest_image, tags, remove=False):
@@ -19,18 +35,23 @@ def transfer_tags(src_image, dest_image, tags, remove=False):
     Tags already present in ``dest_image`` are not duplicated. If
     ``remove`` is True, transferred tags are removed from ``src_image``.
     """
-    src_tags = load_image_tags(src_image)
-    dest_tags = load_image_tags(dest_image)
+    src_tags = load_image_tags(src_image, strip=False)
+    dest_tags = load_image_tags(dest_image, strip=False)
+
+    stripped_src = [t.strip() for t in src_tags]
+    stripped_dest = [t.strip() for t in dest_tags]
 
     for t in tags:
-        if t not in dest_tags:
-            dest_tags.append(t)
-        if remove and t in src_tags:
-            src_tags.remove(t)
+        if t not in stripped_dest:
+            dest_tags.append(t + "\n")
+        if remove and t in stripped_src:
+            idx = stripped_src.index(t)
+            src_tags.pop(idx)
+            stripped_src.pop(idx)
 
-    write_tags_to_text_file('\n'.join(dest_tags), os.path.splitext(dest_image)[0] + '.txt')
+    write_image_tags(dest_image, [t.strip() for t in dest_tags])
     if remove:
-        write_tags_to_text_file('\n'.join(src_tags), os.path.splitext(src_image)[0] + '.txt')
+        write_image_tags(src_image, [t.strip() for t in src_tags])
 
 
 def invert_selection(selected, all_items):
@@ -82,8 +103,9 @@ def apply_tag_modifications(image_paths, add_tags=None, remove_tags=None):
     remove_tags = set(remove_tags or [])
 
     for img in image_paths:
-        tags = load_image_tags(img)
-        tag_set = set(tags)
+        tags = load_image_tags(img, strip=False)
+        stripped = [t.strip() for t in tags]
+        tag_set = set(stripped)
         tag_set.update(add_tags)
         tag_set.difference_update(remove_tags)
-        write_tags_to_text_file("\n".join(sorted(tag_set)), os.path.splitext(img)[0] + ".txt")
+        write_image_tags(img, sorted(tag_set))
