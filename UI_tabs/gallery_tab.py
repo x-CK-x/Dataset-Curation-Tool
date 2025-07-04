@@ -4,7 +4,7 @@ import copy
 import datetime
 import glob
 
-from utils import js_constants as js_, md_constants as md_, helper_functions as help
+from utils import js_constants as js_, md_constants as md_, helper_functions as help, image_tag_tools
 
 
 class Gallery_tab:
@@ -71,6 +71,10 @@ class Gallery_tab:
         # stores the currently displayed gallery image paths to avoid passing
         # filepaths through gradio inputs
         self.gallery_state = gr.State([])
+
+        # buffers holding tags transferred/removed during compare operations
+        self.transfer_buffer = []  # tags to add when applying to other images
+        self.remove_buffer = []    # tags to remove when applying to other images
 
         # optional path to a user provided dataset loaded via the
         # custom dataset tab
@@ -1494,6 +1498,197 @@ class Gallery_tab:
         multi_select_ckbx_state = [select_multiple_images_checkbox]
         return multi_select_ckbx_state
 
+    def select_all(self, gallery_images):
+        """Return indices of all images for selection."""
+        return list(range(len(gallery_images)))
+
+    def deselect_all(self):
+        """Return empty selection list."""
+        return []
+
+    def invert_selected(self, gallery_images, images_selected_state):
+        all_indices = set(range(len(gallery_images)))
+        selected = set(images_selected_state)
+        return sorted(list(all_indices - selected))
+
+    def handle_select_all(self, gallery_images):
+        return self.select_all(gallery_images)
+
+    def handle_deselect_all(self):
+        return self.deselect_all()
+
+    def handle_invert_selection(self, gallery_images, images_selected_state):
+        return self.invert_selected(gallery_images, images_selected_state)
+
+    def compare_selected(self, gallery_images, images_selected_state):
+        if len(images_selected_state) != 2:
+            empty = [gr.update(value=None)] + [gr.update(choices=[], value=[]) for _ in range(7)]
+            return empty + empty
+        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                 for idx in images_selected_state]
+        self.compare_left_path = paths[0]
+        self.compare_right_path = paths[1]
+        # reset accumulated tag actions when a new pair is compared
+        self.transfer_buffer = []
+        self.remove_buffer = []
+
+        left_tags = image_tag_tools.load_image_tags(paths[0])
+        right_tags = image_tag_tools.load_image_tags(paths[1])
+
+        def categorize(tags):
+            groups = {"artist": [], "character": [], "species": [], "invalid": [], "general": [], "meta": [], "rating": []}
+            for t in tags:
+                cat = self.get_category_name(t)
+                if cat not in groups:
+                    cat = "invalid"
+                groups[cat].append(t)
+            return groups
+
+        left_groups = categorize(left_tags)
+        right_groups = categorize(right_tags)
+
+        outputs = [gr.update(value=paths[0])]
+        outputs += [gr.update(choices=left_groups[k], value=[]) for k in ["artist","character","species","invalid","general","meta","rating"]]
+        outputs.append(gr.update(value=paths[1]))
+        outputs += [gr.update(choices=right_groups[k], value=[]) for k in ["artist","character","species","invalid","general","meta","rating"]]
+        return outputs
+
+    def transfer_left_to_right(self, left_artist, left_character, left_species, left_invalid,
+                               left_general, left_meta, left_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = [t.strip() for t in (
+            left_artist + left_character + left_species + left_invalid +
+            left_general + left_meta + left_rating
+        )]
+        image_tag_tools.transfer_tags(
+            self.compare_left_path,
+            self.compare_right_path,
+            tags,
+            remove=False,
+        )
+        self.transfer_buffer = sorted(set(self.transfer_buffer + tags))
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[8:]
+        return groups[1:]
+
+    def remove_left_from_right(self, left_artist, left_character, left_species, left_invalid,
+                               left_general, left_meta, left_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = [t.strip() for t in (
+            left_artist + left_character + left_species + left_invalid +
+            left_general + left_meta + left_rating
+        )]
+        image_tag_tools.apply_tag_modifications(
+            [self.compare_right_path],
+            remove_tags=tags,
+        )
+        self.remove_buffer = sorted(set(self.remove_buffer + tags))
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[8:]
+        return groups[1:]
+
+    def transfer_right_to_left(self, right_artist, right_character, right_species, right_invalid,
+                               right_general, right_meta, right_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = [t.strip() for t in (
+            right_artist + right_character + right_species + right_invalid +
+            right_general + right_meta + right_rating
+        )]
+        image_tag_tools.transfer_tags(
+            self.compare_right_path,
+            self.compare_left_path,
+            tags,
+            remove=False,
+        )
+        self.transfer_buffer = sorted(set(self.transfer_buffer + tags))
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[:8]
+        return groups[1:]
+
+    def remove_right_from_left(self, right_artist, right_character, right_species, right_invalid,
+                               right_general, right_meta, right_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = [t.strip() for t in (
+            right_artist + right_character + right_species + right_invalid +
+            right_general + right_meta + right_rating
+        )]
+        image_tag_tools.apply_tag_modifications(
+            [self.compare_left_path],
+            remove_tags=tags,
+        )
+        self.remove_buffer = sorted(set(self.remove_buffer + tags))
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[:8]
+        return groups[1:]
+
+    def remove_left_from_both(self, left_artist, left_character, left_species, left_invalid,
+                              left_general, left_meta, left_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(14)]
+        tags = [t.strip() for t in (
+            left_artist + left_character + left_species + left_invalid +
+            left_general + left_meta + left_rating
+        )]
+        image_tag_tools.apply_tag_modifications(
+            [self.compare_left_path, self.compare_right_path],
+            remove_tags=tags,
+        )
+        self.remove_buffer = sorted(set(self.remove_buffer + tags))
+        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
+        return outputs[1:8] + outputs[9:]
+
+    def remove_right_from_both(self, right_artist, right_character, right_species, right_invalid,
+                               right_general, right_meta, right_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(14)]
+        tags = [t.strip() for t in (
+            right_artist + right_character + right_species + right_invalid +
+            right_general + right_meta + right_rating
+        )]
+        image_tag_tools.apply_tag_modifications(
+            [self.compare_left_path, self.compare_right_path],
+            remove_tags=tags,
+        )
+        self.remove_buffer = sorted(set(self.remove_buffer + tags))
+        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
+        return outputs[1:8] + outputs[9:]
+
+    def add_tag_left(self, tag, apply_both):
+        if not tag or not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(14)]
+        clean_tag = tag.strip()
+        targets = [self.compare_left_path]
+        if apply_both:
+            targets.append(self.compare_right_path)
+        image_tag_tools.apply_tag_modifications(targets, add_tags=[clean_tag])
+        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
+        return outputs[1:8] + outputs[9:]
+
+    def add_tag_right(self, tag, apply_both):
+        if not tag or not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(14)]
+        clean_tag = tag.strip()
+        targets = [self.compare_right_path]
+        if apply_both:
+            targets.append(self.compare_left_path)
+        image_tag_tools.apply_tag_modifications(targets, add_tags=[clean_tag])
+        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
+        return outputs[1:8] + outputs[9:]
+
+    def apply_transfer_to_selected(self, gallery_images, images_selected_state):
+        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                 for idx in images_selected_state]
+        if self.transfer_buffer:
+            image_tag_tools.apply_tag_modifications(paths, add_tags=self.transfer_buffer)
+        return []
+
+    def apply_remove_to_selected(self, gallery_images, images_selected_state):
+        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                 for idx in images_selected_state]
+        if self.remove_buffer:
+            image_tag_tools.apply_tag_modifications(paths, remove_tags=self.remove_buffer)
+        return []
+
     ######
     # self.all_images_dict ->
     ### image_type -> {img_id, tags}
@@ -1797,6 +1992,9 @@ class Gallery_tab:
         apply_to_all_type_select_checkboxgroup = gr.update(value=[])
         select_multiple_images_checkbox = gr.update(value=False)
         select_between_images_checkbox = gr.update(value=False)
+        select_all_checkbox = gr.update(value=False)
+        deselect_all_checkbox = gr.update(value=False)
+        invert_selection_checkbox = gr.update(value=False)
         apply_datetime_sort_ckbx = gr.update(value=False)
         apply_datetime_choice_menu = gr.update(value=None)
         send_img_from_gallery_dropdown = gr.update(value=None)
@@ -1812,6 +2010,34 @@ class Gallery_tab:
         img_meta_tag_checkbox_group = gr.update(value=[])
         img_rating_tag_checkbox_group = gr.update(value=[])
         gallery_comp = gr.update(value=None)
+        compare_button = gr.update()
+        compare_image_left = gr.update(value=None)
+        comp_left_artist = gr.update(choices=[], value=[])
+        comp_left_character = gr.update(choices=[], value=[])
+        comp_left_species = gr.update(choices=[], value=[])
+        comp_left_invalid = gr.update(choices=[], value=[])
+        comp_left_general = gr.update(choices=[], value=[])
+        comp_left_meta = gr.update(choices=[], value=[])
+        comp_left_rating = gr.update(choices=[], value=[])
+        compare_image_right = gr.update(value=None)
+        comp_right_artist = gr.update(choices=[], value=[])
+        comp_right_character = gr.update(choices=[], value=[])
+        comp_right_species = gr.update(choices=[], value=[])
+        comp_right_invalid = gr.update(choices=[], value=[])
+        comp_right_general = gr.update(choices=[], value=[])
+        comp_right_meta = gr.update(choices=[], value=[])
+        comp_right_rating = gr.update(choices=[], value=[])
+        transfer_tags_button = gr.update()
+        remove_tags_button = gr.update()
+        remove_tags_both_l_button = gr.update()
+        transfer_tags_button_rl = gr.update()
+        remove_tags_button_rl = gr.update()
+        remove_tags_both_r_button = gr.update()
+        comp_left_add_text = gr.update(value="")
+        comp_right_add_text = gr.update(value="")
+        comp_add_to_both_checkbox = gr.update(value=False)
+        apply_transfer_button = gr.update()
+        apply_remove_button = gr.update()
 
         self.multi_select_ckbx_state = gr.JSON([False], visible=False) # JSON boolean component wrapped in a list
         self.only_selected_state_object = gr.State(dict()) # state of image mappings represented by index -> [ext, img_id]
@@ -1832,6 +2058,9 @@ class Gallery_tab:
                 apply_to_all_type_select_checkboxgroup,
                 select_multiple_images_checkbox,
                 select_between_images_checkbox,
+                select_all_checkbox,
+                deselect_all_checkbox,
+                invert_selection_checkbox,
                 apply_datetime_sort_ckbx,
                 apply_datetime_choice_menu,
                 send_img_from_gallery_dropdown,
@@ -1846,7 +2075,30 @@ class Gallery_tab:
                 img_general_tag_checkbox_group,
                 img_meta_tag_checkbox_group,
                 img_rating_tag_checkbox_group,
-                gallery_comp
+                gallery_comp,
+                compare_button,
+                compare_image_left,
+                comp_left_artist,
+                comp_left_character,
+                comp_left_species,
+                comp_left_invalid,
+                comp_left_general,
+                comp_left_meta,
+                comp_left_rating,
+                compare_image_right,
+                comp_right_artist,
+                comp_right_character,
+                comp_right_species,
+                comp_right_invalid,
+                comp_right_general,
+                comp_right_meta,
+                comp_right_rating,
+                transfer_tags_button,
+                remove_tags_button,
+                transfer_tags_button_rl,
+                remove_tags_button_rl,
+                apply_transfer_button,
+                apply_remove_button
                 ]
 
 
@@ -2139,6 +2391,13 @@ class Gallery_tab:
                                                                              info="Selects All Between Two Images")
                         with gr.Row():
                             with gr.Column(min_width=50, scale=1):
+                                select_all_checkbox = gr.Checkbox(label="Select All", value=False)
+                            with gr.Column(min_width=50, scale=1):
+                                deselect_all_checkbox = gr.Checkbox(label="Deselect All", value=False)
+                            with gr.Column(min_width=50, scale=1):
+                                invert_selection_checkbox = gr.Checkbox(label="Invert", value=False)
+                        with gr.Row():
+                            with gr.Column(min_width=50, scale=1):
                                 apply_datetime_sort_ckbx = gr.Checkbox(label="Sort", value=False,
                                                                        info="Image/s by date")
                             with gr.Column(min_width=50, scale=4):
@@ -2157,6 +2416,41 @@ class Gallery_tab:
                             with gr.Column(min_width=50, scale=3):
                                 send_img_from_gallery_button = gr.Button(value="Send Image to (Other) Tab",
                                                                          variant='primary')
+                        with gr.Row():
+                            compare_button = gr.Button(value="Compare Selected", variant='secondary')
+                        with gr.Row():
+                            with gr.Column():
+                                compare_image_left = gr.Image(type="filepath")
+                                comp_left_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[])
+                                comp_left_character = gr.CheckboxGroup(label='Character Tag/s', choices=[])
+                                comp_left_species = gr.CheckboxGroup(label='Species Tag/s', choices=[])
+                                comp_left_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[])
+                                comp_left_general = gr.CheckboxGroup(label='General Tag/s', choices=[])
+                                comp_left_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[])
+                                comp_left_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[])
+                            with gr.Column():
+                                compare_image_right = gr.Image(type="filepath")
+                                comp_right_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[])
+                                comp_right_character = gr.CheckboxGroup(label='Character Tag/s', choices=[])
+                                comp_right_species = gr.CheckboxGroup(label='Species Tag/s', choices=[])
+                                comp_right_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[])
+                                comp_right_general = gr.CheckboxGroup(label='General Tag/s', choices=[])
+                                comp_right_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[])
+                                comp_right_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[])
+                        with gr.Row():
+                            transfer_tags_button = gr.Button(value="Transfer Left Tags → Right", variant='secondary')
+                            remove_tags_button = gr.Button(value="Remove Left Tags from Right", variant='secondary')
+                            remove_tags_both_l_button = gr.Button(value="Remove Left Tags from Both", variant='secondary')
+                            transfer_tags_button_rl = gr.Button(value="Transfer Right Tags → Left", variant='secondary')
+                            remove_tags_button_rl = gr.Button(value="Remove Right Tags from Left", variant='secondary')
+                            remove_tags_both_r_button = gr.Button(value="Remove Right Tags from Both", variant='secondary')
+                        with gr.Row():
+                            comp_left_add_text = gr.Textbox(label="Add Tag Left", lines=1)
+                            comp_right_add_text = gr.Textbox(label="Add Tag Right", lines=1)
+                            comp_add_to_both_checkbox = gr.Checkbox(label="Apply tag to both")
+                        with gr.Row():
+                            apply_transfer_button = gr.Button(value="Apply Transfer Tags to Selected", variant='primary')
+                            apply_remove_button = gr.Button(value="Apply Remove Tags to Selected", variant='primary')
 
                     with gr.Accordion("Tag Edit & Selection Options"):
                         with gr.Row():
@@ -2218,6 +2512,9 @@ class Gallery_tab:
         self.apply_to_all_type_select_checkboxgroup = apply_to_all_type_select_checkboxgroup
         self.select_multiple_images_checkbox = select_multiple_images_checkbox
         self.select_between_images_checkbox = select_between_images_checkbox
+        self.select_all_checkbox = select_all_checkbox
+        self.deselect_all_checkbox = deselect_all_checkbox
+        self.invert_selection_checkbox = invert_selection_checkbox
         self.apply_datetime_sort_ckbx = apply_datetime_sort_ckbx
         self.apply_datetime_choice_menu = apply_datetime_choice_menu
         self.image_remove_button = image_remove_button
@@ -2225,6 +2522,34 @@ class Gallery_tab:
         self.send_img_from_gallery_dropdown = send_img_from_gallery_dropdown
         self.batch_send_from_gallery_checkbox = batch_send_from_gallery_checkbox
         self.send_img_from_gallery_button = send_img_from_gallery_button
+        self.compare_button = compare_button
+        self.compare_image_left = compare_image_left
+        self.comp_left_artist = comp_left_artist
+        self.comp_left_character = comp_left_character
+        self.comp_left_species = comp_left_species
+        self.comp_left_invalid = comp_left_invalid
+        self.comp_left_general = comp_left_general
+        self.comp_left_meta = comp_left_meta
+        self.comp_left_rating = comp_left_rating
+        self.compare_image_right = compare_image_right
+        self.comp_right_artist = comp_right_artist
+        self.comp_right_character = comp_right_character
+        self.comp_right_species = comp_right_species
+        self.comp_right_invalid = comp_right_invalid
+        self.comp_right_general = comp_right_general
+        self.comp_right_meta = comp_right_meta
+        self.comp_right_rating = comp_right_rating
+        self.transfer_tags_button = transfer_tags_button
+        self.remove_tags_button = remove_tags_button
+        self.remove_tags_both_l_button = remove_tags_both_l_button
+        self.transfer_tags_button_rl = transfer_tags_button_rl
+        self.remove_tags_button_rl = remove_tags_button_rl
+        self.remove_tags_both_r_button = remove_tags_both_r_button
+        self.comp_left_add_text = comp_left_add_text
+        self.comp_right_add_text = comp_right_add_text
+        self.comp_add_to_both_checkbox = comp_add_to_both_checkbox
+        self.apply_transfer_button = apply_transfer_button
+        self.apply_remove_button = apply_remove_button
         self.tag_remove_button = tag_remove_button
         self.tag_save_button = tag_save_button
         self.tag_add_textbox = tag_add_textbox
@@ -2259,6 +2584,9 @@ class Gallery_tab:
                 self.apply_to_all_type_select_checkboxgroup,
                 self.select_multiple_images_checkbox,
                 self.select_between_images_checkbox,
+                self.select_all_checkbox,
+                self.deselect_all_checkbox,
+                self.invert_selection_checkbox,
                 self.apply_datetime_sort_ckbx,
                 self.apply_datetime_choice_menu,
                 self.image_remove_button,
@@ -2266,6 +2594,34 @@ class Gallery_tab:
                 self.send_img_from_gallery_dropdown,
                 self.batch_send_from_gallery_checkbox,
                 self.send_img_from_gallery_button,
+                self.compare_button,
+                self.compare_image_left,
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+                self.compare_image_right,
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+                self.transfer_tags_button,
+                self.remove_tags_button,
+                self.remove_tags_both_l_button,
+                transfer_tags_button_rl,
+                remove_tags_button_rl,
+                self.remove_tags_both_r_button,
+                comp_left_add_text,
+                comp_right_add_text,
+                comp_add_to_both_checkbox,
+                apply_transfer_button,
+                apply_remove_button,
                 self.tag_remove_button,
                 self.tag_save_button,
                 self.tag_add_textbox,
@@ -2453,6 +2809,233 @@ class Gallery_tab:
             fn=self.set_ckbx_state,
             inputs=[self.select_multiple_images_checkbox, self.multi_select_ckbx_state],
             outputs=[self.multi_select_ckbx_state]
+        )
+        self.select_all_checkbox.change(
+            fn=self.handle_select_all,
+            inputs=[self.gallery_state],
+            outputs=[self.images_selected_state]
+        )
+        self.deselect_all_checkbox.change(
+            fn=self.handle_deselect_all,
+            inputs=[],
+            outputs=[self.images_selected_state]
+        )
+        self.invert_selection_checkbox.change(
+            fn=self.handle_invert_selection,
+            inputs=[self.gallery_state, self.images_selected_state],
+            outputs=[self.images_selected_state]
+        )
+        self.compare_button.click(
+            fn=self.compare_selected,
+            inputs=[self.gallery_state, self.images_selected_state],
+            outputs=[
+                self.compare_image_left,
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+                self.compare_image_right,
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ]
+        )
+        self.transfer_tags_button.click(
+            fn=self.transfer_left_to_right,
+            inputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+            ],
+            outputs=[
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ]
+        )
+        self.remove_tags_button.click(
+            fn=self.remove_left_from_right,
+            inputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+            ],
+            outputs=[
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ]
+        )
+        self.transfer_tags_button_rl.click(
+            fn=self.transfer_right_to_left,
+            inputs=[
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ],
+            outputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+            ]
+        )
+        self.remove_tags_button_rl.click(
+            fn=self.remove_right_from_left,
+            inputs=[
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ],
+            outputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+            ]
+        )
+        self.remove_tags_both_l_button.click(
+            fn=self.remove_left_from_both,
+            inputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+            ],
+            outputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ]
+        )
+        self.remove_tags_both_r_button.click(
+            fn=self.remove_right_from_both,
+            inputs=[
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ],
+            outputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ]
+        )
+        self.comp_left_add_text.submit(
+            fn=self.add_tag_left,
+            inputs=[self.comp_left_add_text, self.comp_add_to_both_checkbox],
+            outputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ]
+        )
+        self.comp_right_add_text.submit(
+            fn=self.add_tag_right,
+            inputs=[self.comp_right_add_text, self.comp_add_to_both_checkbox],
+            outputs=[
+                self.comp_left_artist,
+                self.comp_left_character,
+                self.comp_left_species,
+                self.comp_left_invalid,
+                self.comp_left_general,
+                self.comp_left_meta,
+                self.comp_left_rating,
+                self.comp_right_artist,
+                self.comp_right_character,
+                self.comp_right_species,
+                self.comp_right_invalid,
+                self.comp_right_general,
+                self.comp_right_meta,
+                self.comp_right_rating,
+            ]
+        )
+        self.apply_transfer_button.click(
+            fn=self.apply_transfer_to_selected,
+            inputs=[self.gallery_state, self.images_selected_state],
+            outputs=[]
+        )
+        self.apply_remove_button.click(
+            fn=self.apply_remove_to_selected,
+            inputs=[self.gallery_state, self.images_selected_state],
+            outputs=[]
         )
         self.download_folder_type.change(
             fn=self.show_searched_gallery,
