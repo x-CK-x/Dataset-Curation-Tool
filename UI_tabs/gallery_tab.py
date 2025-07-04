@@ -396,6 +396,52 @@ class Gallery_tab:
             return [copy.deepcopy(self.tags_csv_dict), value]
 
     def load_images_and_csvs(self):
+        if self.custom_dataset_dir:
+            # when using a custom dataset, populate the gallery exclusively
+            # from the provided folder and skip the default batch folders.
+            if "searched" in self.all_images_dict:
+                del self.all_images_dict["searched"]
+                self.all_images_dict["searched"] = {}
+
+            folder_path = self.custom_dataset_dir
+            self.all_images_dict = help.gather_media_tags(folder_path)
+            if set(self.all_images_dict.keys()) == {"searched"}:
+                subfolders = []
+                for root, dirs, _ in os.walk(folder_path):
+                    for d in dirs:
+                        subfolders.append(os.path.join(root, d))
+                if subfolders:
+                    found = help.gather_media_tags(*subfolders)
+                    for k, v in found.items():
+                        if k == "searched":
+                            continue
+                        self.all_images_dict.setdefault(k, {}).update(v)
+
+            # map image ids to actual file paths which may reside in
+            # nested subdirectories
+            self.search_image_paths = {}
+            for ext, images in self.all_images_dict.items():
+                if ext == "searched":
+                    continue
+                for img_id in images.keys():
+                    matches = glob.glob(os.path.join(folder_path, "**", f"{img_id}.{ext}"), recursive=True)
+                    if matches:
+                        self.search_image_paths[(ext, img_id)] = matches[0]
+                    else:
+                        self.search_image_paths[(ext, img_id)] = os.path.join(folder_path, f"{img_id}.{ext}")
+
+            self.image_creation_times = {}
+            self.initialize_posts_timekeeper()
+            self.download_tab_manager.is_csv_loaded = True
+            self.artist_csv_dict = {}
+            self.character_csv_dict = {}
+            self.species_csv_dict = {}
+            self.general_csv_dict = {}
+            self.meta_csv_dict = {}
+            self.rating_csv_dict = {}
+            self.tags_csv_dict = {}
+            return
+
         if (not self.download_tab_manager.is_csv_loaded) or (not self.all_images_dict or len(self.all_images_dict.keys()) == 0):
 
             batch_path_check = os.path.exists(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]))
@@ -458,16 +504,40 @@ class Gallery_tab:
         if "searched" in self.all_images_dict:
             del self.all_images_dict["searched"]
             self.all_images_dict["searched"] = {}
-
-        full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
-                                           self.download_tab_manager.settings_json["downloaded_posts_folder"])
-        if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
-            folder_paths = []
-            for key, val in self.download_tab_manager.settings_json.items():
-                if key.endswith("_folder") and key not in ["batch_folder", "downloaded_posts_folder", "tag_count_list_folder", "resized_img_folder"]:
-                    folder_paths.append(os.path.join(full_path_downloads, val))
-            self.all_images_dict = help.gather_media_tags(*folder_paths)
-            self.persist_images_to_db(full_path_downloads)
+        if self.custom_dataset_dir:
+            folder_path = self.custom_dataset_dir
+            self.all_images_dict = help.gather_media_tags(folder_path)
+            if set(self.all_images_dict.keys()) == {"searched"}:
+                subfolders = []
+                for root, dirs, _ in os.walk(folder_path):
+                    for d in dirs:
+                        subfolders.append(os.path.join(root, d))
+                if subfolders:
+                    found = help.gather_media_tags(*subfolders)
+                    for k, v in found.items():
+                        if k == "searched":
+                            continue
+                        self.all_images_dict.setdefault(k, {}).update(v)
+            self.search_image_paths = {}
+            for ext, images in self.all_images_dict.items():
+                if ext == "searched":
+                    continue
+                for img_id in images.keys():
+                    matches = glob.glob(os.path.join(folder_path, "**", f"{img_id}.{ext}"), recursive=True)
+                    if matches:
+                        self.search_image_paths[(ext, img_id)] = matches[0]
+                    else:
+                        self.search_image_paths[(ext, img_id)] = os.path.join(folder_path, f"{img_id}.{ext}")
+        else:
+            full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
+                                               self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0:
+                folder_paths = []
+                for key, val in self.download_tab_manager.settings_json.items():
+                    if key.endswith("_folder") and key not in ["batch_folder", "downloaded_posts_folder", "tag_count_list_folder", "resized_img_folder"]:
+                        folder_paths.append(os.path.join(full_path_downloads, val))
+                self.all_images_dict = help.gather_media_tags(*folder_paths)
+                self.persist_images_to_db(full_path_downloads)
 
         # populate the timekeeping dictionary
         self.initialize_posts_timekeeper()
