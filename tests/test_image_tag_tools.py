@@ -49,3 +49,17 @@ def test_compare_and_apply(tmp_path):
 
     apply_tag_modifications([str(img3)], add_tags=diff["a_only"], remove_tags=[])
     assert load_image_tags(str(img3)) == ["a", "c"]
+
+
+def test_apply_modifications_multiple(tmp_path):
+    img1 = tmp_path / "imgA.png"
+    img2 = tmp_path / "imgB.png"
+    for img in (img1, img2):
+        img.write_bytes(b"1")
+    (tmp_path / "imgA.txt").write_text("a\nb\n")
+    (tmp_path / "imgB.txt").write_text("b\nc\n")
+
+    apply_tag_modifications([str(img1), str(img2)], add_tags=["d"], remove_tags=["a"])
+
+    assert load_image_tags(str(img1)) == ["b", "d"]
+    assert load_image_tags(str(img2)) == ["b", "c", "d"]
