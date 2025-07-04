@@ -93,8 +93,10 @@ class Gallery_tab:
         self.remove_buffer = []    # tags to remove when applying to other images
 
         # optional path to a user provided dataset loaded via the
-        # custom dataset tab
+        # custom dataset tab. When this is set, the gallery should only
+        # display images from this directory.
         self.custom_dataset_dir = None
+        self.custom_dataset_loaded = False
 
 
 
@@ -288,6 +290,7 @@ class Gallery_tab:
             return gr.update(), gr.update()
 
         self.custom_dataset_dir = folder_path
+        self.custom_dataset_loaded = True
         # gather tags from the provided folder. if no tag files are found,
         # recursively search all subdirectories as a fallback so that nested
         # datasets still load properly.
@@ -397,6 +400,8 @@ class Gallery_tab:
 
     def load_images_and_csvs(self):
         if self.custom_dataset_dir:
+            self.custom_dataset_loaded = True
+            self.custom_dataset_loaded = True
             # when using a custom dataset, populate the gallery exclusively
             # from the provided folder and skip the default batch folders.
             if "searched" in self.all_images_dict:
@@ -2649,31 +2654,46 @@ class Gallery_tab:
                 del self.all_images_dict["searched"]
                 self.all_images_dict["searched"] = {}
 
-            base_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
-            base_path = os.path.join(base_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+            if self.custom_dataset_loaded:
+                base_path = self.custom_dataset_dir
+            else:
+                base_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+                base_path = os.path.join(base_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
 
             # determine extensions based on mode
             if folder_type_select in ["images", "videos"]:
                 exts = self.image_formats if folder_type_select == "images" else self.video_formats
-                for ext in exts:
-                    folder_key = f"{ext}_folder"
-                    folder = self.download_tab_manager.settings_json.get(folder_key)
-                    if not folder:
-                        continue
-                    path = os.path.join(base_path, folder)
-                    images.extend(glob.glob(os.path.join(path, f"*.{ext}")))
             else:
-                folder_path = os.path.join(base_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
-                if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
-                        (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
-                        not self.download_tab_manager.is_csv_loaded:
-                    images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
-                    help.verbose_print(f"images:\t{images}")
-                else:  # render from existing dictionary
-                    for name in list(self.all_images_dict[folder_type_select].keys()):
-                        images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
+                exts = [folder_type_select]
 
-            if not self.download_tab_manager.is_csv_loaded:
+            if self.custom_dataset_loaded:
+                for ext in exts:
+                    for img_id in self.all_images_dict.get(ext, {}).keys():
+                        img_path = self.search_image_paths.get((ext, img_id))
+                        if not img_path:
+                            img_path = os.path.join(base_path, f"{img_id}.{ext}")
+                        images.append(img_path)
+            else:
+                if folder_type_select in ["images", "videos"]:
+                    for ext in exts:
+                        folder_key = f"{ext}_folder"
+                        folder = self.download_tab_manager.settings_json.get(folder_key)
+                        if not folder:
+                            continue
+                        path = os.path.join(base_path, folder)
+                        images.extend(glob.glob(os.path.join(path, f"*.{ext}")))
+                else:
+                    folder_path = os.path.join(base_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
+                    if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
+                            (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
+                            not self.download_tab_manager.is_csv_loaded:
+                        images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
+                        help.verbose_print(f"images:\t{images}")
+                    else:  # render from existing dictionary
+                        for name in list(self.all_images_dict[folder_type_select].keys()):
+                            images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
+
+            if not self.custom_dataset_loaded and not self.download_tab_manager.is_csv_loaded:
                 full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
                                                    self.download_tab_manager.settings_json["downloaded_posts_folder"])
 
@@ -2838,32 +2858,47 @@ class Gallery_tab:
         if "searched" in self.all_images_dict:
             del self.all_images_dict["searched"]
             self.all_images_dict["searched"] = {}
-        base_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
-        base_path = os.path.join(base_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
+        if self.custom_dataset_loaded:
+            base_path = self.custom_dataset_dir
+        else:
+            base_path = os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"])
+            base_path = os.path.join(base_path, self.download_tab_manager.settings_json["downloaded_posts_folder"])
 
         images = []
         if folder_type_select in ["images", "videos"]:
             exts = self.image_formats if folder_type_select == "images" else self.video_formats
-            for ext in exts:
-                folder_key = f"{ext}_folder"
-                folder = self.download_tab_manager.settings_json.get(folder_key)
-                if not folder:
-                    continue
-                path = os.path.join(base_path, folder)
-                images.extend(glob.glob(os.path.join(path, f"*.{ext}")))
         else:
-            folder_path = os.path.join(base_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
-            if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
-                    (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
-                    not self.download_tab_manager.is_csv_loaded:
-                images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
+            exts = [folder_type_select]
+
+        if self.custom_dataset_loaded:
+            for ext in exts:
+                for img_id in self.all_images_dict.get(ext, {}).keys():
+                    img_path = self.search_image_paths.get((ext, img_id))
+                    if not img_path:
+                        img_path = os.path.join(base_path, f"{img_id}.{ext}")
+                    images.append(img_path)
+        else:
+            if folder_type_select in ["images", "videos"]:
+                for ext in exts:
+                    folder_key = f"{ext}_folder"
+                    folder = self.download_tab_manager.settings_json.get(folder_key)
+                    if not folder:
+                        continue
+                    path = os.path.join(base_path, folder)
+                    images.extend(glob.glob(os.path.join(path, f"*.{ext}")))
             else:
-                for name in list(self.all_images_dict[folder_type_select].keys()):
-                    images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
+                folder_path = os.path.join(base_path, self.download_tab_manager.settings_json[f"{folder_type_select}_folder"])
+                if not self.all_images_dict or len(self.all_images_dict.keys()) == 0 or \
+                        (folder_type_select in self.all_images_dict.keys() and len(self.all_images_dict[folder_type_select].keys()) == 0) or \
+                        not self.download_tab_manager.is_csv_loaded:
+                    images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
+                else:
+                    for name in list(self.all_images_dict[folder_type_select].keys()):
+                        images.append(os.path.join(folder_path, f"{str(name)}.{folder_type_select}"))
 
         self.download_tab_manager.is_csv_loaded = False
 
-        if not self.download_tab_manager.is_csv_loaded:
+        if not self.custom_dataset_loaded and not self.download_tab_manager.is_csv_loaded:
             full_path_downloads = os.path.join(os.path.join(self.cwd, self.download_tab_manager.settings_json["batch_folder"]),
                                                self.download_tab_manager.settings_json["downloaded_posts_folder"])
 
