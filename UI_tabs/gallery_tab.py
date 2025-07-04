@@ -1544,220 +1544,23 @@ class Gallery_tab:
         selected = set(images_selected_state)
         return sorted(list(all_indices - selected))
 
-    def handle_select_all(self, gallery_images):
-        images_selected_state = self.select_all(gallery_images)
+    def handle_select_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_deselect_all(self):
-        images_selected_state = self.deselect_all()
-        mapping = {}
-        self._update_search_from_mapping(mapping)
-        return images_selected_state, mapping, gr.update(value=False)
-
-    def handle_invert_selection(self, gallery_images, images_selected_state):
-        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+    def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.deselect_all()
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def compare_selected(self, gallery_images, images_selected_state):
-        if len(images_selected_state) != 2:
-            empty = [gr.update(value=None)] + [gr.update(choices=[], value=[]) for _ in range(7)]
-            return empty + empty
-        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
-                 for idx in images_selected_state]
-        self.compare_left_path = paths[0]
-        self.compare_right_path = paths[1]
-        # reset accumulated tag actions when a new pair is compared
-        self.transfer_buffer = []
-        self.remove_buffer = []
-
-        left_tags = image_tag_tools.load_image_tags(paths[0])
-        right_tags = image_tag_tools.load_image_tags(paths[1])
-
-        def categorize(tags):
-            groups = {"artist": [], "character": [], "species": [], "invalid": [], "general": [], "meta": [], "rating": []}
-            for t in tags:
-                cat = self.get_category_name(t)
-                if cat not in groups:
-                    cat = "invalid"
-                groups[cat].append(t)
-            return groups
-
-        left_groups = categorize(left_tags)
-        right_groups = categorize(right_tags)
-
-        outputs = [gr.update(value=paths[0])]
-        outputs += [gr.update(choices=left_groups[k], value=[]) for k in ["artist","character","species","invalid","general","meta","rating"]]
-        outputs.append(gr.update(value=paths[1]))
-        outputs += [gr.update(choices=right_groups[k], value=[]) for k in ["artist","character","species","invalid","general","meta","rating"]]
-        return outputs
-
-    def transfer_left_to_right(self, left_artist, left_character, left_species, left_invalid,
-                               left_general, left_meta, left_rating):
-        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
-            return [gr.update() for _ in range(7)]
-        tags = [t.strip() for t in (
-            left_artist + left_character + left_species + left_invalid +
-            left_general + left_meta + left_rating
-        )]
-        image_tag_tools.transfer_tags(
-            self.compare_left_path,
-            self.compare_right_path,
-            tags,
-            remove=False,
-        )
-        self.transfer_buffer = sorted(set(self.transfer_buffer + tags))
-        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[8:]
-        return groups[1:]
-
-    def remove_left_from_right(self, left_artist, left_character, left_species, left_invalid,
-                               left_general, left_meta, left_rating):
-        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
-            return [gr.update() for _ in range(7)]
-        tags = [t.strip() for t in (
-            left_artist + left_character + left_species + left_invalid +
-            left_general + left_meta + left_rating
-        )]
-        image_tag_tools.apply_tag_modifications(
-            [self.compare_right_path],
-            remove_tags=tags,
-        )
-        self.remove_buffer = sorted(set(self.remove_buffer + tags))
-        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[8:]
-        return groups[1:]
-
-    def transfer_right_to_left(self, right_artist, right_character, right_species, right_invalid,
-                               right_general, right_meta, right_rating):
-        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
-            return [gr.update() for _ in range(7)]
-        tags = [t.strip() for t in (
-            right_artist + right_character + right_species + right_invalid +
-            right_general + right_meta + right_rating
-        )]
-        image_tag_tools.transfer_tags(
-            self.compare_right_path,
-            self.compare_left_path,
-            tags,
-            remove=False,
-        )
-        self.transfer_buffer = sorted(set(self.transfer_buffer + tags))
-        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[:8]
-        return groups[1:]
-
-    def remove_right_from_left(self, right_artist, right_character, right_species, right_invalid,
-                               right_general, right_meta, right_rating):
-        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
-            return [gr.update() for _ in range(7)]
-        tags = [t.strip() for t in (
-            right_artist + right_character + right_species + right_invalid +
-            right_general + right_meta + right_rating
-        )]
-        image_tag_tools.apply_tag_modifications(
-            [self.compare_left_path],
-            remove_tags=tags,
-        )
-        self.remove_buffer = sorted(set(self.remove_buffer + tags))
-        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[:8]
-        return groups[1:]
-
-    def remove_left_from_both(self, left_artist, left_character, left_species, left_invalid,
-                              left_general, left_meta, left_rating):
-        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
-            return [gr.update() for _ in range(14)]
-        tags = [t.strip() for t in (
-            left_artist + left_character + left_species + left_invalid +
-            left_general + left_meta + left_rating
-        )]
-        image_tag_tools.apply_tag_modifications(
-            [self.compare_left_path, self.compare_right_path],
-            remove_tags=tags,
-        )
-        self.remove_buffer = sorted(set(self.remove_buffer + tags))
-        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
-        return outputs[1:8] + outputs[9:]
-
-    def remove_right_from_both(self, right_artist, right_character, right_species, right_invalid,
-                               right_general, right_meta, right_rating):
-        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
-            return [gr.update() for _ in range(14)]
-        tags = [t.strip() for t in (
-            right_artist + right_character + right_species + right_invalid +
-            right_general + right_meta + right_rating
-        )]
-        image_tag_tools.apply_tag_modifications(
-            [self.compare_left_path, self.compare_right_path],
-            remove_tags=tags,
-        )
-        self.remove_buffer = sorted(set(self.remove_buffer + tags))
-        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
-        return outputs[1:8] + outputs[9:]
-
-    def add_tag_left(self, tag, apply_both):
-        if not tag or not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
-            return [gr.update() for _ in range(14)]
-        clean_tag = tag.strip()
-        targets = [self.compare_left_path]
-        if apply_both:
-            targets.append(self.compare_right_path)
-        image_tag_tools.apply_tag_modifications(targets, add_tags=[clean_tag])
-        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
-        return outputs[1:8] + outputs[9:]
-
-    def add_tag_right(self, tag, apply_both):
-        if not tag or not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
-            return [gr.update() for _ in range(14)]
-        clean_tag = tag.strip()
-        targets = [self.compare_right_path]
-        if apply_both:
-            targets.append(self.compare_left_path)
-        image_tag_tools.apply_tag_modifications(targets, add_tags=[clean_tag])
-        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
-        return outputs[1:8] + outputs[9:]
-
-    def apply_transfer_to_selected(self, gallery_images, images_selected_state):
-        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
-                 for idx in images_selected_state]
-        if self.transfer_buffer:
-            image_tag_tools.apply_tag_modifications(paths, add_tags=self.transfer_buffer)
-        return []
-
-    def apply_remove_to_selected(self, gallery_images, images_selected_state):
-        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
-                 for idx in images_selected_state]
-        if self.remove_buffer:
-            image_tag_tools.apply_tag_modifications(paths, remove_tags=self.remove_buffer)
-        return []
-
-    def select_all(self, gallery_images):
-        """Return indices of all images for selection."""
-        return list(range(len(gallery_images)))
-
-    def deselect_all(self):
-        """Return empty selection list."""
-        return []
-
-    def invert_selected(self, gallery_images, images_selected_state):
-        all_indices = set(range(len(gallery_images)))
-        selected = set(images_selected_state)
-        return sorted(list(all_indices - selected))
-
-    def handle_select_all(self, gallery_images):
-        images_selected_state = self.select_all(gallery_images)
-        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
-        self._update_search_from_mapping(mapping)
-        return images_selected_state, mapping, gr.update(value=False)
-
-    def handle_deselect_all(self):
-        images_selected_state = self.deselect_all()
-        mapping = {}
-        self._update_search_from_mapping(mapping)
-        return images_selected_state, mapping, gr.update(value=False)
-
-    def handle_invert_selection(self, gallery_images, images_selected_state):
-        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+    def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
@@ -1944,20 +1747,23 @@ class Gallery_tab:
         selected = set(images_selected_state)
         return sorted(list(all_indices - selected))
 
-    def handle_select_all(self, gallery_images):
-        images_selected_state = self.select_all(gallery_images)
+    def handle_select_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_deselect_all(self):
-        images_selected_state = self.deselect_all()
-        mapping = {}
+    def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.deselect_all()
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_invert_selection(self, gallery_images, images_selected_state):
-        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+    def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
@@ -2144,20 +1950,226 @@ class Gallery_tab:
         selected = set(images_selected_state)
         return sorted(list(all_indices - selected))
 
-    def handle_select_all(self, gallery_images):
-        images_selected_state = self.select_all(gallery_images)
+    def handle_select_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_deselect_all(self):
-        images_selected_state = self.deselect_all()
-        mapping = {}
+    def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.deselect_all()
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_invert_selection(self, gallery_images, images_selected_state):
-        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+    def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
+
+    def compare_selected(self, gallery_images, images_selected_state):
+        if len(images_selected_state) != 2:
+            empty = [gr.update(value=None)] + [gr.update(choices=[], value=[]) for _ in range(7)]
+            return empty + empty
+        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                 for idx in images_selected_state]
+        self.compare_left_path = paths[0]
+        self.compare_right_path = paths[1]
+        # reset accumulated tag actions when a new pair is compared
+        self.transfer_buffer = []
+        self.remove_buffer = []
+
+        left_tags = image_tag_tools.load_image_tags(paths[0])
+        right_tags = image_tag_tools.load_image_tags(paths[1])
+
+        def categorize(tags):
+            groups = {"artist": [], "character": [], "species": [], "invalid": [], "general": [], "meta": [], "rating": []}
+            for t in tags:
+                cat = self.get_category_name(t)
+                if cat not in groups:
+                    cat = "invalid"
+                groups[cat].append(t)
+            return groups
+
+        left_groups = categorize(left_tags)
+        right_groups = categorize(right_tags)
+
+        outputs = [gr.update(value=paths[0])]
+        outputs += [gr.update(choices=left_groups[k], value=[]) for k in ["artist","character","species","invalid","general","meta","rating"]]
+        outputs.append(gr.update(value=paths[1]))
+        outputs += [gr.update(choices=right_groups[k], value=[]) for k in ["artist","character","species","invalid","general","meta","rating"]]
+        return outputs
+
+    def transfer_left_to_right(self, left_artist, left_character, left_species, left_invalid,
+                               left_general, left_meta, left_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = [t.strip() for t in (
+            left_artist + left_character + left_species + left_invalid +
+            left_general + left_meta + left_rating
+        )]
+        image_tag_tools.transfer_tags(
+            self.compare_left_path,
+            self.compare_right_path,
+            tags,
+            remove=False,
+        )
+        self.transfer_buffer = sorted(set(self.transfer_buffer + tags))
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[8:]
+        return groups[1:]
+
+    def remove_left_from_right(self, left_artist, left_character, left_species, left_invalid,
+                               left_general, left_meta, left_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = [t.strip() for t in (
+            left_artist + left_character + left_species + left_invalid +
+            left_general + left_meta + left_rating
+        )]
+        image_tag_tools.apply_tag_modifications(
+            [self.compare_right_path],
+            remove_tags=tags,
+        )
+        self.remove_buffer = sorted(set(self.remove_buffer + tags))
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[8:]
+        return groups[1:]
+
+    def transfer_right_to_left(self, right_artist, right_character, right_species, right_invalid,
+                               right_general, right_meta, right_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = [t.strip() for t in (
+            right_artist + right_character + right_species + right_invalid +
+            right_general + right_meta + right_rating
+        )]
+        image_tag_tools.transfer_tags(
+            self.compare_right_path,
+            self.compare_left_path,
+            tags,
+            remove=False,
+        )
+        self.transfer_buffer = sorted(set(self.transfer_buffer + tags))
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[:8]
+        return groups[1:]
+
+    def remove_right_from_left(self, right_artist, right_character, right_species, right_invalid,
+                               right_general, right_meta, right_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(7)]
+        tags = [t.strip() for t in (
+            right_artist + right_character + right_species + right_invalid +
+            right_general + right_meta + right_rating
+        )]
+        image_tag_tools.apply_tag_modifications(
+            [self.compare_left_path],
+            remove_tags=tags,
+        )
+        self.remove_buffer = sorted(set(self.remove_buffer + tags))
+        groups = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])[:8]
+        return groups[1:]
+
+    def remove_left_from_both(self, left_artist, left_character, left_species, left_invalid,
+                              left_general, left_meta, left_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(14)]
+        tags = [t.strip() for t in (
+            left_artist + left_character + left_species + left_invalid +
+            left_general + left_meta + left_rating
+        )]
+        image_tag_tools.apply_tag_modifications(
+            [self.compare_left_path, self.compare_right_path],
+            remove_tags=tags,
+        )
+        self.remove_buffer = sorted(set(self.remove_buffer + tags))
+        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
+        return outputs[1:8] + outputs[9:]
+
+    def remove_right_from_both(self, right_artist, right_character, right_species, right_invalid,
+                               right_general, right_meta, right_rating):
+        if not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(14)]
+        tags = [t.strip() for t in (
+            right_artist + right_character + right_species + right_invalid +
+            right_general + right_meta + right_rating
+        )]
+        image_tag_tools.apply_tag_modifications(
+            [self.compare_left_path, self.compare_right_path],
+            remove_tags=tags,
+        )
+        self.remove_buffer = sorted(set(self.remove_buffer + tags))
+        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
+        return outputs[1:8] + outputs[9:]
+
+    def add_tag_left(self, tag, apply_both):
+        if not tag or not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(14)]
+        clean_tag = tag.strip()
+        targets = [self.compare_left_path]
+        if apply_both:
+            targets.append(self.compare_right_path)
+        image_tag_tools.apply_tag_modifications(targets, add_tags=[clean_tag])
+        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
+        return outputs[1:8] + outputs[9:]
+
+    def add_tag_right(self, tag, apply_both):
+        if not tag or not hasattr(self, "compare_left_path") or not hasattr(self, "compare_right_path"):
+            return [gr.update() for _ in range(14)]
+        clean_tag = tag.strip()
+        targets = [self.compare_right_path]
+        if apply_both:
+            targets.append(self.compare_left_path)
+        image_tag_tools.apply_tag_modifications(targets, add_tags=[clean_tag])
+        outputs = self.compare_selected([self.compare_left_path, self.compare_right_path], [0,1])
+        return outputs[1:8] + outputs[9:]
+
+    def apply_transfer_to_selected(self, gallery_images, images_selected_state):
+        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                 for idx in images_selected_state]
+        if self.transfer_buffer:
+            image_tag_tools.apply_tag_modifications(paths, add_tags=self.transfer_buffer)
+        return []
+
+    def apply_remove_to_selected(self, gallery_images, images_selected_state):
+        paths = [gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                 for idx in images_selected_state]
+        if self.remove_buffer:
+            image_tag_tools.apply_tag_modifications(paths, remove_tags=self.remove_buffer)
+        return []
+
+    def select_all(self, gallery_images):
+        """Return indices of all images for selection."""
+        return list(range(len(gallery_images)))
+
+    def deselect_all(self):
+        """Return empty selection list."""
+        return []
+
+    def invert_selected(self, gallery_images, images_selected_state):
+        all_indices = set(range(len(gallery_images)))
+        selected = set(images_selected_state)
+        return sorted(list(all_indices - selected))
+
+    def handle_select_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.select_all(gallery_images)
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
+
+    def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.deselect_all()
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
+        self._update_search_from_mapping(mapping)
+        return images_selected_state, mapping, gr.update(value=False)
+
+    def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
@@ -2302,20 +2314,23 @@ class Gallery_tab:
         selected = set(images_selected_state)
         return sorted(list(all_indices - selected))
 
-    def handle_select_all(self, gallery_images):
-        images_selected_state = self.select_all(gallery_images)
+    def handle_select_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_deselect_all(self):
-        images_selected_state = self.deselect_all()
-        mapping = {}
+    def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.deselect_all()
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_invert_selection(self, gallery_images, images_selected_state):
-        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+    def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
@@ -2420,20 +2435,23 @@ class Gallery_tab:
         selected = set(images_selected_state)
         return sorted(list(all_indices - selected))
 
-    def handle_select_all(self, gallery_images):
-        images_selected_state = self.select_all(gallery_images)
+    def handle_select_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.select_all(gallery_images)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_deselect_all(self):
-        images_selected_state = self.deselect_all()
-        mapping = {}
+    def handle_deselect_all(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.deselect_all()
+        mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
 
-    def handle_invert_selection(self, gallery_images, images_selected_state):
-        images_selected_state = self.invert_selected(gallery_images, images_selected_state)
+    def handle_invert_selection(self, gallery_images, images_selected_state, toggle):
+        if toggle:
+            images_selected_state = self.invert_selected(gallery_images, images_selected_state)
         mapping = self._build_selection_mapping(gallery_images, images_selected_state)
         self._update_search_from_mapping(mapping)
         return images_selected_state, mapping, gr.update(value=False)
@@ -3620,7 +3638,7 @@ class Gallery_tab:
         )
         self.select_all_checkbox.change(
             fn=self.handle_select_all,
-            inputs=[self.gallery_state],
+            inputs=[self.gallery_state, self.images_selected_state, self.select_all_checkbox],
             outputs=[self.images_selected_state, self.only_selected_state_object, self.select_all_checkbox]
         ).then(
             None,
@@ -3630,7 +3648,7 @@ class Gallery_tab:
         )
         self.deselect_all_checkbox.change(
             fn=self.handle_deselect_all,
-            inputs=[],
+            inputs=[self.gallery_state, self.images_selected_state, self.deselect_all_checkbox],
             outputs=[self.images_selected_state, self.only_selected_state_object, self.deselect_all_checkbox]
         ).then(
             None,
@@ -3640,7 +3658,7 @@ class Gallery_tab:
         )
         self.invert_selection_checkbox.change(
             fn=self.handle_invert_selection,
-            inputs=[self.gallery_state, self.images_selected_state],
+            inputs=[self.gallery_state, self.images_selected_state, self.invert_selection_checkbox],
             outputs=[self.images_selected_state, self.only_selected_state_object, self.invert_selection_checkbox]
         ).then(
             None,
