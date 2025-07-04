@@ -2949,7 +2949,8 @@ class Gallery_tab:
             self.gallery_state.value = images
         except Exception:
             pass
-        return gr.update(value=images, visible=True)
+        count = self.get_total_image_count()
+        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
 
     def reset_gallery_component_only(self):
         help.verbose_print("reset_gallery_component_only")
