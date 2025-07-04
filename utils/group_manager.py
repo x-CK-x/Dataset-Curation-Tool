@@ -60,7 +60,6 @@ def load_groups(groups: Dict[str, Group], names: Iterable[str]) -> Group:
         items.extend(groups.get(n, []))
     return _unique_items(items)
 
-
 def save_groups_file(groups: Dict[str, Group], path: str) -> None:
     """Write groups dictionary to ``path`` as JSON."""
     dir_name = os.path.dirname(path)
@@ -84,4 +83,3 @@ def load_groups_file(path: str) -> Dict[str, Group]:
     for k, v in data.items():
         groups[k] = [list(item) for item in v]
     return groups
-

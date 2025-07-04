@@ -3502,7 +3502,6 @@ class Gallery_tab:
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", object_fit="contain", interactive=True, columns=3, height=1356,
                          elem_classes="custom-gallery")
 
-
         self.refresh_aspect_btn = refresh_aspect_btn
         self.download_folder_type = download_folder_type
         self.img_id_textbox = img_id_textbox
