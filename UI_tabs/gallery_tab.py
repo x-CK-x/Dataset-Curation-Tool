@@ -12,6 +12,8 @@ from utils import group_manager
 
 from utils import group_manager
 
+from utils import group_manager
+
 from utils import js_constants as js_, md_constants as md_, helper_functions as help, image_tag_tools
 
 
@@ -79,6 +81,10 @@ class Gallery_tab:
         # stores the currently displayed gallery image paths to avoid passing
         # filepaths through gradio inputs
         self.gallery_state = gr.State([])
+
+        # mapping of group name -> list of [ext, img_id]
+        self.groups_config_path = os.path.join(self.cwd, "groups.json")
+        self.groups_state = gr.State(group_manager.load_groups_file(self.groups_config_path))
 
         # mapping of group name -> list of [ext, img_id]
         self.groups_config_path = os.path.join(self.cwd, "groups.json")
@@ -654,7 +660,11 @@ class Gallery_tab:
         self.only_selected_state_object.value = {}
         self._debug_selection([], {})
         count = self.get_total_image_count()
-        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
+        return (
+            gr.update(value=images, visible=True),
+            gr.update(value=f"Total Images: {count}"),
+            images,
+        )
 
     def add_to_csv_dictionaries(self, string_category, tag, count=1):
         self.artist_csv_dict, self.character_csv_dict, self.species_csv_dict, \
@@ -1603,7 +1613,11 @@ class Gallery_tab:
         except Exception:
             pass
         count = self.get_total_image_count()
-        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
+        return (
+            gr.update(value=images, visible=True),
+            gr.update(value=f"Total Images: {count}"),
+            images,
+        )
 
     def clear_categories(self):
         artist_comp_checkboxgroup = gr.update(choices=[])
@@ -2779,7 +2793,11 @@ class Gallery_tab:
         except Exception:
             pass
         count = self.get_total_image_count()
-        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
+        return (
+            gr.update(value=images, visible=True),
+            gr.update(value=f"Total Images: {count}"),
+            images,
+        )
 
     def extract_name_and_extention(self, gallery_comp_path):
         # help.verbose_print(f"gallery_comp_path:\t\t{gallery_comp_path}")
@@ -2986,7 +3004,11 @@ class Gallery_tab:
         self.only_selected_state_object.value = {}
         self._debug_selection([], {})
         count = self.get_total_image_count()
-        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
+        return (
+            gr.update(value=images, visible=True),
+            gr.update(value=f"Total Images: {count}"),
+            images,
+        )
 
     def reset_gallery_component_only(self):
         help.verbose_print("reset_gallery_component_only")
@@ -3534,6 +3556,7 @@ class Gallery_tab:
 
 
 
+
         self.refresh_aspect_btn = refresh_aspect_btn
         self.download_folder_type = download_folder_type
         self.img_id_textbox = img_id_textbox
@@ -3768,7 +3791,7 @@ class Gallery_tab:
             fn=self.search_tags,
             inputs=[self.tag_search_textbox, self.apply_to_all_type_select_checkboxgroup, self.apply_datetime_sort_ckbx,
                     self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
@@ -3804,7 +3827,7 @@ class Gallery_tab:
             outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]
         )
         self.image_save_ids_button.click(
             fn=self.save_image_changes,
@@ -3846,7 +3869,7 @@ class Gallery_tab:
             outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]).then(
             fn=self.clear_categories,
             inputs=[],
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
@@ -4114,7 +4137,7 @@ class Gallery_tab:
         self.download_folder_type.change(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
@@ -4138,7 +4161,7 @@ class Gallery_tab:
         self.refresh_aspect_btn.click(
             fn=self.force_reload_show_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]
         )
         self.remove_now_button.click(
             fn=self.remove_from_all,
