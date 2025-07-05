@@ -10,6 +10,8 @@ from utils import group_manager
 
 from utils import group_manager
 
+from utils import group_manager
+
 from utils import js_constants as js_, md_constants as md_, helper_functions as help, image_tag_tools
 
 
@@ -77,6 +79,10 @@ class Gallery_tab:
         # stores the currently displayed gallery image paths to avoid passing
         # filepaths through gradio inputs
         self.gallery_state = gr.State([])
+
+        # mapping of group name -> list of [ext, img_id]
+        self.groups_config_path = os.path.join(self.cwd, "groups.json")
+        self.groups_state = gr.State(group_manager.load_groups_file(self.groups_config_path))
 
         # mapping of group name -> list of [ext, img_id]
         self.groups_config_path = os.path.join(self.cwd, "groups.json")
@@ -632,6 +638,9 @@ class Gallery_tab:
         return images
 
     def search_tags(self, tag_search_textbox, global_search_opts, sort_images, sort_option):
+        # clear previous search results before filtering
+        self.all_images_dict["searched"] = {}
+        self.search_image_paths = {}
         # update SEARCHED in global dictionary
         self.filter_images_by_tags(tag_search_textbox, global_search_opts)
         # return updated gallery
@@ -3362,19 +3371,6 @@ class Gallery_tab:
                                   "Select All", "Clear All", "Invert All"]
 
             gr.Markdown(md_.preview)
-            with gr.Accordion("Groups", open=False):
-                groups_dropdown = gr.Dropdown(label="Saved Groups", choices=list(self.groups_state.value.keys()), multiselect=True)
-                group_name_text = gr.Textbox(label="Group Name", lines=1)
-                with gr.Row():
-                    save_group_button = gr.Button(value="Save Group", variant='primary')
-                    load_group_button = gr.Button(value="Load Group", variant='secondary')
-                    delete_group_button = gr.Button(value="Delete Group", variant='stop')
-                with gr.Row():
-                    rename_group_button = gr.Button(value="Rename Group")
-                    duplicate_group_button = gr.Button(value="Duplicate Group")
-                with gr.Row():
-                    save_groups_cfg_button = gr.Button(value="Save Config")
-                    load_groups_cfg_button = gr.Button(value="Load Config")
             with gr.Row():
                 with gr.Column():
                     with gr.Row():
@@ -3501,6 +3497,19 @@ class Gallery_tab:
                         img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                         img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                         img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
+                        with gr.Accordion("Groups", open=False):
+                            groups_dropdown = gr.Dropdown(label="Saved Groups", choices=list(self.groups_state.value.keys()), multiselect=True)
+                            group_name_text = gr.Textbox(label="Group Name", lines=1)
+                            with gr.Row():
+                                save_group_button = gr.Button(value="Save Group", variant='primary')
+                                load_group_button = gr.Button(value="Load Group", variant='secondary')
+                                delete_group_button = gr.Button(value="Delete Group", variant='stop')
+                            with gr.Row():
+                                rename_group_button = gr.Button(value="Rename Group")
+                                duplicate_group_button = gr.Button(value="Duplicate Group")
+                            with gr.Row():
+                                save_groups_cfg_button = gr.Button(value="Save Config")
+                                load_groups_cfg_button = gr.Button(value="Load Config")
                     with gr.Accordion("Advanced (Valid) Tag Options", open=False):
                         with gr.Row():
                             gr.Info(message="Uses file_type selection CheckBoxGroup at top of page to select which images are affected")
@@ -3521,6 +3530,7 @@ class Gallery_tab:
                             prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", object_fit="contain", interactive=True, columns=3, height=1356,
                          elem_classes="custom-gallery")
+
 
 
 
