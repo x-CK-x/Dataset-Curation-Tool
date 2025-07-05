@@ -6,6 +6,12 @@ import glob
 
 from utils import group_manager
 
+from utils import group_manager
+
+from utils import group_manager
+
+from utils import group_manager
+
 from utils import js_constants as js_, md_constants as md_, helper_functions as help, image_tag_tools
 
 
@@ -73,6 +79,18 @@ class Gallery_tab:
         # stores the currently displayed gallery image paths to avoid passing
         # filepaths through gradio inputs
         self.gallery_state = gr.State([])
+
+        # mapping of group name -> list of [ext, img_id]
+        self.groups_config_path = os.path.join(self.cwd, "groups.json")
+        self.groups_state = gr.State(group_manager.load_groups_file(self.groups_config_path))
+
+        # mapping of group name -> list of [ext, img_id]
+        self.groups_config_path = os.path.join(self.cwd, "groups.json")
+        self.groups_state = gr.State(group_manager.load_groups_file(self.groups_config_path))
+
+        # mapping of group name -> list of [ext, img_id]
+        self.groups_config_path = os.path.join(self.cwd, "groups.json")
+        self.groups_state = gr.State(group_manager.load_groups_file(self.groups_config_path))
 
         # mapping of group name -> list of [ext, img_id]
         self.groups_config_path = os.path.join(self.cwd, "groups.json")
@@ -3512,6 +3530,8 @@ class Gallery_tab:
                             prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", object_fit="contain", interactive=True, columns=3, height=1356,
                          elem_classes="custom-gallery")
+
+
 
 
         self.refresh_aspect_btn = refresh_aspect_btn
