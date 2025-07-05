@@ -4,6 +4,8 @@ import copy
 import datetime
 import glob
 
+from utils import group_manager
+
 from utils import js_constants as js_, md_constants as md_, helper_functions as help, image_tag_tools
 
 
@@ -71,6 +73,10 @@ class Gallery_tab:
         # stores the currently displayed gallery image paths to avoid passing
         # filepaths through gradio inputs
         self.gallery_state = gr.State([])
+
+        # mapping of group name -> list of [ext, img_id]
+        self.groups_config_path = os.path.join(self.cwd, "groups.json")
+        self.groups_state = gr.State(group_manager.load_groups_file(self.groups_config_path))
 
         # buffers holding tags transferred/removed during compare operations
         self.transfer_buffer = []  # tags to add when applying to other images
@@ -614,6 +620,9 @@ class Gallery_tab:
         return images
 
     def search_tags(self, tag_search_textbox, global_search_opts, sort_images, sort_option):
+        # clear previous search results before filtering
+        self.all_images_dict["searched"] = {}
+        self.search_image_paths = {}
         # update SEARCHED in global dictionary
         self.filter_images_by_tags(tag_search_textbox, global_search_opts)
         # return updated gallery
@@ -622,8 +631,16 @@ class Gallery_tab:
             self.gallery_state.value = images
         except Exception:
             pass
+        # clear previous selections when performing a new search
+        self.images_selected_state.value = []
+        self.only_selected_state_object.value = {}
+        self._debug_selection([], {})
         count = self.get_total_image_count()
-        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
+        return (
+            gr.update(value=images, visible=True),
+            gr.update(value=f"Total Images: {count}"),
+            images,
+        )
 
     def add_to_csv_dictionaries(self, string_category, tag, count=1):
         self.artist_csv_dict, self.character_csv_dict, self.species_csv_dict, \
@@ -1572,7 +1589,11 @@ class Gallery_tab:
         except Exception:
             pass
         count = self.get_total_image_count()
-        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
+        return (
+            gr.update(value=images, visible=True),
+            gr.update(value=f"Total Images: {count}"),
+            images,
+        )
 
     def clear_categories(self):
         artist_comp_checkboxgroup = gr.update(choices=[])
@@ -1608,6 +1629,7 @@ class Gallery_tab:
     def _debug_selection(self, images_selected_state, mapping):
         help.verbose_print(f"images_selected_states:\t{images_selected_state}")
         help.verbose_print(f"only_selected_state_object:\t{mapping}")
+        help.verbose_print(f"number_selected:\t{len(images_selected_state)}")
 
     def select_all(self, gallery_images):
         """Return indices of all images for selection."""
@@ -2747,7 +2769,11 @@ class Gallery_tab:
         except Exception:
             pass
         count = self.get_total_image_count()
-        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
+        return (
+            gr.update(value=images, visible=True),
+            gr.update(value=f"Total Images: {count}"),
+            images,
+        )
 
     def extract_name_and_extention(self, gallery_comp_path):
         # help.verbose_print(f"gallery_comp_path:\t\t{gallery_comp_path}")
@@ -2949,8 +2975,16 @@ class Gallery_tab:
             self.gallery_state.value = images
         except Exception:
             pass
+        # reset any previous selections on reload
+        self.images_selected_state.value = []
+        self.only_selected_state_object.value = {}
+        self._debug_selection([], {})
         count = self.get_total_image_count()
-        return gr.update(value=images, visible=True), gr.update(value=f"Total Images: {count}")
+        return (
+            gr.update(value=images, visible=True),
+            gr.update(value=f"Total Images: {count}"),
+            images,
+        )
 
     def reset_gallery_component_only(self):
         help.verbose_print("reset_gallery_component_only")
@@ -3461,6 +3495,19 @@ class Gallery_tab:
                         img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                         img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                         img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
+                        with gr.Accordion("Groups", open=False):
+                            groups_dropdown = gr.Dropdown(label="Saved Groups", choices=list(self.groups_state.value.keys()), multiselect=True)
+                            group_name_text = gr.Textbox(label="Group Name", lines=1)
+                            with gr.Row():
+                                save_group_button = gr.Button(value="Save Group", variant='primary')
+                                load_group_button = gr.Button(value="Load Group", variant='secondary')
+                                delete_group_button = gr.Button(value="Delete Group", variant='stop')
+                            with gr.Row():
+                                rename_group_button = gr.Button(value="Rename Group")
+                                duplicate_group_button = gr.Button(value="Duplicate Group")
+                            with gr.Row():
+                                save_groups_cfg_button = gr.Button(value="Save Config")
+                                load_groups_cfg_button = gr.Button(value="Load Config")
                     with gr.Accordion("Advanced (Valid) Tag Options", open=False):
                         with gr.Row():
                             gr.Info(message="Uses file_type selection CheckBoxGroup at top of page to select which images are affected")
@@ -3481,6 +3528,7 @@ class Gallery_tab:
                             prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
                 gallery_comp = gr.Gallery(visible=False, elem_id="gallery_id", object_fit="contain", interactive=True, columns=3, height=1356,
                          elem_classes="custom-gallery")
+
 
         self.refresh_aspect_btn = refresh_aspect_btn
         self.download_folder_type = download_folder_type
@@ -3552,6 +3600,15 @@ class Gallery_tab:
         self.prepend_option = prepend_option
         self.prepend_now_button = prepend_now_button
         self.total_image_counter = total_image_counter
+        self.groups_dropdown = groups_dropdown
+        self.group_name_text = group_name_text
+        self.save_group_button = save_group_button
+        self.load_group_button = load_group_button
+        self.delete_group_button = delete_group_button
+        self.rename_group_button = rename_group_button
+        self.duplicate_group_button = duplicate_group_button
+        self.save_groups_cfg_button = save_groups_cfg_button
+        self.load_groups_cfg_button = load_groups_cfg_button
 
         return [
                 self.refresh_aspect_btn,
@@ -3624,7 +3681,16 @@ class Gallery_tab:
                 self.prepend_option,
                 self.prepend_now_button,
                 self.total_image_counter,
-                self.gallery_state
+                self.gallery_state,
+                self.groups_dropdown,
+                self.group_name_text,
+                self.save_group_button,
+                self.load_group_button,
+                self.delete_group_button,
+                self.rename_group_button,
+                self.duplicate_group_button,
+                self.save_groups_cfg_button,
+                self.load_groups_cfg_button
                 ]
 
     def get_event_listeners(self):
@@ -3698,7 +3764,7 @@ class Gallery_tab:
             fn=self.search_tags,
             inputs=[self.tag_search_textbox, self.apply_to_all_type_select_checkboxgroup, self.apply_datetime_sort_ckbx,
                     self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
@@ -3734,7 +3800,7 @@ class Gallery_tab:
             outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]
         )
         self.image_save_ids_button.click(
             fn=self.save_image_changes,
@@ -3776,7 +3842,7 @@ class Gallery_tab:
             outputs=[self.gallery_comp, self.total_image_counter]).then(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]).then(
             fn=self.clear_categories,
             inputs=[],
             outputs=[self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group, self.img_species_tag_checkbox_group,
@@ -4044,7 +4110,7 @@ class Gallery_tab:
         self.download_folder_type.change(
             fn=self.show_searched_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]).then(
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]).then(
             fn=self.reset_selected_img,
             inputs=[self.img_id_textbox],
             outputs=[self.img_id_textbox, self.img_artist_tag_checkbox_group, self.img_character_tag_checkbox_group,
@@ -4068,7 +4134,7 @@ class Gallery_tab:
         self.refresh_aspect_btn.click(
             fn=self.force_reload_show_gallery,
             inputs=[self.download_folder_type, self.apply_datetime_sort_ckbx, self.apply_datetime_choice_menu],
-            outputs=[self.gallery_comp, self.total_image_counter]
+            outputs=[self.gallery_comp, self.total_image_counter, self.gallery_state]
         )
         self.remove_now_button.click(
             fn=self.remove_from_all,
@@ -4085,3 +4151,97 @@ class Gallery_tab:
             inputs=[self.keyword_search_text, self.prepend_text, self.prepend_option, self.apply_to_all_type_select_checkboxgroup],
             outputs=[]
         )
+        self.save_group_button.click(
+            fn=self.save_group,
+            inputs=[self.group_name_text, self.groups_state, self.gallery_state, self.images_selected_state],
+            outputs=[self.groups_state, self.groups_dropdown, self.group_name_text]
+        )
+        self.delete_group_button.click(
+            fn=self.delete_group,
+            inputs=[self.groups_state, self.groups_dropdown],
+            outputs=[self.groups_state, self.groups_dropdown]
+        )
+        self.load_group_button.click(
+            fn=self.load_group,
+            inputs=[self.gallery_state, self.groups_state, self.groups_dropdown],
+            outputs=[self.images_selected_state, self.only_selected_state_object]
+        ).then(
+            None,
+            inputs=[self.images_selected_state, self.multi_select_ckbx_state],
+            outputs=None,
+            js=js_.js_do_everything
+        )
+        self.rename_group_button.click(
+            fn=self.rename_group,
+            inputs=[self.groups_state, self.groups_dropdown, self.group_name_text],
+            outputs=[self.groups_state, self.groups_dropdown, self.group_name_text]
+        )
+        self.duplicate_group_button.click(
+            fn=self.duplicate_group,
+            inputs=[self.groups_state, self.groups_dropdown, self.group_name_text],
+            outputs=[self.groups_state, self.groups_dropdown, self.group_name_text]
+        )
+        self.save_groups_cfg_button.click(
+            fn=self.save_groups_config,
+            inputs=[self.groups_state],
+            outputs=[]
+        )
+        self.load_groups_cfg_button.click(
+            fn=self.load_groups_config,
+            inputs=[],
+            outputs=[self.groups_state, self.groups_dropdown]
+        )
+ 
+
+    def save_group(self, name, groups_state, gallery_images, indices):
+        paths = []
+        for idx in indices:
+            if 0 <= idx < len(gallery_images):
+                path = gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                paths.append(path)
+        groups = group_manager.save_group(groups_state or {}, name, paths)
+        self.groups_state.value = groups
+        return groups, gr.update(choices=list(groups.keys())), gr.update(value="")
+
+    def delete_group(self, groups_state, group_names):
+        groups = group_manager.delete_groups(groups_state or {}, group_names)
+        self.groups_state.value = groups
+        return groups, gr.update(choices=list(groups.keys()))
+
+    def rename_group(self, groups_state, group_names, new_name):
+        if not group_names:
+            return groups_state, gr.update(choices=list((groups_state or {}).keys())), gr.update()
+        groups = group_manager.rename_group(groups_state or {}, group_names[0], new_name)
+        self.groups_state.value = groups
+        return groups, gr.update(choices=list(groups.keys()), value=new_name if new_name in groups else None), gr.update(value="")
+
+    def duplicate_group(self, groups_state, group_names, new_name):
+        if not group_names:
+            return groups_state, gr.update(choices=list((groups_state or {}).keys())), gr.update()
+        groups = group_manager.duplicate_group(groups_state or {}, group_names[0], new_name)
+        self.groups_state.value = groups
+        return groups, gr.update(choices=list(groups.keys()), value=new_name if new_name in groups else None), gr.update(value="")
+
+    def load_group(self, gallery_images, groups_state, group_names):
+        targets = set(group_manager.load_groups(groups_state or {}, group_names))
+        indices = []
+        mapping = {}
+        for idx, img in enumerate(gallery_images):
+            path = img[0] if isinstance(img, (list, tuple)) else img
+            if path in targets:
+                ext, img_id = self.extract_name_and_extention(path)
+                indices.append(idx)
+                mapping[idx] = [ext, img_id]
+        self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = indices
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(indices, mapping)
+        return indices, mapping
+
+    def save_groups_config(self, groups_state):
+        group_manager.save_groups_file(groups_state or {}, self.groups_config_path)
+
+    def load_groups_config(self):
+        groups = group_manager.load_groups_file(self.groups_config_path)
+        self.groups_state.value = groups
+        return groups, gr.update(choices=list(groups.keys()))
