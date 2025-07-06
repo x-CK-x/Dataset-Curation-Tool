@@ -1099,7 +1099,7 @@ class Download_tab:
     def render_tab(self):
         with gr.Tab("Downloading Image/s"):
             config_save_var = gr.Button(value="Apply & Save Settings", variant='primary')
-            with gr.Accordion("Edit Requirements for General Download INFO", visible=True, open=True):
+            with gr.Accordion("Edit Requirements for General Download INFO", visible=True, open=False):
                 gr.Markdown(md_.general_config)
                 with gr.Row():
                     with gr.Column(min_width=50, scale=2):
