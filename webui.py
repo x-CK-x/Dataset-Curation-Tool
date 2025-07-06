@@ -23,7 +23,7 @@ def build_ui(enable_tag_suggestions=True):
 
     with gr.Blocks(css=f"{css_.preview_hide_rule} {css_.refresh_aspect_btn_rule} {css_.trim_row_length} {css_.trim_markdown_length} "
                        f"{css_.thumbnail_colored_border_css} {css_.refresh_models_btn_rule}"
-                       f"{css_.green_button_css} {css_.red_button_css} {css_.gallery_fix_height}") as demo:
+                       f"{css_.green_button_css} {css_.red_button_css} {css_.gallery_fix_height} {css_.tag_checkbox_color_css}") as demo:
 
         # set local path
         cwd = os.getcwd()

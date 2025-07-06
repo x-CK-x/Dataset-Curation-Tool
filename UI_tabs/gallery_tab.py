@@ -3473,22 +3473,22 @@ class Gallery_tab:
                             with gr.Row():
                                 with gr.Column():
                                     compare_image_left = gr.Image(type="filepath")
-                                    comp_left_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[])
-                                    comp_left_character = gr.CheckboxGroup(label='Character Tag/s', choices=[])
-                                    comp_left_species = gr.CheckboxGroup(label='Species Tag/s', choices=[])
-                                    comp_left_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[])
-                                    comp_left_general = gr.CheckboxGroup(label='General Tag/s', choices=[])
-                                    comp_left_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[])
-                                    comp_left_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[])
+                                    comp_left_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[], elem_classes='artist-checkbox')
+                                    comp_left_character = gr.CheckboxGroup(label='Character Tag/s', choices=[], elem_classes='character-checkbox')
+                                    comp_left_species = gr.CheckboxGroup(label='Species Tag/s', choices=[], elem_classes='species-checkbox')
+                                    comp_left_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[], elem_classes='invalid-checkbox')
+                                    comp_left_general = gr.CheckboxGroup(label='General Tag/s', choices=[], elem_classes='general-checkbox')
+                                    comp_left_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[], elem_classes='meta-checkbox')
+                                    comp_left_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[], elem_classes='rating-checkbox')
                                 with gr.Column():
                                     compare_image_right = gr.Image(type="filepath")
-                                    comp_right_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[])
-                                    comp_right_character = gr.CheckboxGroup(label='Character Tag/s', choices=[])
-                                    comp_right_species = gr.CheckboxGroup(label='Species Tag/s', choices=[])
-                                    comp_right_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[])
-                                    comp_right_general = gr.CheckboxGroup(label='General Tag/s', choices=[])
-                                    comp_right_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[])
-                                    comp_right_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[])
+                                    comp_right_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[], elem_classes='artist-checkbox')
+                                    comp_right_character = gr.CheckboxGroup(label='Character Tag/s', choices=[], elem_classes='character-checkbox')
+                                    comp_right_species = gr.CheckboxGroup(label='Species Tag/s', choices=[], elem_classes='species-checkbox')
+                                    comp_right_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[], elem_classes='invalid-checkbox')
+                                    comp_right_general = gr.CheckboxGroup(label='General Tag/s', choices=[], elem_classes='general-checkbox')
+                                    comp_right_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[], elem_classes='meta-checkbox')
+                                    comp_right_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[], elem_classes='rating-checkbox')
                             with gr.Row():
                                 transfer_tags_button = gr.Button(value="Transfer Left Tags → Right", variant='secondary')
                                 remove_tags_button = gr.Button(value="Remove Left Tags from Right", variant='secondary')
@@ -3527,14 +3527,14 @@ class Gallery_tab:
                                 tag_effects_gallery_dropdown = gr.Dropdown(label="Tag Selector Effect/s",
                                                                            choices=tag_selection_list, interactive=True)
 
-                        img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[])
+                        img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[], elem_classes='artist-checkbox')
                         img_character_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Character Tag/s',
-                                                                            value=[])
-                        img_species_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Species Tag/s', value=[])
-                        img_invalid_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Invalid Tag/s', value=[])
-                        img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
-                        img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
-                        img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
+                                                                            value=[], elem_classes='character-checkbox')
+                        img_species_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Species Tag/s', value=[], elem_classes='species-checkbox')
+                        img_invalid_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Invalid Tag/s', value=[], elem_classes='invalid-checkbox')
+                        img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[], elem_classes='general-checkbox')
+                        img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[], elem_classes='meta-checkbox')
+                        img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[], elem_classes='rating-checkbox')
                     with gr.Accordion("Advanced (Valid) Tag Options", open=False):
                         with gr.Row():
                             gr.Info(message="Uses file_type selection CheckBoxGroup at top of page to select which images are affected")
