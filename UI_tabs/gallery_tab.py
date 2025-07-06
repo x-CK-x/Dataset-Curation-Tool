@@ -3393,6 +3393,19 @@ class Gallery_tab:
                                   "Select All", "Clear All", "Invert All"]
 
             gr.Markdown(md_.preview)
+            with gr.Accordion("Groups", open=False):
+                groups_dropdown = gr.Dropdown(label="Saved Groups", choices=list(self.groups_state.value.keys()), multiselect=True)
+                group_name_text = gr.Textbox(label="Group Name", lines=1)
+                with gr.Row():
+                    save_group_button = gr.Button(value="Save Group", variant='primary')
+                    load_group_button = gr.Button(value="Load Group", variant='secondary')
+                    delete_group_button = gr.Button(value="Delete Group", variant='stop')
+                with gr.Row():
+                    rename_group_button = gr.Button(value="Rename Group")
+                    duplicate_group_button = gr.Button(value="Duplicate Group")
+                with gr.Row():
+                    save_groups_cfg_button = gr.Button(value="Save Config")
+                    load_groups_cfg_button = gr.Button(value="Load Config")
             with gr.Row():
                 with gr.Column():
                     with gr.Row():
@@ -3405,88 +3418,90 @@ class Gallery_tab:
                         img_id_textbox = gr.Textbox(label="Image ID", interactive=False, lines=1, value="")
                         total_image_counter = gr.Markdown(f"Total Images: {self.get_total_image_count()}")
                     with gr.Accordion("Image Sort & Selection Options"):
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=3):
-                                tag_search_textbox = gr.Textbox(
-                                    label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)",
-                                    lines=1, value="")
-                            with gr.Column(min_width=50, scale=2):
-                                tag_search_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True,
-                                                                             choices=[], interactive=True,
-                                                                             elem_id="searchbar_dropdown")
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=3):
-                                apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(
-                                    choices=["png", "jpg", "gif", "searched"],
-                                    label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
-                            with gr.Column(min_width=50, scale=1):
-                                select_multiple_images_checkbox = gr.Checkbox(label="Multi-Select", value=False,
-                                                                              info="Click Image/s")
-                            with gr.Column(min_width=50, scale=1):
-                                select_between_images_checkbox = gr.Checkbox(label="Shift-Select", value=False,
-                                                                             info="Selects All Between Two Images")
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=1):
-                                select_all_checkbox = gr.Checkbox(label="Select All", value=False)
-                            with gr.Column(min_width=50, scale=1):
-                                deselect_all_checkbox = gr.Checkbox(label="Deselect All", value=False)
-                            with gr.Column(min_width=50, scale=1):
-                                invert_selection_checkbox = gr.Checkbox(label="Invert", value=False)
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=1):
-                                apply_datetime_sort_ckbx = gr.Checkbox(label="Sort", value=False,
-                                                                       info="Image/s by date")
-                            with gr.Column(min_width=50, scale=4):
-                                apply_datetime_choice_menu = gr.Dropdown(label="Sort Order",
-                                                                         choices=["new-to-old", "old-to-new"], value=None,
-                                                                         info="Image/s by date")
-                        with gr.Row():
-                            image_remove_button = gr.Button(value="Remove Selected Image/s", variant='primary')
-                            image_save_ids_button = gr.Button(value="Save Image Changes", variant='primary')
-                        with gr.Row():
-                            with gr.Column(min_width=50, scale=2):
-                                send_img_from_gallery_dropdown = gr.Dropdown(label="Image to Tab Selector",
-                                                                             choices=tab_selection)
-                            with gr.Column(min_width=50, scale=1):
-                                batch_send_from_gallery_checkbox = gr.Checkbox(label="Send as Batch")
-                            with gr.Column(min_width=50, scale=3):
-                                send_img_from_gallery_button = gr.Button(value="Send Image to (Other) Tab",
-                                                                         variant='primary')
-                        with gr.Row():
-                            compare_button = gr.Button(value="Compare Selected", variant='secondary')
-                        with gr.Row():
-                            with gr.Column():
-                                compare_image_left = gr.Image(type="filepath")
-                                comp_left_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[])
-                                comp_left_character = gr.CheckboxGroup(label='Character Tag/s', choices=[])
-                                comp_left_species = gr.CheckboxGroup(label='Species Tag/s', choices=[])
-                                comp_left_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[])
-                                comp_left_general = gr.CheckboxGroup(label='General Tag/s', choices=[])
-                                comp_left_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[])
-                                comp_left_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[])
-                            with gr.Column():
-                                compare_image_right = gr.Image(type="filepath")
-                                comp_right_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[])
-                                comp_right_character = gr.CheckboxGroup(label='Character Tag/s', choices=[])
-                                comp_right_species = gr.CheckboxGroup(label='Species Tag/s', choices=[])
-                                comp_right_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[])
-                                comp_right_general = gr.CheckboxGroup(label='General Tag/s', choices=[])
-                                comp_right_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[])
-                                comp_right_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[])
-                        with gr.Row():
-                            transfer_tags_button = gr.Button(value="Transfer Left Tags → Right", variant='secondary')
-                            remove_tags_button = gr.Button(value="Remove Left Tags from Right", variant='secondary')
-                            remove_tags_both_l_button = gr.Button(value="Remove Left Tags from Both", variant='secondary')
-                            transfer_tags_button_rl = gr.Button(value="Transfer Right Tags → Left", variant='secondary')
-                            remove_tags_button_rl = gr.Button(value="Remove Right Tags from Left", variant='secondary')
-                            remove_tags_both_r_button = gr.Button(value="Remove Right Tags from Both", variant='secondary')
-                        with gr.Row():
-                            comp_left_add_text = gr.Textbox(label="Add Tag Left", lines=1)
-                            comp_right_add_text = gr.Textbox(label="Add Tag Right", lines=1)
-                            comp_add_to_both_checkbox = gr.Checkbox(label="Apply tag to both")
-                        with gr.Row():
-                            apply_transfer_button = gr.Button(value="Apply Transfer Tags to Selected", variant='primary')
-                            apply_remove_button = gr.Button(value="Apply Remove Tags to Selected", variant='primary')
+                        with gr.Accordion("Selection Options"):
+                            with gr.Row():
+                                with gr.Column(min_width=50, scale=3):
+                                    tag_search_textbox = gr.Textbox(
+                                        label="Search Tags (E.G. tag1 -tag2 shows images with tag1 but without tag2)",
+                                        lines=1, value="")
+                                with gr.Column(min_width=50, scale=2):
+                                    tag_search_suggestion_dropdown = gr.Dropdown(label="Tag Suggestions", container=True,
+                                                                                 choices=[], interactive=True,
+                                                                                 elem_id="searchbar_dropdown")
+                            with gr.Row():
+                                with gr.Column(min_width=50, scale=3):
+                                    apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(
+                                        choices=["png", "jpg", "gif", "searched"],
+                                        label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
+                                with gr.Column(min_width=50, scale=1):
+                                    select_multiple_images_checkbox = gr.Checkbox(label="Multi-Select", value=False,
+                                                                                  info="Click Image/s")
+                                with gr.Column(min_width=50, scale=1):
+                                    select_between_images_checkbox = gr.Checkbox(label="Shift-Select", value=False,
+                                                                                 info="Selects All Between Two Images")
+                            with gr.Row():
+                                with gr.Column(min_width=50, scale=1):
+                                    select_all_checkbox = gr.Checkbox(label="Select All", value=False)
+                                with gr.Column(min_width=50, scale=1):
+                                    deselect_all_checkbox = gr.Checkbox(label="Deselect All", value=False)
+                                with gr.Column(min_width=50, scale=1):
+                                    invert_selection_checkbox = gr.Checkbox(label="Invert", value=False)
+                            with gr.Row():
+                                with gr.Column(min_width=50, scale=1):
+                                    apply_datetime_sort_ckbx = gr.Checkbox(label="Sort", value=False,
+                                                                           info="Image/s by date")
+                                with gr.Column(min_width=50, scale=4):
+                                    apply_datetime_choice_menu = gr.Dropdown(label="Sort Order",
+                                                                             choices=["new-to-old", "old-to-new"], value=None,
+                                                                             info="Image/s by date")
+                            with gr.Row():
+                                image_remove_button = gr.Button(value="Remove Selected Image/s", variant='primary')
+                                image_save_ids_button = gr.Button(value="Save Image Changes", variant='primary')
+                            with gr.Row():
+                                with gr.Column(min_width=50, scale=2):
+                                    send_img_from_gallery_dropdown = gr.Dropdown(label="Image to Tab Selector",
+                                                                                 choices=tab_selection)
+                                with gr.Column(min_width=50, scale=1):
+                                    batch_send_from_gallery_checkbox = gr.Checkbox(label="Send as Batch")
+                                with gr.Column(min_width=50, scale=3):
+                                    send_img_from_gallery_button = gr.Button(value="Send Image to (Other) Tab",
+                                                                             variant='primary')
+                        with gr.Accordion("Compare Options"):
+                            with gr.Row():
+                                compare_button = gr.Button(value="Compare Selected", variant='secondary')
+                            with gr.Row():
+                                with gr.Column():
+                                    compare_image_left = gr.Image(type="filepath")
+                                    comp_left_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[])
+                                    comp_left_character = gr.CheckboxGroup(label='Character Tag/s', choices=[])
+                                    comp_left_species = gr.CheckboxGroup(label='Species Tag/s', choices=[])
+                                    comp_left_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[])
+                                    comp_left_general = gr.CheckboxGroup(label='General Tag/s', choices=[])
+                                    comp_left_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[])
+                                    comp_left_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[])
+                                with gr.Column():
+                                    compare_image_right = gr.Image(type="filepath")
+                                    comp_right_artist = gr.CheckboxGroup(label='Artist Tag/s', choices=[])
+                                    comp_right_character = gr.CheckboxGroup(label='Character Tag/s', choices=[])
+                                    comp_right_species = gr.CheckboxGroup(label='Species Tag/s', choices=[])
+                                    comp_right_invalid = gr.CheckboxGroup(label='Invalid Tag/s', choices=[])
+                                    comp_right_general = gr.CheckboxGroup(label='General Tag/s', choices=[])
+                                    comp_right_meta = gr.CheckboxGroup(label='Meta Tag/s', choices=[])
+                                    comp_right_rating = gr.CheckboxGroup(label='Rating Tag/s', choices=[])
+                            with gr.Row():
+                                transfer_tags_button = gr.Button(value="Transfer Left Tags → Right", variant='secondary')
+                                remove_tags_button = gr.Button(value="Remove Left Tags from Right", variant='secondary')
+                                remove_tags_both_l_button = gr.Button(value="Remove Left Tags from Both", variant='secondary')
+                                transfer_tags_button_rl = gr.Button(value="Transfer Right Tags → Left", variant='secondary')
+                                remove_tags_button_rl = gr.Button(value="Remove Right Tags from Left", variant='secondary')
+                                remove_tags_both_r_button = gr.Button(value="Remove Right Tags from Both", variant='secondary')
+                            with gr.Row():
+                                comp_left_add_text = gr.Textbox(label="Add Tag Left", lines=1)
+                                comp_right_add_text = gr.Textbox(label="Add Tag Right", lines=1)
+                                comp_add_to_both_checkbox = gr.Checkbox(label="Apply tag to both")
+                            with gr.Row():
+                                apply_transfer_button = gr.Button(value="Apply Transfer Tags to Selected", variant='primary')
+                                apply_remove_button = gr.Button(value="Apply Remove Tags to Selected", variant='primary')
 
                     with gr.Accordion("Tag Edit & Selection Options"):
                         with gr.Row():
@@ -3519,19 +3534,6 @@ class Gallery_tab:
                         img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                         img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                         img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
-                        with gr.Accordion("Groups", open=False):
-                            groups_dropdown = gr.Dropdown(label="Saved Groups", choices=list(self.groups_state.value.keys()), multiselect=True)
-                            group_name_text = gr.Textbox(label="Group Name", lines=1)
-                            with gr.Row():
-                                save_group_button = gr.Button(value="Save Group", variant='primary')
-                                load_group_button = gr.Button(value="Load Group", variant='secondary')
-                                delete_group_button = gr.Button(value="Delete Group", variant='stop')
-                            with gr.Row():
-                                rename_group_button = gr.Button(value="Rename Group")
-                                duplicate_group_button = gr.Button(value="Duplicate Group")
-                            with gr.Row():
-                                save_groups_cfg_button = gr.Button(value="Save Config")
-                                load_groups_cfg_button = gr.Button(value="Load Config")
                     with gr.Accordion("Advanced (Valid) Tag Options", open=False):
                         with gr.Row():
                             gr.Info(message="Uses file_type selection CheckBoxGroup at top of page to select which images are affected")
