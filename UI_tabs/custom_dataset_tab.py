@@ -570,11 +570,50 @@ class Custom_dataset_tab:
     def video_upload_path(self, video_input_button):
         return gr.update(value=video_input_button.name)
 
-    def convert_video(self, video_input, video_output_dir):
-        vid2frames.video_to_frames(video_input.name, video_output_dir)
-        video_gallery = gr.update(
-            value=glob.glob(os.path.join(video_output_dir, f"*.png")))  # unless the file was a SWF file
+    def convert_video(self, video_input, video_output_dir, add_to_session, dataset_folder_path):
+        if add_to_session:
+            if dataset_folder_path and len(dataset_folder_path) > 0:
+                dest_dir = dataset_folder_path
+            else:
+                dest_dir = os.path.join(
+                    os.getcwd(),
+                    self.download_tab_manager.settings_json["batch_folder"],
+                    self.download_tab_manager.settings_json["downloaded_posts_folder"],
+                    self.download_tab_manager.settings_json["png_folder"],
+                )
+        else:
+            base_dir = video_output_dir if video_output_dir else os.getcwd()
+            file_stem = os.path.splitext(os.path.basename(video_input.name))[0]
+            dest_dir = os.path.join(base_dir, file_stem)
+
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir)
+
+        vid2frames.video_to_frames(video_input.name, dest_dir)
+        video_gallery = gr.update(value=glob.glob(os.path.join(dest_dir, "*.png")))
         return video_gallery
+
+    def convert_video_to_audio(self, video_input, video_output_dir, add_to_session, dataset_folder_path):
+        if add_to_session:
+            if dataset_folder_path and len(dataset_folder_path) > 0:
+                dest_dir = dataset_folder_path
+            else:
+                dest_dir = os.path.join(
+                    os.getcwd(),
+                    self.download_tab_manager.settings_json["batch_folder"],
+                    self.download_tab_manager.settings_json["downloaded_posts_folder"],
+                    self.download_tab_manager.settings_json["png_folder"],
+                )
+        else:
+            base_dir = video_output_dir if video_output_dir else os.getcwd()
+            file_stem = os.path.splitext(os.path.basename(video_input.name))[0]
+            dest_dir = os.path.join(base_dir, file_stem)
+
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir)
+
+        output_path = os.path.join(dest_dir, os.path.splitext(os.path.basename(video_input.name))[0] + ".mp3")
+        return self.converter.extract_audio(video_input.name, output_path)
 
     def update_generated_tag_selection(self, tag_effects_dropdown: gr.SelectData, image_generated_tags, threshold,
                                        category_filter_dropdown):
@@ -1066,6 +1105,7 @@ class Custom_dataset_tab:
                                 with gr.Row():
                                     video_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
                                                                   value=os.getcwd())
+                                    add_frames_to_session_ckbx = gr.Checkbox(label="Add Data to Current Session")
                                     convert_video_button = gr.Button(value="Convert Video", variant='primary')
                         with gr.Accordion(label="Gallery Preview", visible=True, open=False):
                             with gr.Column():
@@ -1086,6 +1126,7 @@ class Custom_dataset_tab:
                             with gr.Row():
                                 video2audio_output_dir = gr.Textbox(label="(Optional) Output Folder Path",
                                                               value=os.getcwd())
+                                add_audio_to_session_ckbx = gr.Checkbox(label="Add Data to Current Session")
                                 convert_video2audio_button = gr.Button(value="Convert Video", variant='primary')
                         with gr.Accordion(label="Audio Preview", visible=True, open=False):
                             with gr.Column():
@@ -1141,6 +1182,7 @@ class Custom_dataset_tab:
         self.video_input_button = video_input_button
         self.video_clear_button = video_clear_button
         self.video_output_dir = video_output_dir
+        self.add_frames_to_session_ckbx = add_frames_to_session_ckbx
         self.convert_video_button = convert_video_button
         self.video_frames_gallery = video_frames_gallery
         self.remove_invalid_chars_button = remove_invalid_chars_button
@@ -1151,6 +1193,7 @@ class Custom_dataset_tab:
         self.video2audio_input_button = video2audio_input_button
         self.video2audio_clear_button = video2audio_clear_button
         self.video2audio_output_dir = video2audio_output_dir
+        self.add_audio_to_session_ckbx = add_audio_to_session_ckbx
         self.convert_video2audio_button = convert_video2audio_button
         self.audio_waveform = audio_waveform
         self.include_invalid_tags_ckbx = include_invalid_tags_ckbx
@@ -1201,6 +1244,7 @@ class Custom_dataset_tab:
                 self.video_input_button,
                 self.video_clear_button,
                 self.video_output_dir,
+                self.add_frames_to_session_ckbx,
                 self.convert_video_button,
                 self.video_frames_gallery,
                 self.auto_tag_models,
@@ -1212,6 +1256,7 @@ class Custom_dataset_tab:
                 self.video2audio_input_button,
                 self.video2audio_clear_button,
                 self.video2audio_output_dir,
+                self.add_audio_to_session_ckbx,
                 self.convert_video2audio_button,
                 self.audio_waveform,
                 self.include_invalid_tags_ckbx,
@@ -1238,8 +1283,8 @@ class Custom_dataset_tab:
             outputs=[self.video2audio_input]
         )
         self.convert_video2audio_button.click(
-            fn=self.converter.extract_audio,
-            inputs=[self.video2audio_input, self.video2audio_output_dir],
+            fn=self.convert_video_to_audio,
+            inputs=[self.video2audio_input, self.video2audio_output_dir, self.add_audio_to_session_ckbx, self.dataset_gallery_path_textbox],
             outputs=[self.audio_waveform]
         )
         self.video2audio_clear_button.add(components=[self.audio_waveform, self.video2audio_input])
@@ -1504,7 +1549,7 @@ class Custom_dataset_tab:
         )
         self.convert_video_button.click(
             fn=self.convert_video,
-            inputs=[self.video_input, self.video_output_dir],
+            inputs=[self.video_input, self.video_output_dir, self.add_frames_to_session_ckbx, self.dataset_gallery_path_textbox],
             outputs=[self.video_frames_gallery]
         )
         self.video_clear_button.add(components=[self.video_frames_gallery, self.video_input])
