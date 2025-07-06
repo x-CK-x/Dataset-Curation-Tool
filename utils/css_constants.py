@@ -59,3 +59,15 @@ gallery_fix_height = """
     overflow-y: auto !important; 
 }
 """
+
+tag_checkbox_color_css = """
+.artist-checkbox label { color: yellow !important; }
+.character-checkbox label { color: green !important; }
+.species-checkbox label { color: red !important; }
+.general-checkbox label { color: white !important; }
+.rating-checkbox label { color: cyan !important; }
+.meta-checkbox label { color: purple !important; }
+.invalid-checkbox label { color: black !important; }
+.lore-checkbox label { color: black !important; }
+.copyright-checkbox label { color: violet !important; }
+"""
