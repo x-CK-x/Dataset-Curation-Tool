@@ -1,0 +1,4 @@
+- have the PR in it's own branch "ideally" with the name of the feature/bug being added/resolved
+- it needs to be an updated branch with the repo, so there's no concenr of it creating broken changes on the main branch
+- contributor must have extensively tested their own feature for it to be merged
+- a discrete summary of the feature or bug fix in the PR
