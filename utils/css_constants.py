@@ -71,3 +71,12 @@ tag_checkbox_color_css = """
 .lore-checkbox label { color: black !important; }
 .copyright-checkbox label { color: violet !important; }
 """
+
+dataset_gallery_css = """
+#dataset_gallery_path_textbox label {
+    color: cyan !important;
+}
+#load_dataset_gallery_button {
+    background-color: red !important;
+}
+"""
