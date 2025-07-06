@@ -879,6 +879,14 @@ class Custom_dataset_tab:
     def render_tab(self):
         with gr.Tab("Add Custom Dataset"):
             gr.Markdown(md_.custom)
+            with gr.Row():
+                dataset_gallery_path_textbox = gr.Textbox(label="Dataset Folder Path",
+                                                          info="Folder with images and tag txt files",
+                                                          interactive=True,
+                                                          elem_id="dataset_gallery_path_textbox")
+                load_dataset_gallery_button = gr.Button(value="Load Dataset to Gallery",
+                                                      variant='secondary',
+                                                      elem_id="load_dataset_gallery_button")
             image_modes = ['Single', 'Batch']
             self.auto_tag_models.append("PNG Info")
 
@@ -992,11 +1000,6 @@ class Custom_dataset_tab:
                             image_with_tag_path_textbox = gr.Textbox(label="Path to Image/Video Folder",
                                                                      info="Folder should contain both (tag/s & image/s) if no video",
                                                                      interactive=True)
-                        with gr.Row():
-                            dataset_gallery_path_textbox = gr.Textbox(label="Dataset Folder Path",
-                                                                      info="Folder with images and tag txt files",
-                                                                      interactive=True)
-                            load_dataset_gallery_button = gr.Button(value="Load Dataset to Gallery", variant='secondary')
                         with gr.Row():
                             with gr.Column(min_width=50, scale=1):
                                 copy_mode_ckbx = gr.Checkbox(label="Copy", info="Copy To Tag Editor")
