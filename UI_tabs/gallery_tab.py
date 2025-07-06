@@ -3418,7 +3418,7 @@ class Gallery_tab:
                         download_folder_type = gr.Radio(choices=self.file_extn_list, label='Gallery Mode', value='images')
                         img_id_textbox = gr.Textbox(label="Image ID", interactive=False, lines=1, value="")
                         total_image_counter = gr.Markdown(f"Total Images: {self.get_total_image_count()}")
-                    with gr.Accordion("Image Sort & Selection Options"):
+                    with gr.Accordion("Image Sort & Selection Options", open=False):
                         with gr.Accordion("Selection Options"):
                             with gr.Row():
                                 with gr.Column(min_width=50, scale=3):
@@ -3467,7 +3467,7 @@ class Gallery_tab:
                                 with gr.Column(min_width=50, scale=3):
                                     send_img_from_gallery_button = gr.Button(value="Send Image to (Other) Tab",
                                                                              variant='primary')
-                        with gr.Accordion("Compare Options"):
+                        with gr.Accordion("Compare Options", open=False):
                             with gr.Row():
                                 compare_button = gr.Button(value="Compare Selected", variant='secondary')
                             with gr.Row():
