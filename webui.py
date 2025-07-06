@@ -187,80 +187,88 @@ def build_ui(enable_tag_suggestions=True):
             auto_complete_config,
             db_manager=db_manager,
         )
-        # render tab
-        download_tab_manager.render_tab()
+        # initialize tab managers
+        gallery_tab_manager = Gallery_tab(
+            file_extn_list,
+            image_board,
+            data_root,
+            multi_select_ckbx_state,
+            only_selected_state_object,
+            images_selected_state,
+            image_mode_choice_state,
+            previous_search_state_text,
+            current_search_state_placement_tuple,
+            relevant_search_categories,
+            initial_add_state,
+            initial_add_state_tag,
+            relevant_add_categories,
+            images_tuple_points,
+            download_tab_manager,
+            auto_complete_config_name,
+            all_tags_ever_dict,
+            all_images_dict,
+            selected_image_dict,
+            artist_csv_dict,
+            character_csv_dict,
+            species_csv_dict,
+            general_csv_dict,
+            meta_csv_dict,
+            rating_csv_dict,
+            tags_csv_dict,
+            image_creation_times,
+            is_csv_loaded,
+            db_manager=db_manager,
+            download_id=None,
+        )
 
-        ################################################################################################################
-        # gallery tab init
-        gallery_tab_manager = Gallery_tab(file_extn_list, image_board, data_root, multi_select_ckbx_state,
-                                          only_selected_state_object, images_selected_state, image_mode_choice_state,
-                                          previous_search_state_text, current_search_state_placement_tuple,
-                                          relevant_search_categories, initial_add_state, initial_add_state_tag,
-                                          relevant_add_categories, images_tuple_points, download_tab_manager,
-                                          auto_complete_config_name, all_tags_ever_dict, all_images_dict,
-                                          selected_image_dict, artist_csv_dict, character_csv_dict, species_csv_dict,
-                                          general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict,
-                                          image_creation_times, is_csv_loaded,
-                                          db_manager=db_manager, download_id=None
-                                          )
-        # render tab
-        gallery_tab_manager.render_tab()
-        # share object reference
-        download_tab_manager.set_gallery_tab_manager(gallery_tab_manager)
-
-        ################################################################################################################
-        # stats tab init
         stats_tab_manager = Stats_tab(gallery_tab_manager)
-        # render tab
-        stats_tab_manager.render_tab()
-
-        ################################################################################################################
-        # extras tab init
         extras_tab_manager = Extras_tab(repo_release_urls)
-        # render tab
-        extras_tab_manager.render_tab()
 
-        ################################################################################################################
-        # custom dataset tab init
-        custom_dataset_tab_manager = Custom_dataset_tab(image_board, data_root, download_tab_manager, gallery_tab_manager,
-                                                        image_mode_choice_state, autotagmodel,
-                                                        all_predicted_confidences, all_predicted_tags
-                                                        )
-        # render tab
-        custom_dataset_tab_manager.render_tab()
-        # share object reference
-        gallery_tab_manager.set_custom_dataset_tab_manager(custom_dataset_tab_manager)
-        extras_tab_manager.set_custom_dataset_tab_manager(custom_dataset_tab_manager)
+        custom_dataset_tab_manager = Custom_dataset_tab(
+            image_board,
+            data_root,
+            download_tab_manager,
+            gallery_tab_manager,
+            image_mode_choice_state,
+            autotagmodel,
+            all_predicted_confidences,
+            all_predicted_tags,
+        )
 
-        ################################################################################################################
-        # image editor tab init
-        image_editor_tab_manager = Image_editor_tab(gallery_tab_manager, download_tab_manager, data_root,
-                                                    image_mode_choice_state, custom_dataset_tab_manager
-                                                    )
-        # render tab
-        image_editor_tab_manager.render_tab()
-        # share object reference
-        custom_dataset_tab_manager.set_image_editor_manager(image_editor_tab_manager)
-        gallery_tab_manager.set_image_editor_tab_manager(image_editor_tab_manager)
+        image_editor_tab_manager = Image_editor_tab(
+            gallery_tab_manager,
+            download_tab_manager,
+            data_root,
+            image_mode_choice_state,
+            custom_dataset_tab_manager,
+        )
 
-        ################################################################################################################
-        # advanced settings tab init
         advanced_settings_tab_manager = Advanced_settings_tab()
-        # render tab
-        advanced_settings_tab_manager.render_tab(enable_tag_suggestions)
-        # share object reference
-        download_tab_manager.set_advanced_settings_tab_manager(advanced_settings_tab_manager)
-        gallery_tab_manager.set_advanced_settings_tab_manager(advanced_settings_tab_manager)
 
-        ########################################################################################################
-        # database tab init
         database_tab_manager = Database_tab(db_manager, gallery_tab_manager)
         import_tab_manager = Import_tab(db_manager)
         merge_tab_manager = Merge_tab(db_manager)
-        # render tabs
+
+        # render tabs in desired order
+        custom_dataset_tab_manager.render_tab()
+        gallery_tab_manager.render_tab()
+        image_editor_tab_manager.render_tab()
+        stats_tab_manager.render_tab()
         database_tab_manager.render_tab()
-        import_tab_manager.render_tab()
         merge_tab_manager.render_tab()
+        import_tab_manager.render_tab()
+        download_tab_manager.render_tab()
+        extras_tab_manager.render_tab()
+        advanced_settings_tab_manager.render_tab(enable_tag_suggestions)
+
+        # share object references
+        download_tab_manager.set_gallery_tab_manager(gallery_tab_manager)
+        gallery_tab_manager.set_custom_dataset_tab_manager(custom_dataset_tab_manager)
+        extras_tab_manager.set_custom_dataset_tab_manager(custom_dataset_tab_manager)
+        custom_dataset_tab_manager.set_image_editor_manager(image_editor_tab_manager)
+        gallery_tab_manager.set_image_editor_tab_manager(image_editor_tab_manager)
+        download_tab_manager.set_advanced_settings_tab_manager(advanced_settings_tab_manager)
+        gallery_tab_manager.set_advanced_settings_tab_manager(advanced_settings_tab_manager)
 
         ################################################################################################################
         ################################################################################################################
