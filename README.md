@@ -6,6 +6,19 @@ A tool for downloading from public image boards (which allow scraping) / preview
 
 ![General Config](https://github.com/x-CK-x/Dataset-Curation-Tool/blob/74f6877383bddfd9c0d8e9587ab983e63936f89f/wiki_assets/v4WebUI_page_1_tab_1.png)
 
+### Key Features
+
+- **Add Custom Dataset** - load your own files for tagging, captioning or post-processing
+- **Tag Editor & Image Gallery** - view images, quickly edit predicted tags and organize custom tag CSVs
+- **Image Editor** - crop, zoom, rotate and apply simple filters before saving files
+- **Data Stats** - generate quick summaries about your current dataset
+- **Database** - run SQL queries against the download history database
+- **Merge DB** - combine several databases into one consolidated file
+- **Import Data** - add existing images, metadata or folders into the dataset database
+- **Download** - scrape images from supported imageboards with many filter options
+- **Download Extras** - fetch popular model checkpoints or additional code repositories
+- **Advanced Settings** - tweak miscellaneous configuration values
+
 ## Installation Requirements
 
 > Download either the windows, mac, or linux run file (repo will be installed for you):
