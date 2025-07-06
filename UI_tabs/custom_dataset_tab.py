@@ -920,7 +920,7 @@ class Custom_dataset_tab:
                              "Image Color Sketch Editor"]
             with gr.Row():
                 with gr.Column():
-                    with gr.Accordion(label="Image Settings", visible=True, open=True):
+                    with gr.Accordion(label="Image Settings", visible=True, open=False):
                         with gr.Row():
                             with gr.Tab("Single"):
                                 file_upload_button_single = gr.File(label=f"{image_modes[0]} Image Mode",
@@ -955,7 +955,7 @@ class Custom_dataset_tab:
                             fix_files = gr.Button(value="Resolve File Extesions",
                                                   variant="secondary")
 
-                    with gr.Accordion(label="Model Settings", visible=True, open=True):
+                    with gr.Accordion(label="Model Settings", visible=True, open=False):
                         with gr.Row():
                             with gr.Column(elem_id="trim_row_length"):
                                 gpu_ckbx = gr.Checkbox(label="GPU", info="Use GPU", value=False)
@@ -1019,7 +1019,7 @@ class Custom_dataset_tab:
                             write_tag_opts_dropdown = gr.Dropdown(label="Write Tag Options", choices=write_tag_opts)
                             merge_tag_opts_dropdown = gr.Dropdown(label="Merge Tag Options", choices=merge_tag_opts, multiselect=True, visible=False, interactive=True)
                             use_tag_opts_radio = gr.Dropdown(label="Use Tag Options", choices=use_tag_opts)
-                    with gr.Accordion(label="Tag/s Options", visible=True, open=True):
+                    with gr.Accordion(label="Tag/s Options", visible=True, open=False):
                         with gr.Row():
                             text_to_replace_textbox = gr.Textbox(label="Text to Replace", interactive=True)
                             replacement_text_textbox = gr.Textbox(label="Replacement Text", interactive=True)
@@ -1041,7 +1041,7 @@ class Custom_dataset_tab:
                                                                    multiselect=True)
                 with gr.Column():
                     with gr.Tab("Tag/s Preview"):
-                        with gr.Accordion(label="Tag/s Probabilities", visible=True, open=True):
+                        with gr.Accordion(label="Tag/s Probabilities", visible=True, open=False):
                             with gr.Column():
                                 image_confidence_values = gr.Label(label="Tag/s Confidence/s", visible=True, value={})
                         #         gr.Accordion(label="SAM-HQ Bounding Box Crop", visible=True, open=False)
