@@ -3399,6 +3399,7 @@ class Gallery_tab:
                 with gr.Row():
                     save_group_button = gr.Button(value="Save Group", variant='primary')
                     load_group_button = gr.Button(value="Load Group", variant='secondary')
+                    subtract_group_button = gr.Button(value="Subtract Group", variant='secondary')
                     delete_group_button = gr.Button(value="Delete Group", variant='stop')
                 with gr.Row():
                     rename_group_button = gr.Button(value="Rename Group")
@@ -3633,6 +3634,7 @@ class Gallery_tab:
         self.group_name_text = group_name_text
         self.save_group_button = save_group_button
         self.load_group_button = load_group_button
+        self.subtract_group_button = subtract_group_button
         self.delete_group_button = delete_group_button
         self.rename_group_button = rename_group_button
         self.duplicate_group_button = duplicate_group_button
@@ -3715,6 +3717,7 @@ class Gallery_tab:
                 self.group_name_text,
                 self.save_group_button,
                 self.load_group_button,
+                self.subtract_group_button,
                 self.delete_group_button,
                 self.rename_group_button,
                 self.duplicate_group_button,
@@ -4200,6 +4203,16 @@ class Gallery_tab:
             outputs=None,
             js=js_.js_do_everything
         )
+        self.subtract_group_button.click(
+            fn=self.subtract_group,
+            inputs=[self.gallery_state, self.groups_state, self.groups_dropdown],
+            outputs=[self.images_selected_state, self.only_selected_state_object]
+        ).then(
+            None,
+            inputs=[self.images_selected_state, self.multi_select_ckbx_state],
+            outputs=None,
+            js=js_.js_do_everything
+        )
         self.rename_group_button.click(
             fn=self.rename_group,
             inputs=[self.groups_state, self.groups_dropdown, self.group_name_text],
@@ -4223,6 +4236,7 @@ class Gallery_tab:
  
 
     def save_group(self, name, groups_state, gallery_images, indices):
+        help.verbose_print(f"save_group called with name={name} indices={indices}")
         paths = []
         for idx in indices:
             if 0 <= idx < len(gallery_images):
@@ -4233,11 +4247,13 @@ class Gallery_tab:
         return groups, gr.update(choices=list(groups.keys())), gr.update(value="")
 
     def delete_group(self, groups_state, group_names):
+        help.verbose_print(f"delete_group called with groups={group_names}")
         groups = group_manager.delete_groups(groups_state or {}, group_names)
         self.groups_state.value = groups
         return groups, gr.update(choices=list(groups.keys()))
 
     def rename_group(self, groups_state, group_names, new_name):
+        help.verbose_print(f"rename_group called {group_names} -> {new_name}")
         if not group_names:
             return groups_state, gr.update(choices=list((groups_state or {}).keys())), gr.update()
         groups = group_manager.rename_group(groups_state or {}, group_names[0], new_name)
@@ -4245,6 +4261,7 @@ class Gallery_tab:
         return groups, gr.update(choices=list(groups.keys()), value=new_name if new_name in groups else None), gr.update(value="")
 
     def duplicate_group(self, groups_state, group_names, new_name):
+        help.verbose_print(f"duplicate_group called {group_names} -> {new_name}")
         if not group_names:
             return groups_state, gr.update(choices=list((groups_state or {}).keys())), gr.update()
         groups = group_manager.duplicate_group(groups_state or {}, group_names[0], new_name)
@@ -4252,6 +4269,7 @@ class Gallery_tab:
         return groups, gr.update(choices=list(groups.keys()), value=new_name if new_name in groups else None), gr.update(value="")
 
     def load_group(self, gallery_images, groups_state, group_names):
+        help.verbose_print(f"load_group called with groups={group_names}")
         targets = set(group_manager.load_groups(groups_state or {}, group_names))
         indices = []
         mapping = {}
@@ -4267,10 +4285,29 @@ class Gallery_tab:
         self._debug_selection(indices, mapping)
         return indices, mapping
 
+    def subtract_group(self, gallery_images, groups_state, group_names):
+        help.verbose_print(f"subtract_group called with groups={group_names}")
+        current_indices = list(self.images_selected_state.value or [])
+        targets = set(group_manager.load_groups(groups_state or {}, group_names))
+        remaining_indices = []
+        for idx in current_indices:
+            if 0 <= idx < len(gallery_images):
+                path = gallery_images[idx][0] if isinstance(gallery_images[idx], (list, tuple)) else gallery_images[idx]
+                if path not in targets:
+                    remaining_indices.append(idx)
+        mapping = self._build_selection_mapping(gallery_images, remaining_indices)
+        self._update_search_from_mapping(mapping)
+        self.images_selected_state.value = remaining_indices
+        self.only_selected_state_object.value = mapping
+        self._debug_selection(remaining_indices, mapping)
+        return remaining_indices, mapping
+
     def save_groups_config(self, groups_state):
+        help.verbose_print("save_groups_config called")
         group_manager.save_groups_file(groups_state or {}, self.groups_config_path)
 
     def load_groups_config(self):
+        help.verbose_print("load_groups_config called")
         groups = group_manager.load_groups_file(self.groups_config_path)
         self.groups_state.value = groups
         return groups, gr.update(choices=list(groups.keys()))
