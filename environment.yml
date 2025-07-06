@@ -27,6 +27,7 @@ dependencies:
     - huggingface_hub
     - beautifulsoup4
     - pandas
+    - orjson
     - onnxruntime
     - onnxruntime-gpu
     - piexif
