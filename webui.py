@@ -15,6 +15,9 @@ def build_ui(enable_tag_suggestions=True):
     from UI_tabs.stats_tab import Stats_tab
     from UI_tabs.extras_tab import Extras_tab
     from UI_tabs.custom_dataset_tab import Custom_dataset_tab
+    from UI_tabs.dataset_loader_tab import Dataset_loader_tab
+    from UI_tabs.model_inference_tab import Model_inference_tab
+    from UI_tabs.image_augmentation_tab import Image_augmentation_tab
     from UI_tabs.image_editor_tab import Image_editor_tab
     from UI_tabs.advanced_settings_tab import Advanced_settings_tab
     from UI_tabs.database_tab import Database_tab
@@ -235,6 +238,10 @@ def build_ui(enable_tag_suggestions=True):
             all_predicted_tags,
         )
 
+        dataset_loader_tab_manager = Dataset_loader_tab(gallery_tab_manager)
+        model_inference_tab_manager = Model_inference_tab(custom_dataset_tab_manager)
+        image_augmentation_tab_manager = Image_augmentation_tab(custom_dataset_tab_manager)
+
         image_editor_tab_manager = Image_editor_tab(
             gallery_tab_manager,
             download_tab_manager,
@@ -250,7 +257,9 @@ def build_ui(enable_tag_suggestions=True):
         merge_tab_manager = Merge_tab(db_manager)
 
         # render tabs in desired order
-        custom_dataset_tab_manager.render_tab()
+        dataset_loader_tab_manager.render_tab()
+        model_inference_tab_manager.render_tab()
+        image_augmentation_tab_manager.render_tab()
         gallery_tab_manager.render_tab()
         image_editor_tab_manager.render_tab()
         stats_tab_manager.render_tab()
@@ -290,7 +299,9 @@ def build_ui(enable_tag_suggestions=True):
         gallery_tab_manager.get_event_listeners()
         stats_tab_manager.get_event_listeners()
         extras_tab_manager.get_event_listeners()
-        custom_dataset_tab_manager.get_event_listeners()
+        dataset_loader_tab_manager.get_event_listeners()
+        model_inference_tab_manager.get_event_listeners()
+        image_augmentation_tab_manager.get_event_listeners()
         image_editor_tab_manager.get_event_listeners()
         database_tab_manager.get_event_listeners()
         import_tab_manager.get_event_listeners()
