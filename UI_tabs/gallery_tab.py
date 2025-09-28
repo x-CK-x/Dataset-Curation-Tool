@@ -137,11 +137,35 @@ class Gallery_tab:
     def set_advanced_settings_tab_manager(self, advanced_settings_tab_manager):
         self.advanced_settings_tab_manager = advanced_settings_tab_manager
 
+    def _ensure_component_placeholder(self, manager, attributes):
+        """Make sure each requested attribute references a valid Gradio block."""
+        if manager is None:
+            return
+        for name in attributes:
+            if not hasattr(manager, name) or getattr(manager, name) is None:
+                setattr(manager, name, gr.State(value=None))
+
     def set_image_editor_tab_manager(self, image_editor_tab_manager):
         self.image_editor_tab_manager = image_editor_tab_manager
+        self._ensure_component_placeholder(
+            self.image_editor_tab_manager,
+            [
+                "image_editor",
+                "image_editor_crop",
+                "image_editor_sketch",
+                "image_editor_color_sketch",
+            ],
+        )
 
     def set_custom_dataset_tab_manager(self, custom_dataset_tab_manager):
         self.custom_dataset_tab_manager = custom_dataset_tab_manager
+        self._ensure_component_placeholder(
+            self.custom_dataset_tab_manager,
+            [
+                "file_upload_button_single",
+                "gallery_images_batch",
+            ],
+        )
 
     def set_download_id(self, download_id):
         self.download_id = download_id
