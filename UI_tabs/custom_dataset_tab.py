@@ -4,7 +4,10 @@ import copy
 import glob
 import numpy as np
 from PIL import Image
-import torch
+try:
+    import torch
+except ImportError:  # pragma: no cover - optional dependency
+    torch = None
 
 from utils import md_constants as md_, helper_functions as help
 from utils.features.video_splitter import Video2Frames as vid2frames
@@ -907,12 +910,16 @@ class Custom_dataset_tab:
 
     def are_gpus_present(self, selected: gr.SelectData):
         # Check if any GPU is available
-        gpu_available = torch.cuda.is_available()
-        help.verbose_print(f"Is GPU available:\t{gpu_available}")
+        if torch is None:
+            help.verbose_print("Torch not available. Skipping GPU check.")
+            gpu_available = False
+        else:
+            gpu_available = torch.cuda.is_available()
+            help.verbose_print(f"Is GPU available:\t{gpu_available}")
 
-        # Get the number of GPUs
-        num_gpus = torch.cuda.device_count()
-        help.verbose_print(f"Number of GPUs detected:\t{num_gpus}")
+            # Get the number of GPUs
+            num_gpus = torch.cuda.device_count()
+            help.verbose_print(f"Number of GPUs detected:\t{num_gpus}")
         return gr.update(value=(selected.value and gpu_available))
 
     def render_tab(self):

@@ -3,14 +3,22 @@ import shutil
 import cv2
 from PIL import Image, ImageEnhance, ImageOps, ImageFilter
 import numpy as np
-import torch
 import math
 import copy
 import os
 
 from utils import helper_functions as help
 
-class ImageLoadingPrepDataset(torch.utils.data.Dataset):
+try:
+    import torch
+    from torch.utils.data import Dataset as _TorchDataset
+except ImportError:  # pragma: no cover - optional dependency
+    torch = None
+
+    class _TorchDataset:
+        pass
+
+class ImageLoadingPrepDataset(_TorchDataset):
     def __init__(self, image_paths):
         self.images = image_paths
         self.images = [path for path in self.images if not (".txt" in path)]
@@ -41,11 +49,16 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
         try:
             image = self.smart_imread(img_path)
             image = self.preprocess_image(image)
-            tensor = torch.tensor(image)
+            tensor = self._to_tensor(image)
         except Exception as e:
             print(f"Could not load image path: {img_path}, error: {e}")
             return None
         return (tensor, img_path)
+
+    def _to_tensor(self, image):
+        if torch is not None:
+            return torch.tensor(image)
+        return np.asarray(image)
 
     def get_image_paths(self):
         return self.images
@@ -73,7 +86,7 @@ class ImageLoadingPrepDataset(torch.utils.data.Dataset):
 
         try:
             image = self.smart_imread(img_path)
-            tensor = torch.tensor(image)
+            tensor = self._to_tensor(image)
         except Exception as e:
             print(f"Could not load image path: {img_path}, error: {e}")
 
