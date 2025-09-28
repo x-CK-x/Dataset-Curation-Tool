@@ -32,6 +32,14 @@ class Custom_dataset_tab:
         self.auto_tag_models = []
         self.converter = Video2Audio()
 
+        # In environments without torch we still need a valid gradio component
+        # placeholder so downstream tabs can reference the attribute when they
+        # register event listeners. The real component will replace this once
+        # the custom dataset tab is rendered. Until then we treat it like a
+        # state container.
+        self.gallery_images_batch = gr.State(value=None)
+        self._gallery_batch_is_state = True
+
 
     def generate_all_dirs(self):
         temp_path_list_dirs = []
@@ -464,7 +472,10 @@ class Custom_dataset_tab:
         self.gallery_tab_manager.force_reload_images_and_csvs()
 
         # reset batch image component from the gallery
-        gallery_images_batch = gr.update(value=(None if (gallery_images_batch is not None and len(gallery_images_batch.value) > 0) else gallery_images_batch))
+        if self.gallery_batch_has_selection(gallery_images_batch):
+            gallery_images_batch = self.gallery_batch_clear()
+        else:
+            gallery_images_batch = self.gallery_batch_no_update()
 
         sorted_list = sorted(temp_tags, key=lambda tag: self.download_tab_manager.settings_json["tag_order_format"].split(", ").index(self.gallery_tab_manager.get_category_name(tag)))
 
@@ -922,6 +933,33 @@ class Custom_dataset_tab:
             help.verbose_print(f"Number of GPUs detected:\t{num_gpus}")
         return gr.update(value=(selected.value and gpu_available))
 
+    def using_gallery_batch_state(self):
+        return getattr(self, "_gallery_batch_is_state", False)
+
+    def gallery_batch_set(self, value):
+        if self.using_gallery_batch_state():
+            return value
+        return gr.update(value=value)
+
+    def gallery_batch_clear(self):
+        return self.gallery_batch_set(None)
+
+    def gallery_batch_no_update(self):
+        return gr.update()
+
+    @staticmethod
+    def gallery_batch_has_selection(batch_value):
+        if batch_value is None:
+            return False
+        if hasattr(batch_value, "value"):
+            batch_value = batch_value.value
+        if batch_value is None:
+            return False
+        try:
+            return len(batch_value) > 0
+        except TypeError:
+            return True
+
     def render_tab(self):
         with gr.Tab("Add Custom Dataset"):
             gr.Markdown(md_.custom)
@@ -1150,6 +1188,7 @@ class Custom_dataset_tab:
         self.file_upload_button_single = file_upload_button_single
         self.file_upload_button_batch = file_upload_button_batch
         self.gallery_images_batch = gallery_images_batch
+        self._gallery_batch_is_state = False
         self.image_preview_pil = image_preview_pil
         self.send_img_from_autotag_dropdown = send_img_from_autotag_dropdown
         self.send_img_from_autotag_button = send_img_from_autotag_button
