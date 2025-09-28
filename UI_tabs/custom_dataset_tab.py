@@ -38,6 +38,9 @@ class Custom_dataset_tab:
         # the custom dataset tab is rendered. Until then we treat it like a
         # state container.
         self.gallery_images_batch = gr.State(value=None)
+        self.file_upload_button_single = gr.State(value=None)
+        self.file_upload_button_batch = gr.State(value=None)
+        self.model_choice_dropdown = gr.State(value=None)
         self._gallery_batch_is_state = True
 
 
