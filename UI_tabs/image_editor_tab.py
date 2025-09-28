@@ -18,6 +18,18 @@ class Image_editor_tab:
 
         self.image_mode_choice_state = image_mode_choice_state
 
+        # Provide placeholder components so cross-tab event wiring has valid
+        # Gradio blocks even before this tab renders. They will be replaced by
+        # the real widgets in ``render_tab``.
+        self.image_editor = gr.State(value=None)
+        self.image_editor_crop = gr.State(value=None)
+        self.image_editor_sketch = gr.State(value=None)
+        self.image_editor_color_sketch = gr.State(value=None)
+        self.upload_button_single_edit = gr.State(value=None)
+        self.upload_button_single_crop = gr.State(value=None)
+        self.upload_button_single_sketch = gr.State(value=None)
+        self.upload_button_single_color = gr.State(value=None)
+
 
     '''
     new_feature             ::  dropdown menu option
@@ -50,7 +62,7 @@ class Image_editor_tab:
             image_editor_crop = gr.update()
             image_editor_sketch = gr.update()
             image_editor_color_sketch = gr.update()
-            gallery_images_batch = gr.update()
+            gallery_images_batch = self.custom_dataset_tab_manager.gallery_batch_no_update()
             return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
                    image_editor_color_sketch, gallery_images_batch
 
@@ -106,7 +118,7 @@ class Image_editor_tab:
                 image_editor_crop = gr.update()
                 image_editor_sketch = gr.update()
                 image_editor_color_sketch = gr.update()
-                gallery_images_batch = gr.update(value=full_paths_all)
+                gallery_images_batch = self.custom_dataset_tab_manager.gallery_batch_set(full_paths_all)
                 return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
                        image_editor_color_sketch, gallery_images_batch
 
@@ -144,7 +156,7 @@ class Image_editor_tab:
             image_editor_crop = gr.update(value=updates[2]) if updates[2][0] else gr.update()
             image_editor_sketch = gr.update(value=updates[3]) if updates[3][0] else gr.update()
             image_editor_color_sketch = gr.update(value=updates[4]) if updates[4][0] else gr.update()
-            gallery_images_batch = gr.update()
+            gallery_images_batch = self.custom_dataset_tab_manager.gallery_batch_no_update()
             return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \
                    image_editor_color_sketch, gallery_images_batch
 
@@ -166,7 +178,7 @@ class Image_editor_tab:
         image_editor_crop = gr.update(value=updates[2]) if updates[2][0] is not None else gr.update()
         image_editor_sketch = gr.update(value=updates[3]) if updates[3][0] is not None else gr.update()
         image_editor_color_sketch = gr.update(value=updates[4]) if updates[4][0] is not None else gr.update()
-        gallery_images_batch = gr.update()
+        gallery_images_batch = self.custom_dataset_tab_manager.gallery_batch_no_update()
         # help.verbose_print(f"updates:\t{updates}")
         # help.verbose_print(f"custom_dataset_tab_manager.file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, image_editor_color_sketch:\t{[custom_dataset_tab_manager.file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, image_editor_color_sketch]}")
         return file_upload_button_single, image_editor, image_editor_crop, image_editor_sketch, \

@@ -8,8 +8,41 @@ import pandas as pd
 import heapq
 import shutil
 
-import torch
 import onnxruntime as ort
+try:
+    import torch
+except ImportError:  # pragma: no cover - optional dependency
+    torch = None
+    class _SimpleDataLoader:
+        def __init__(self, dataset, batch_size, shuffle=False, collate_fn=None, drop_last=False, num_workers=0):
+            self.dataset = dataset
+            self.batch_size = max(1, batch_size)
+            self.shuffle = shuffle
+            self.collate_fn = collate_fn or (lambda batch: batch)
+            self.drop_last = drop_last
+
+        def __iter__(self):
+            indices = list(range(len(self.dataset)))
+            if self.shuffle:
+                import random
+                random.shuffle(indices)
+
+            batch = []
+            for idx in indices:
+                batch.append(self.dataset[idx])
+                if len(batch) == self.batch_size:
+                    yield self.collate_fn(batch)
+                    batch = []
+            if batch and not self.drop_last:
+                yield self.collate_fn(batch)
+
+        def __len__(self):
+            total = len(self.dataset)
+            if self.drop_last:
+                return total // self.batch_size
+            return (total + self.batch_size - 1) // self.batch_size
+else:
+    _SimpleDataLoader = None
 
 from utils import helper_functions as help
 from utils.features.captioning import image_data_loader
@@ -827,19 +860,28 @@ class AutoTag:
             print(f"=============================")
 
             data = None
-            if help.is_windows():
-                data = torch.utils.data.DataLoader(
-                    self.dataset,
-                    batch_size=self.batch_size,
-                    shuffle=False,
-                    collate_fn=self.collate_fn_remove_corrupted,
-                    drop_last=False,
-                )
+            if torch is not None:
+                if help.is_windows():
+                    data = torch.utils.data.DataLoader(
+                        self.dataset,
+                        batch_size=self.batch_size,
+                        shuffle=False,
+                        collate_fn=self.collate_fn_remove_corrupted,
+                        drop_last=False,
+                    )
+                else:
+                    data = torch.utils.data.DataLoader(
+                        self.dataset,
+                        batch_size=self.batch_size,
+                        num_workers=self.max_data_loader_n_workers,
+                        shuffle=False,
+                        collate_fn=self.collate_fn_remove_corrupted,
+                        drop_last=False,
+                    )
             else:
-                data = torch.utils.data.DataLoader(
+                data = _SimpleDataLoader(
                     self.dataset,
                     batch_size=self.batch_size,
-                    num_workers=self.max_data_loader_n_workers,
                     shuffle=False,
                     collate_fn=self.collate_fn_remove_corrupted,
                     drop_last=False,
@@ -855,7 +897,10 @@ class AutoTag:
                     continue
                 image, image_path = image_data
                 if image is not None:
-                    image = image.detach().numpy()
+                    if hasattr(image, "detach"):
+                        image = image.detach().numpy()
+                    else:
+                        image = np.asarray(image)
                     self.global_images_list.append(copy.deepcopy(image))
                 else:
                     try:

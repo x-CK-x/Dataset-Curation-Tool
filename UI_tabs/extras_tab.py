@@ -86,7 +86,7 @@ class Extras_tab:
         if tagging_model_download_types is not None and len(tagging_model_download_types) > 0:
             file_upload_button_single = gr.update(value=None)
             file_upload_button_batch = gr.update(value=None)
-            gallery_images_batch = gr.update(value=None)
+            gallery_images_batch = self.custom_dataset_tab_manager.gallery_batch_clear()
 
         return model_download_types, tagging_model_download_types, nested_model_links_checkbox_group, \
                file_upload_button_single, file_upload_button_batch, gallery_images_batch

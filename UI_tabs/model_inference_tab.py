@@ -3,6 +3,12 @@ import gradio as gr
 class Model_inference_tab:
     def __init__(self, logic_manager):
         self.logic = logic_manager
+    def _ensure_logic_component(self, attribute, default=None):
+        component = getattr(self.logic, attribute, None)
+        if component is None or not hasattr(component, "_id"):
+            component = gr.State(value=default)
+            setattr(self.logic, attribute, component)
+        return component
 
     def render_tab(self):
         with gr.Tab("Model Inference"):
@@ -30,8 +36,6 @@ class Model_inference_tab:
         self.logic.image_confidence_values = image_confidence_values
         self.logic.image_generated_tags = image_generated_tags
         self.logic.image_preview_pil = image_preview_pil
-        self.logic.gallery_images_batch = None
-        self.logic.include_invalid_tags_ckbx = True
 
         self.file_upload_button_single = file_upload_button_single
         self.file_upload_button_batch = file_upload_button_batch
@@ -84,7 +88,19 @@ class Model_inference_tab:
         )
         self.interrogate_button.click(
             fn=self.logic.interrogate_images,
-            inputs=[self.logic.image_mode_choice_state, self.confidence_threshold_slider, None, False, None, self.logic.include_invalid_tags_ckbx],
-            outputs=[self.image_confidence_values, self.image_generated_tags, self.image_preview_pil, gr.State(None)],
+            inputs=[
+                self.logic.image_mode_choice_state,
+                self.confidence_threshold_slider,
+                self._ensure_logic_component("category_filter_dropdown", []),
+                self._ensure_logic_component("category_filter_batch_checkbox", False),
+                self._ensure_logic_component("gallery_images_batch", None),
+                self._ensure_logic_component("include_invalid_tags_ckbx", True),
+            ],
+            outputs=[
+                self.image_confidence_values,
+                self.image_generated_tags,
+                self.image_preview_pil,
+                self._ensure_logic_component("gallery_images_batch", None),
+            ],
         )
 
