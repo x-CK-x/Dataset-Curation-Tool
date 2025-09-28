@@ -18,6 +18,18 @@ class Image_editor_tab:
 
         self.image_mode_choice_state = image_mode_choice_state
 
+        # Provide placeholder components so cross-tab event wiring has valid
+        # Gradio blocks even before this tab renders. They will be replaced by
+        # the real widgets in ``render_tab``.
+        self.image_editor = gr.State(value=None)
+        self.image_editor_crop = gr.State(value=None)
+        self.image_editor_sketch = gr.State(value=None)
+        self.image_editor_color_sketch = gr.State(value=None)
+        self.upload_button_single_edit = gr.State(value=None)
+        self.upload_button_single_crop = gr.State(value=None)
+        self.upload_button_single_sketch = gr.State(value=None)
+        self.upload_button_single_color = gr.State(value=None)
+
 
     '''
     new_feature             ::  dropdown menu option
