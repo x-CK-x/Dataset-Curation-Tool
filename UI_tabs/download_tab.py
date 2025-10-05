@@ -425,6 +425,50 @@ class Download_tab:
 
         return self.refresh_json_options()
 
+    def import_tag_presets(self, preset_file):
+        """Create configs from tag preset file with positive/negative sections."""
+        if not preset_file:
+            return self.refresh_json_options()
+
+        path = preset_file.name if hasattr(preset_file, "name") else preset_file
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = [ln.strip() for ln in f if ln.strip()]
+        except Exception:
+            return self.refresh_json_options()
+
+        cfg_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+        os.makedirs(cfg_dir, exist_ok=True)
+
+        tag_sep = self.settings_json.get("tag_sep", ",")
+        for idx, line in enumerate(lines):
+            parts = [section.strip() for section in line.split(";;;")]
+            positive_section = parts[0] if parts else ""
+            negative_section = parts[1] if len(parts) > 1 else ""
+
+            positive_tags = [tag.strip() for tag in positive_section.split(",") if tag.strip()]
+            negative_tags = [tag.strip() for tag in negative_section.split(",") if tag.strip()]
+
+            cfg = copy.deepcopy(self.settings_json)
+            cfg["required_tags"] = tag_sep.join(positive_tags)
+            cfg["blacklist"] = " | ".join(negative_tags)
+
+            base_name_parts = positive_tags or negative_tags or [f"preset_{idx}"]
+            safe_base = "_".join(base_name_parts)
+            safe_base = "".join(c if c.isalnum() or c in "-_" else "_" for c in safe_base)[:50]
+            fname = f"preset_{safe_base or idx}.json"
+            fpath = os.path.join(cfg_dir, fname)
+            count = 1
+            while os.path.exists(fpath):
+                fpath = os.path.join(cfg_dir, f"preset_{safe_base or idx}_{count}.json")
+                count += 1
+
+            help.update_JSON(cfg, fpath)
+            if self.db_manager:
+                self.db_manager.add_download_record("e621", json.dumps(cfg), fpath)
+
+        return self.refresh_json_options()
+
     # load a different config
     def change_config_batch_run(self, json_name_list, file_path):
         temp = '\\' if help.is_windows() else '/'
@@ -1379,6 +1423,9 @@ class Download_tab:
                     query_file = gr.File(label='Queries File', file_types=['.txt'])
                     import_queries_btn = gr.Button(value='Import Queries', variant='secondary')
                     refresh_json_btn = gr.Button(value='Refresh Configs', variant='secondary')
+                with gr.Row():
+                    tag_preset_file = gr.File(label='Tag Preset File', file_types=['.txt'])
+                    import_tag_presets_btn = gr.Button(value='Import Tag Presets', variant='secondary')
             with gr.Row():
                 run_button = gr.Button(value="Run", variant='primary')
             with gr.Row():
@@ -1470,6 +1517,8 @@ class Download_tab:
         self.query_file = query_file
         self.import_queries_btn = import_queries_btn
         self.refresh_json_btn = refresh_json_btn
+        self.tag_preset_file = tag_preset_file
+        self.import_tag_presets_btn = import_tag_presets_btn
         self.run_button = run_button
         self.progress_bar_textbox_collect = progress_bar_textbox_collect
         self.progress_bar_textbox_download = progress_bar_textbox_download
@@ -1576,6 +1625,8 @@ class Download_tab:
                 self.query_file,
                 self.import_queries_btn,
                 self.refresh_json_btn,
+                self.tag_preset_file,
+                self.import_tag_presets_btn,
                 self.run_button,
                 self.progress_bar_textbox_collect,
                 self.progress_bar_textbox_download,
@@ -1613,6 +1664,11 @@ class Download_tab:
         self.import_queries_btn.click(
             fn=self.import_queries,
             inputs=[self.query_file],
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+        )
+        self.import_tag_presets_btn.click(
+            fn=self.import_tag_presets,
+            inputs=[self.tag_preset_file],
             outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
         )
         self.refresh_json_btn.click(
