@@ -446,6 +446,7 @@ class Download_tab:
             mapping[display] = resolved
             display_names.append(display)
         self.batch_to_json_map = mapping
+        display_names.sort(key=str.casefold)
         return display_names, mapping
 
     def _build_preset_folder_notice(self, extra_message=None):
@@ -578,6 +579,22 @@ class Download_tab:
         batch_names, _ = self._load_preset_files()
         default_value = batch_names[0] if batch_names else None
         return gr.update(choices=batch_names, value=[]), gr.update(choices=batch_names, value=default_value)
+
+    def apply_preset_selection_action(self, action, current_selection):
+        batch_names, _ = self._load_preset_files()
+        normalized_selection = set(self._normalize_selection(current_selection))
+
+        if action == "Select All":
+            new_selection = list(batch_names)
+        elif action == "Deselect All":
+            new_selection = []
+        elif action == "Invert Selection":
+            new_selection = [name for name in batch_names if name not in normalized_selection]
+        else:
+            new_selection = list(normalized_selection)
+
+        checkbox_update = gr.update(choices=batch_names, value=new_selection)
+        return checkbox_update, gr.update(value=None)
 
     def import_queries(self, query_file):
         """Create configs from query file and insert DB entries."""
@@ -1549,6 +1566,13 @@ class Download_tab:
                     all_json_files_checkboxgroup = gr.CheckboxGroup(choices=preset_names,
                                                                 label='Select to Run', value=[])
                 with gr.Row():
+                    preset_selection_action_dropdown = gr.Dropdown(
+                        choices=["Select All", "Deselect All", "Invert Selection"],
+                        label='Preset Selection Actions',
+                        value=None,
+                        interactive=True,
+                    )
+                with gr.Row():
                     remove_json_batch_buttton = gr.Button(value="Batch Remove JSON", variant='secondary')
                     run_button_batch = gr.Button(value="Batch Run", variant='primary')
                 with gr.Row():
@@ -1647,6 +1671,7 @@ class Download_tab:
         self.progress_bar_textbox_download = progress_bar_textbox_download
         self.progress_bar_textbox_resize = progress_bar_textbox_resize
         self.all_json_files_checkboxgroup = all_json_files_checkboxgroup
+        self.preset_selection_action_dropdown = preset_selection_action_dropdown
         self.run_button_batch = run_button_batch
         self.progress_run_batch = progress_run_batch
         self.tag_json_fast_proto_required = tag_json_fast_proto_required
@@ -1760,6 +1785,7 @@ class Download_tab:
                 self.progress_bar_textbox_download,
                 self.progress_bar_textbox_resize,
                 self.all_json_files_checkboxgroup,
+                self.preset_selection_action_dropdown,
                 self.run_button_batch,
                 self.progress_run_batch,
                 self.tag_json_fast_proto_required,
@@ -1818,6 +1844,11 @@ class Download_tab:
                 self.quick_json_select,
                 self.preset_folder_notice,
             ],
+        )
+        self.preset_selection_action_dropdown.change(
+            fn=self.apply_preset_selection_action,
+            inputs=[self.preset_selection_action_dropdown, self.all_json_files_checkboxgroup],
+            outputs=[self.all_json_files_checkboxgroup, self.preset_selection_action_dropdown],
         )
         self.preset_folder_browser.change(
             fn=self.update_preset_folder_textbox,
