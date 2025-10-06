@@ -55,15 +55,28 @@ class Download_tab:
             self.preset_folder = self._resolve_folder_path(preset_setting)
             if os.path.abspath(str(preset_setting)) != self.preset_folder:
                 self.settings_json["preset_folder"] = self.preset_folder
-                help.update_JSON(self.settings_json, self.config_name)
+                self._persist_settings()
         else:
             self.preset_folder = self.default_preset_folder
             self.settings_json["preset_folder"] = self.preset_folder
-            help.update_JSON(self.settings_json, self.config_name)
+            self._persist_settings()
         self.batch_to_json_map = {}
 
     def set_tag_ideas(self, tag_ideas):
         self.tag_ideas = tag_ideas
+
+    def _persist_settings(self, persist_to_db=True):
+        """Write settings JSON to disk and snapshot to the database."""
+        help.update_JSON(self.settings_json, self.config_name)
+        if not persist_to_db or not self.db_manager:
+            return
+        config_path = self.config_name
+        if not os.path.isabs(config_path):
+            config_path = os.path.abspath(config_path)
+        try:
+            self.db_manager.add_config(self.settings_json, config_path)
+        except Exception as err:
+            help.verbose_print(f"Failed to persist settings to database: {err}")
 
     def set_advanced_settings_tab_manager(self, advanced_settings_tab_manager):
         self.advanced_settings_tab_manager = advanced_settings_tab_manager
@@ -474,9 +487,19 @@ class Download_tab:
             message = f"Failed to set preset folder: {err}"
             return gr.update(value=self.preset_folder), checkbox_update, dropdown_update, self._notice_update(message)
 
+        previous_folder = self.settings_json.get("preset_folder")
+        if previous_folder:
+            try:
+                previous_folder = self._resolve_folder_path(previous_folder)
+            except Exception:
+                previous_folder = None
+
         self.preset_folder = resolved
         self.settings_json["preset_folder"] = resolved
-        help.update_JSON(self.settings_json, self.config_name)
+        persist_to_db = True
+        if previous_folder and os.path.abspath(previous_folder) == resolved:
+            persist_to_db = False
+        self._persist_settings(persist_to_db=persist_to_db)
         checkbox_update, dropdown_update = self.refresh_json_options()
         return gr.update(value=self.preset_folder), checkbox_update, dropdown_update, self._notice_update()
 
