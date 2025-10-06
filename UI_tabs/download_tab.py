@@ -427,9 +427,7 @@ class Download_tab:
         mapping = {}
         display_names = []
         for path in json_paths:
-            display = help.get_batch_name(path)
-            if not display:
-                display = os.path.splitext(os.path.basename(path))[0]
+            display = os.path.splitext(os.path.basename(path))[0]
             display = self._ensure_unique_display_name(display, mapping)
             resolved = os.path.abspath(path)
             mapping[display] = resolved
