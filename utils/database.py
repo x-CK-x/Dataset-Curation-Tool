@@ -234,6 +234,24 @@ class DatabaseManager:
             mapping[name] = path
         return options, mapping
 
+    def remove_config_by_path(self, path):
+        """Remove config rows matching the provided path."""
+        if not path:
+            return
+        normalized = os.path.abspath(path)
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT id, path FROM configs")
+            rows = cur.fetchall()
+            ids_to_remove = [cid for cid, row_path in rows if row_path and os.path.abspath(row_path) == normalized]
+            if not ids_to_remove:
+                return
+            for cid in ids_to_remove:
+                cur.execute("DELETE FROM config_entries WHERE config_id=?", (cid,))
+                cur.execute("UPDATE downloads SET config_id=NULL WHERE config_id=?", (cid,))
+                cur.execute("DELETE FROM configs WHERE id=?", (cid,))
+            self.conn.commit()
+
     def _compute_hash(self, file_path):
         """Return SHA1 hash for the given file."""
         h = hashlib.sha1()

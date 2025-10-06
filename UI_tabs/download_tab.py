@@ -1,6 +1,7 @@
 import copy
 import glob
 import os
+import shutil
 import time
 import multiprocessing as mp
 import pandas as pd
@@ -47,6 +48,19 @@ class Download_tab:
         self.gallery_tab_manager = None
         self.tag_ideas = None
         self.is_csv_loaded = False
+
+        self.default_preset_folder = os.path.abspath(os.getcwd())
+        preset_setting = self.settings_json.get("preset_folder")
+        if preset_setting:
+            self.preset_folder = self._resolve_folder_path(preset_setting)
+            if os.path.abspath(str(preset_setting)) != self.preset_folder:
+                self.settings_json["preset_folder"] = self.preset_folder
+                help.update_JSON(self.settings_json, self.config_name)
+        else:
+            self.preset_folder = self.default_preset_folder
+            self.settings_json["preset_folder"] = self.preset_folder
+            help.update_JSON(self.settings_json, self.config_name)
+        self.batch_to_json_map = {}
 
     def set_tag_ideas(self, tag_ideas):
         self.tag_ideas = tag_ideas
@@ -162,19 +176,10 @@ class Download_tab:
         help.update_JSON(self.settings_json, self.config_name)
 
         # get file names & create dictionary mappings to batch file names
-        if self.db_manager:
-            batch_names, mapping = self.db_manager.list_config_options()
-            self.batch_to_json_map = mapping
-        else:
-            temp = '\\' if help.is_windows() else '/'
-            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-            batch_names = help.get_batch_names(json_names_full_paths)
-            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        batch_names, _ = self._load_preset_files()
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
-        quick_json_select = gr.update(choices=batch_names)
+        quick_json_select = gr.update(choices=batch_names, value=batch_names[0] if batch_names else None)
 
         return all_json_files_checkboxgroup, quick_json_select
 
@@ -276,7 +281,7 @@ class Download_tab:
             progress(idx / total, desc=f"Batch {idx}/{total} - ETA {int(eta)}s")
             yield gr.update(value=f"{idx}/{total} (ETA {int(eta)}s)")
             setting = self.batch_to_json_map[setting]
-            path = setting if os.path.isabs(setting) else os.path.join(self.cwd, setting)
+            path = self._resolve_file_path(setting)
             if not ".json" in path:
                 path += ".json"
 
@@ -380,19 +385,178 @@ class Download_tab:
             self.auto_complete_config = {'png': {}, 'jpg': {}, 'gif': {}}
             help.update_JSON(self.auto_complete_config, temp_config_path)
 
-    def refresh_json_options(self):
-        """Refresh config dropdown choices from the database or disk."""
-        if self.db_manager:
-            batch_names, mapping = self.db_manager.list_config_options()
-            self.batch_to_json_map = mapping
+    def _resolve_folder_path(self, folder_path):
+        if not folder_path:
+            return self.default_preset_folder
+        folder_path = os.path.expanduser(str(folder_path))
+        if not os.path.isabs(folder_path):
+            folder_path = os.path.abspath(os.path.join(self.default_preset_folder, folder_path))
+        return folder_path
+
+    def _resolve_file_path(self, path):
+        if not path:
+            return ""
+        candidate = os.path.expanduser(str(path))
+        if os.path.isabs(candidate):
+            return os.path.abspath(candidate)
+        active_folder = self.get_active_preset_directory()
+        preset_candidate = os.path.abspath(os.path.join(active_folder, candidate))
+        if os.path.exists(preset_candidate):
+            return preset_candidate
+        return os.path.abspath(os.path.join(self.default_preset_folder, candidate))
+
+    def get_active_preset_directory(self):
+        folder = self._resolve_folder_path(self.preset_folder)
+        os.makedirs(folder, exist_ok=True)
+        return folder
+
+    def _ensure_unique_display_name(self, name, existing):
+        if name not in existing:
+            return name
+        counter = 1
+        base = name
+        while True:
+            candidate = f"{base} ({counter})"
+            if candidate not in existing:
+                return candidate
+            counter += 1
+
+    def _load_preset_files(self):
+        folder = self.get_active_preset_directory()
+        json_paths = sorted(glob.glob(os.path.join(folder, "*.json")))
+        mapping = {}
+        display_names = []
+        for path in json_paths:
+            display = help.get_batch_name(path)
+            if not display:
+                display = os.path.splitext(os.path.basename(path))[0]
+            display = self._ensure_unique_display_name(display, mapping)
+            resolved = os.path.abspath(path)
+            mapping[display] = resolved
+            display_names.append(display)
+        self.batch_to_json_map = mapping
+        return display_names, mapping
+
+    def _build_preset_folder_notice(self, extra_message=None):
+        folder = self.get_active_preset_directory()
+        default = self.default_preset_folder
+        lines = [f"**Preset folder:** `{folder}`"]
+        if os.path.abspath(folder) != os.path.abspath(default):
+            lines.append(f"⚠️ Currently differs from current working directory `{default}`. Update if unintended.")
         else:
-            temp = '\\' if help.is_windows() else '/'
-            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-            batch_names = help.get_batch_names(json_names_full_paths)
-            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
-        return gr.update(choices=batch_names), gr.update(choices=batch_names)
+            lines.append("Using the current working directory for presets.")
+        if extra_message:
+            lines.append("")
+            lines.append(extra_message)
+        return "\n\n".join(lines)
+
+    def _notice_update(self, extra_message=None):
+        return gr.update(value=self._build_preset_folder_notice(extra_message))
+
+    def update_preset_notice(self):
+        return self._notice_update()
+
+    def refresh_presets_and_notice(self):
+        checkbox_update, dropdown_update = self.refresh_json_options()
+        return checkbox_update, dropdown_update, self._notice_update()
+
+    def update_preset_folder_textbox(self, folder_path):
+        if isinstance(folder_path, list):
+            folder_path = folder_path[0] if folder_path else ""
+        if not folder_path:
+            return gr.update(value=self.preset_folder)
+        return gr.update(value=str(folder_path))
+
+    def apply_preset_folder_selection(self, folder_path):
+        try:
+            resolved = self._resolve_folder_path(folder_path)
+            os.makedirs(resolved, exist_ok=True)
+        except Exception as err:
+            checkbox_update, dropdown_update = self.refresh_json_options()
+            message = f"Failed to set preset folder: {err}"
+            return gr.update(value=self.preset_folder), checkbox_update, dropdown_update, self._notice_update(message)
+
+        self.preset_folder = resolved
+        self.settings_json["preset_folder"] = resolved
+        help.update_JSON(self.settings_json, self.config_name)
+        checkbox_update, dropdown_update = self.refresh_json_options()
+        return gr.update(value=self.preset_folder), checkbox_update, dropdown_update, self._notice_update()
+
+    def _unique_destination(self, destination):
+        base, ext = os.path.splitext(destination)
+        candidate = destination
+        counter = 1
+        while os.path.exists(candidate):
+            candidate = f"{base}_{counter}{ext}"
+            counter += 1
+        return candidate
+
+    def archive_selected_presets(self, selected):
+        selected = self._normalize_selection(selected)
+        if not selected:
+            checkbox_update, dropdown_update = self.refresh_json_options()
+            return checkbox_update, dropdown_update, self._notice_update("No presets selected to archive.")
+
+        archive_dir = os.path.join(self.get_active_preset_directory(), "preset_archive")
+        os.makedirs(archive_dir, exist_ok=True)
+        moved = 0
+        for name in selected:
+            path = self.batch_to_json_map.get(name)
+            if not path:
+                continue
+            resolved = self._resolve_file_path(path)
+            if not os.path.isfile(resolved):
+                continue
+            destination = self._unique_destination(os.path.join(archive_dir, os.path.basename(resolved)))
+            shutil.move(resolved, destination)
+            moved += 1
+            if self.db_manager:
+                self.db_manager.remove_config_by_path(resolved)
+        checkbox_update, dropdown_update = self.refresh_json_options()
+        if moved:
+            message = f"Archived {moved} preset{'s' if moved != 1 else ''} to `{archive_dir}`."
+        else:
+            message = "Selected presets could not be archived."
+        return checkbox_update, dropdown_update, self._notice_update(message)
+
+    def delete_selected_presets(self, selected):
+        selected = self._normalize_selection(selected)
+        if not selected:
+            checkbox_update, dropdown_update = self.refresh_json_options()
+            return checkbox_update, dropdown_update, self._notice_update("No presets selected to delete.")
+
+        removed = 0
+        for name in selected:
+            path = self.batch_to_json_map.get(name)
+            if not path:
+                continue
+            resolved = self._resolve_file_path(path)
+            if os.path.isfile(resolved):
+                os.remove(resolved)
+                removed += 1
+                if self.db_manager:
+                    self.db_manager.remove_config_by_path(resolved)
+        checkbox_update, dropdown_update = self.refresh_json_options()
+        if removed:
+            message = f"Deleted {removed} preset{'s' if removed != 1 else ''}."
+        else:
+            message = "Selected presets could not be deleted."
+        return checkbox_update, dropdown_update, self._notice_update(message)
+
+    def _normalize_selection(self, selected):
+        if selected is None:
+            return []
+        if isinstance(selected, (list, tuple, set)):
+            return list(selected)
+        if isinstance(selected, (str, bytes)):
+            return [selected]
+        return [selected]
+
+    def refresh_json_options(self):
+        """Refresh config dropdown choices based on the active preset folder."""
+        batch_names, _ = self._load_preset_files()
+        default_value = batch_names[0] if batch_names else None
+        return gr.update(choices=batch_names, value=[]), gr.update(choices=batch_names, value=default_value)
 
     def import_queries(self, query_file):
         """Create configs from query file and insert DB entries."""
@@ -406,7 +570,7 @@ class Download_tab:
         except Exception:
             return self.refresh_json_options()
 
-        cfg_dir = os.path.join(self.settings_json["batch_folder"], "configs")
+        cfg_dir = self.get_active_preset_directory()
         os.makedirs(cfg_dir, exist_ok=True)
 
         for idx, q in enumerate(queries):
@@ -434,17 +598,13 @@ class Download_tab:
         settings_path = None
 
         if name != self.config_name:
-            path = name if os.path.isabs(name) else os.path.join(self.cwd, name)
+            path = self._resolve_file_path(name)
             self.settings_json = help.load_session_config(path)
             self.config_name = path
             settings_path = gr.update(value=self.config_name)
         else:
-            if temp in file_path:
-                self.settings_json = help.load_session_config(file_path)
-                self.config_name = file_path
-                settings_path = gr.update(value=self.config_name)
-            else:
-                path = file_path if os.path.isabs(file_path) else os.path.join(self.cwd, file_path)
+            if file_path:
+                path = self._resolve_file_path(file_path)
                 self.settings_json = help.load_session_config(path)
                 self.config_name = path
                 settings_path = gr.update(value=self.config_name)
@@ -550,19 +710,18 @@ class Download_tab:
         self.is_csv_loaded = False
 
         # get file names & create dictionary mappings to batch file names
-        if self.db_manager:
-            batch_names, mapping = self.db_manager.list_config_options()
-            self.batch_to_json_map = mapping
-        else:
-            temp = '\\' if help.is_windows() else '/'
-            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-            batch_names = help.get_batch_names(json_names_full_paths)
-            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        batch_names, mapping = self._load_preset_files()
+
+        current_display = next(
+            (key for key, value in mapping.items() if os.path.abspath(value) == os.path.abspath(self.config_name)),
+            None,
+        )
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
-        quick_json_select = gr.update(choices=batch_names, value=help.get_batch_name(self.config_name))
+        quick_json_select = gr.update(
+            choices=batch_names,
+            value=current_display if current_display else (batch_names[0] if batch_names else None),
+        )
 
         return batch_folder, resized_img_folder, tag_sep, tag_order_format, prepend_tags, append_tags, img_ext, method_tag_files, min_score, min_fav_count, min_year, min_month, \
                min_day, min_area, top_n, min_short_side, collect_checkbox_group_var, download_checkbox_group_var, resize_checkbox_group_var, required_tags_group_var, \
@@ -581,17 +740,13 @@ class Download_tab:
         settings_path = None
 
         if selected != self.config_name:
-            path = selected if os.path.isabs(selected) else os.path.join(self.cwd, selected)
+            path = self._resolve_file_path(selected)
             self.settings_json = help.load_session_config(path)
             self.config_name = path
             settings_path = gr.update(value=self.config_name)
         else:
-            if temp in file_path:
-                self.settings_json = help.load_session_config(file_path)
-                self.config_name = file_path
-                settings_path = gr.update(value=self.config_name)
-            else:
-                path = file_path if os.path.isabs(file_path) else os.path.join(self.cwd, file_path)
+            if file_path:
+                path = self._resolve_file_path(file_path)
                 self.settings_json = help.load_session_config(path)
                 self.config_name = path
                 settings_path = gr.update(value=self.config_name)
@@ -697,19 +852,10 @@ class Download_tab:
         self.is_csv_loaded = False
 
         # get file names & create dictionary mappings to batch file names
-        if self.db_manager:
-            batch_names, mapping = self.db_manager.list_config_options()
-            self.batch_to_json_map = mapping
-        else:
-            temp = '\\' if help.is_windows() else '/'
-            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-            batch_names = help.get_batch_names(json_names_full_paths)
-            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        batch_names, _ = self._load_preset_files()
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
-        quick_json_select = gr.update(choices=batch_names)
+        quick_json_select = gr.update(choices=batch_names, value=batch_names[0] if batch_names else None)
 
         return batch_folder, resized_img_folder, tag_sep, tag_order_format, prepend_tags, append_tags, img_ext, method_tag_files, min_score, min_fav_count, min_year, min_month, \
                min_day, min_area, top_n, min_short_side, collect_checkbox_group_var, download_checkbox_group_var, resize_checkbox_group_var, required_tags_group_var, \
@@ -1023,16 +1169,7 @@ class Download_tab:
             help.update_JSON(settings_copy, new_path)
 
         # get file names & create dictionary mappings to batch file names
-        if self.db_manager:
-            batch_names, mapping = self.db_manager.list_config_options()
-            self.batch_to_json_map = mapping
-        else:
-            temp = '\\' if help.is_windows() else '/'
-            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-            batch_names = help.get_batch_names(json_names_full_paths)
-            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        batch_names, _ = self._load_preset_files()
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
         return all_json_files_checkboxgroup
@@ -1064,28 +1201,35 @@ class Download_tab:
         return json_update, json_update, dropdown, dropdown#checkbox_group
 
     def remove_json_files(self, selected):
+        selected = self._normalize_selection(selected)
+        if not selected:
+            checkbox_update, dropdown_update = self.refresh_json_options()
+            return checkbox_update, dropdown_update, self._notice_update("No presets selected to remove.")
+
+        removed = 0
         for name in selected:
-            path = self.batch_to_json_map[name]
-            path = os.path.join(self.cwd, path)
-            if os.path.isfile(path):
-                os.remove(path)
+            path = self.batch_to_json_map.get(name)
+            if not path:
+                continue
+            resolved = self._resolve_file_path(path)
+            if os.path.isfile(resolved):
+                os.remove(resolved)
+                removed += 1
+                if self.db_manager:
+                    self.db_manager.remove_config_by_path(resolved)
 
         # get file names & create dictionary mappings to batch file names
-        if self.db_manager:
-            batch_names, mapping = self.db_manager.list_config_options()
-            self.batch_to_json_map = mapping
-        else:
-            temp = '\\' if help.is_windows() else '/'
-            config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-            json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-            json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-            batch_names = help.get_batch_names(json_names_full_paths)
-            self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+        batch_names, _ = self._load_preset_files()
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
-        quick_json_select = gr.update(choices=batch_names)
+        quick_json_select = gr.update(choices=batch_names, value=batch_names[0] if batch_names else None)
 
-        return all_json_files_checkboxgroup, quick_json_select
+        if removed:
+            message = f"Removed {removed} preset{'s' if removed != 1 else ''}."
+        else:
+            message = "Selected presets could not be removed."
+
+        return all_json_files_checkboxgroup, quick_json_select, self._notice_update(message)
 
 
 
@@ -1158,16 +1302,7 @@ class Download_tab:
                         settings_path = gr.Textbox(lines=1, label='Path/Name to \"NEW\" JSON (REQUIRED)', value=self.config_name)
                     create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
 
-                    if self.db_manager:
-                        batch_names, mapping = self.db_manager.list_config_options()
-                        self.batch_to_json_map = mapping
-                    else:
-                        temp = '\\' if help.is_windows() else '/'
-                        config_dir = os.path.join(self.settings_json["batch_folder"], "configs")
-                        json_names_full_paths = glob.glob(os.path.join(config_dir, f"*.json"))
-                        json_names = [(each_settings_file.split(temp)[-1]) for each_settings_file in json_names_full_paths]
-                        batch_names = help.get_batch_names(json_names_full_paths)
-                        self.batch_to_json_map = help.map_batches_to_files(json_names, batch_names)
+                    batch_names, _ = self._load_preset_files()
 
                     default_val = batch_names[0] if batch_names else None
                     quick_json_select = gr.Dropdown(
@@ -1387,13 +1522,29 @@ class Download_tab:
                 progress_bar_textbox_download = gr.Textbox(interactive=False, visible=False)
             with gr.Row():
                 progress_bar_textbox_resize = gr.Textbox(interactive=False, visible=False)
+            preset_names, _ = self._load_preset_files()
             with gr.Accordion("Batch Run", visible=True, open=False):
                 with gr.Row():
-                    all_json_files_checkboxgroup = gr.CheckboxGroup(choices=list(self.batch_to_json_map.keys()),
+                    all_json_files_checkboxgroup = gr.CheckboxGroup(choices=preset_names,
                                                                 label='Select to Run', value=[])
                 with gr.Row():
                     remove_json_batch_buttton = gr.Button(value="Batch Remove JSON", variant='secondary')
                     run_button_batch = gr.Button(value="Batch Run", variant='primary')
+                with gr.Row():
+                    preset_folder_textbox = gr.Textbox(
+                        lines=1,
+                        label='Preset Folder',
+                        value=self.preset_folder,
+                    )
+                    preset_folder_browser = gr.File(label='Browse Preset Folder', type='filepath', file_count='directory')
+                with gr.Row():
+                    apply_preset_folder_button = gr.Button(value="Use Preset Folder", variant='secondary')
+                    refresh_presets_button = gr.Button(value="Refresh Presets", variant='secondary')
+                with gr.Row():
+                    archive_presets_button = gr.Button(value="Archive Selected Presets", variant='secondary')
+                    delete_presets_button = gr.Button(value="Delete Selected Presets", variant='secondary')
+                with gr.Row():
+                    preset_folder_notice = gr.Markdown(self._build_preset_folder_notice())
                 with gr.Row():
                     progress_run_batch = gr.Textbox(interactive=False, visible=False)
 
@@ -1498,6 +1649,13 @@ class Download_tab:
         self.create_entries_from_checkboxgroup_button_required = create_entries_from_checkboxgroup_button_required
         self.create_entries_from_checkboxgroup_button_blacklist = create_entries_from_checkboxgroup_button_blacklist
         self.remove_json_batch_buttton = remove_json_batch_buttton
+        self.preset_folder_textbox = preset_folder_textbox
+        self.preset_folder_browser = preset_folder_browser
+        self.apply_preset_folder_button = apply_preset_folder_button
+        self.refresh_presets_button = refresh_presets_button
+        self.archive_presets_button = archive_presets_button
+        self.delete_presets_button = delete_presets_button
+        self.preset_folder_notice = preset_folder_notice
         self.override_download_delay_checkbox = override_download_delay_checkbox
         self.custom_download_delay_slider = custom_download_delay_slider
         self.custom_retry_attempts_slider = custom_retry_attempts_slider
@@ -1604,6 +1762,13 @@ class Download_tab:
                 self.create_entries_from_checkboxgroup_button_required,
                 self.create_entries_from_checkboxgroup_button_blacklist,
                 self.remove_json_batch_buttton,
+                self.preset_folder_textbox,
+                self.preset_folder_browser,
+                self.apply_preset_folder_button,
+                self.refresh_presets_button,
+                self.archive_presets_button,
+                self.delete_presets_button,
+                self.preset_folder_notice,
                 self.override_download_delay_checkbox,
                 self.custom_download_delay_slider,
                 self.custom_retry_attempts_slider
@@ -1619,11 +1784,49 @@ class Download_tab:
             fn=self.refresh_json_options,
             inputs=None,
             outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+        ).then(
+            fn=self.update_preset_notice,
+            inputs=None,
+            outputs=[self.preset_folder_notice]
         )
         self.remove_json_batch_buttton.click(
             fn=self.remove_json_files,
             inputs=[self.all_json_files_checkboxgroup],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_folder_notice,
+            ],
+        )
+        self.preset_folder_browser.change(
+            fn=self.update_preset_folder_textbox,
+            inputs=[self.preset_folder_browser],
+            outputs=[self.preset_folder_textbox]
+        )
+        self.apply_preset_folder_button.click(
+            fn=self.apply_preset_folder_selection,
+            inputs=[self.preset_folder_textbox],
+            outputs=[
+                self.preset_folder_textbox,
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_folder_notice,
+            ],
+        )
+        self.refresh_presets_button.click(
+            fn=self.refresh_presets_and_notice,
+            inputs=None,
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select, self.preset_folder_notice],
+        )
+        self.archive_presets_button.click(
+            fn=self.archive_selected_presets,
+            inputs=[self.all_json_files_checkboxgroup],
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select, self.preset_folder_notice],
+        )
+        self.delete_presets_button.click(
+            fn=self.delete_selected_presets,
+            inputs=[self.all_json_files_checkboxgroup],
+            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select, self.preset_folder_notice],
         )
 
         self.create_entries_from_checkboxgroup_button_required.click(
