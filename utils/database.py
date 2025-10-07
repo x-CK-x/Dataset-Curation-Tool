@@ -8,6 +8,7 @@ import json
 import time
 
 import shutil
+from typing import Any, Dict, List, Optional
 
 class DatabaseManager:
     def __init__(self, db_path):
@@ -113,6 +114,33 @@ class DatabaseManager:
                     FOREIGN KEY(duplicate_of) REFERENCES files(id)
                 )"""
             )
+            cur.execute(
+                """CREATE TABLE IF NOT EXISTS preset_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    preset_path TEXT UNIQUE,
+                    preset_name TEXT,
+                    last_scan_at TEXT,
+                    last_download_at TEXT,
+                    media_file_count INTEGER DEFAULT 0,
+                    media_file_types TEXT,
+                    has_media INTEGER DEFAULT 0,
+                    download_record_count INTEGER DEFAULT 0,
+                    total_files_downloaded INTEGER DEFAULT 0,
+                    new_media_available INTEGER DEFAULT 0,
+                    extra_metadata TEXT
+                )"""
+            )
+
+            cur.execute("PRAGMA table_info(downloads)")
+            download_columns = [row[1] for row in cur.fetchall()]
+            if "config_path" not in download_columns:
+                cur.execute("ALTER TABLE downloads ADD COLUMN config_path TEXT")
+            if "preset_name" not in download_columns:
+                cur.execute("ALTER TABLE downloads ADD COLUMN preset_name TEXT")
+            if "last_completed_at" not in download_columns:
+                cur.execute("ALTER TABLE downloads ADD COLUMN last_completed_at TEXT")
+            if "total_files" not in download_columns:
+                cur.execute("ALTER TABLE downloads ADD COLUMN total_files INTEGER DEFAULT 0")
             self.conn.commit()
 
     def add_config(self, json_content=None, path=None):
@@ -164,17 +192,38 @@ class DatabaseManager:
             self.conn.commit()
             return config_id
 
-    def add_download_record(self, website, config_json=None, config_path=None):
+    def add_download_record(
+        self,
+        website,
+        config_json=None,
+        config_path=None,
+        preset_name=None,
+    ):
         """Create a new download entry."""
         now = datetime.utcnow().isoformat()
         config_id = None
+        stored_path = config_path
         if config_json is not None or config_path is not None:
             config_id = self.add_config(config_json, config_path)
+            if stored_path is None and config_id is not None:
+                stored_path = self.get_config_path(config_id)
+        normalized_path = os.path.abspath(stored_path) if stored_path else None
         with self.lock:
             cur = self.conn.cursor()
             cur.execute(
-                "INSERT INTO downloads (website, config_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (website, config_id, now, now),
+                """
+                INSERT INTO downloads (
+                    website,
+                    config_id,
+                    config_path,
+                    preset_name,
+                    created_at,
+                    updated_at,
+                    last_completed_at,
+                    total_files
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (website, config_id, normalized_path, preset_name, now, now, None, 0),
             )
             self.conn.commit()
             return cur.lastrowid
@@ -234,6 +283,20 @@ class DatabaseManager:
             mapping[name] = path
         return options, mapping
 
+    def get_config_path(self, config_id: Optional[int]):
+        """Return the filesystem path for a stored config id."""
+
+        if not config_id:
+            return None
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT path FROM configs WHERE id=?", (config_id,))
+            row = cur.fetchone()
+            cur.close()
+        if row:
+            return row[0]
+        return None
+
     def remove_config_by_path(self, path):
         """Remove config rows matching the provided path."""
         if not path:
@@ -251,6 +314,125 @@ class DatabaseManager:
                 cur.execute("UPDATE downloads SET config_id=NULL WHERE config_id=?", (cid,))
                 cur.execute("DELETE FROM configs WHERE id=?", (cid,))
             self.conn.commit()
+
+    def summarize_preset_downloads(
+        self,
+        preset_path: str,
+        preset_name: Optional[str] = None,
+        fallback_last_download: Optional[str] = None,
+        file_count: int = 0,
+        file_types: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Aggregate database stats for the given preset path.
+
+        Returns a dictionary describing download totals and updates the
+        ``preset_stats`` table so historical information is persisted.
+        """
+
+        if not preset_path:
+            return {}
+
+        normalized = os.path.abspath(preset_path)
+        scan_time = datetime.utcnow().isoformat()
+        last_download_at = fallback_last_download
+        media_types = sorted(set(file_types or []))
+
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute(
+                """
+                SELECT id, updated_at, downloaded_count, has_new, new_available, total_files, last_completed_at
+                FROM downloads
+                WHERE config_path=?
+                """,
+                (normalized,),
+            )
+            rows = cur.fetchall()
+            download_ids = [row[0] for row in rows]
+            total_files_db = 0
+            new_media_available = 0
+            for row in rows:
+                _, updated_at, downloaded_count, has_new, new_available, total_files, last_completed = row
+                total_files_db = max(
+                    total_files_db,
+                    downloaded_count or 0,
+                    total_files or 0,
+                )
+                if has_new or new_available:
+                    new_media_available = 1
+                for candidate in (last_completed, updated_at):
+                    if candidate and (not last_download_at or candidate > last_download_at):
+                        last_download_at = candidate
+
+            if download_ids:
+                placeholders = ",".join(["?"] * len(download_ids))
+                cur.execute(
+                    f"SELECT COUNT(*), MAX(downloaded_at) FROM files WHERE download_id IN ({placeholders})",
+                    download_ids,
+                )
+                result = cur.fetchone()
+                if result:
+                    file_total, file_last = result
+                    if file_total and file_total > total_files_db:
+                        total_files_db = file_total
+                    if file_last and (not last_download_at or file_last > last_download_at):
+                        last_download_at = file_last
+            total_files = max(total_files_db, file_count)
+            has_media_flag = 1 if total_files > 0 else 0
+            extra_metadata = json.dumps({
+                "download_ids": download_ids,
+                "db_file_total": total_files_db,
+            })
+            cur.execute(
+                """
+                INSERT INTO preset_stats (
+                    preset_path,
+                    preset_name,
+                    last_scan_at,
+                    last_download_at,
+                    media_file_count,
+                    media_file_types,
+                    has_media,
+                    download_record_count,
+                    total_files_downloaded,
+                    new_media_available,
+                    extra_metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(preset_path) DO UPDATE SET
+                    preset_name=excluded.preset_name,
+                    last_scan_at=excluded.last_scan_at,
+                    last_download_at=COALESCE(excluded.last_download_at, preset_stats.last_download_at),
+                    media_file_count=excluded.media_file_count,
+                    media_file_types=excluded.media_file_types,
+                    has_media=excluded.has_media,
+                    download_record_count=excluded.download_record_count,
+                    total_files_downloaded=excluded.total_files_downloaded,
+                    new_media_available=excluded.new_media_available,
+                    extra_metadata=excluded.extra_metadata
+                """,
+                (
+                    normalized,
+                    preset_name,
+                    scan_time,
+                    last_download_at,
+                    file_count,
+                    json.dumps(media_types) if media_types else None,
+                    has_media_flag,
+                    len(download_ids),
+                    total_files,
+                    new_media_available,
+                    extra_metadata,
+                ),
+            )
+            self.conn.commit()
+
+        return {
+            "download_ids": download_ids,
+            "last_download_at": last_download_at,
+            "total_files_downloaded": total_files,
+            "new_media_available": new_media_available,
+            "media_file_count": file_count,
+        }
 
     def _compute_hash(self, file_path):
         """Return SHA1 hash for the given file."""

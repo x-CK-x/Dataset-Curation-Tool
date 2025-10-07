@@ -3,12 +3,15 @@ import glob
 import os
 import shutil
 import time
+from datetime import datetime
 import multiprocessing as mp
 import pandas as pd
 import gradio as gr
 import json
+from typing import Dict, List, Optional
 
 from utils import js_constants as js_, md_constants as md_, helper_functions as help
+from utils import preset_config
 from utils.features.downloader import batch_downloader
 
 
@@ -50,17 +53,39 @@ class Download_tab:
         self.is_csv_loaded = False
 
         self.default_preset_folder = os.path.abspath(os.getcwd())
-        preset_setting = self.settings_json.get("preset_folder")
-        if preset_setting:
-            self.preset_folder = self._resolve_folder_path(preset_setting)
-            if os.path.abspath(str(preset_setting)) != self.preset_folder:
-                self.settings_json["preset_folder"] = self.preset_folder
-                self._persist_settings()
-        else:
-            self.preset_folder = self.default_preset_folder
-            self.settings_json["preset_folder"] = self.preset_folder
+        stored_settings = preset_config.load_settings()
+        legacy_setting = self.settings_json.get("preset_folder")
+        stored_folder = stored_settings.get("preset_folder")
+
+        resolved_folder = None
+        legacy_resolved = None
+        if stored_folder:
+            try:
+                resolved_folder = self._resolve_folder_path(stored_folder)
+            except Exception:
+                resolved_folder = None
+
+        if legacy_setting:
+            try:
+                legacy_resolved = self._resolve_folder_path(legacy_setting)
+            except Exception:
+                legacy_resolved = None
+
+        if resolved_folder is None and legacy_resolved:
+            resolved_folder = legacy_resolved
+
+        if resolved_folder is None:
+            resolved_folder = self.default_preset_folder
+
+        self.preset_folder = resolved_folder
+        self.settings_json["preset_folder"] = self.preset_folder
+        if legacy_setting is None or ((legacy_resolved or legacy_setting) and legacy_resolved != self.preset_folder):
             self._persist_settings()
+        if not stored_folder or os.path.abspath(stored_folder) != os.path.abspath(self.preset_folder):
+            preset_config.set_preset_folder(self.preset_folder)
+
         self.batch_to_json_map = {}
+        self.preset_download_status: Dict[str, Dict[str, object]] = {}
 
     def set_tag_ideas(self, tag_ideas):
         self.tag_ideas = tag_ideas
@@ -266,9 +291,14 @@ class Download_tab:
         if self.db_manager is not None:
             import json
             cfg_json = json.dumps(self.settings_json)
+            preset_name = None
+            if self.config_name:
+                preset_name = os.path.splitext(os.path.basename(self.config_name))[0]
             self.current_download_id = self.db_manager.add_download_record(
                 website="e621",
                 config_json=cfg_json,
+                config_path=self.config_name,
+                preset_name=preset_name,
             )
             if self.gallery_tab_manager:
                 self.gallery_tab_manager.set_download_id(self.current_download_id)
@@ -300,9 +330,12 @@ class Download_tab:
 
             if self.db_manager is not None:
                 cfg = help.load_session_config(path)
+                preset_name = os.path.splitext(os.path.basename(path))[0]
                 dl_id = self.db_manager.add_download_record(
                     website="e621",
                     config_json=json.dumps(cfg),
+                    config_path=path,
+                    preset_name=preset_name,
                 )
                 if self.gallery_tab_manager:
                     self.gallery_tab_manager.set_download_id(dl_id)
@@ -418,6 +451,18 @@ class Download_tab:
             return preset_candidate
         return os.path.abspath(os.path.join(self.default_preset_folder, candidate))
 
+    def _resolve_download_directory(self, folder_path, preset_path):
+        if not folder_path:
+            return ""
+        folder_path = os.path.expanduser(str(folder_path))
+        if os.path.isabs(folder_path):
+            return os.path.abspath(folder_path)
+        preset_dir = os.path.dirname(os.path.abspath(preset_path))
+        candidate = os.path.abspath(os.path.join(preset_dir, folder_path))
+        if os.path.isdir(candidate):
+            return candidate
+        return os.path.abspath(os.path.join(self.default_preset_folder, folder_path))
+
     def get_active_preset_directory(self):
         folder = self._resolve_folder_path(self.preset_folder)
         os.makedirs(folder, exist_ok=True)
@@ -434,6 +479,122 @@ class Download_tab:
                 return candidate
             counter += 1
 
+    def _gather_preset_download_info(self, display_name: str, preset_path: str) -> Dict[str, object]:
+        info: Dict[str, object] = {
+            "has_media": False,
+            "media_count": 0,
+            "media_types": [],
+            "media_paths": [],
+            "last_media_modified": None,
+            "db": {},
+        }
+
+        try:
+            with open(preset_path, "r", encoding="utf-8") as handle:
+                preset_data = json.load(handle) or {}
+        except Exception as err:
+            info["error"] = str(err)
+            return info
+
+        candidate_keys = [
+            "downloaded_posts_folder",
+            "png_folder",
+            "jpg_folder",
+            "webm_folder",
+            "gif_folder",
+            "swf_folder",
+        ]
+        directories: List[str] = []
+        for key in candidate_keys:
+            folder = preset_data.get(key)
+            if not folder:
+                continue
+            resolved = self._resolve_download_directory(folder, preset_path)
+            if resolved and resolved not in directories:
+                directories.append(resolved)
+        info["media_paths"] = directories
+
+        media_extensions = {".png", ".jpg", ".jpeg", ".mp4", ".webp", ".webm"}
+        media_types = set()
+        media_count = 0
+        last_modified = None
+        for directory in directories:
+            if not directory or not os.path.isdir(directory):
+                continue
+            for root, _, files in os.walk(directory):
+                for fname in files:
+                    ext = os.path.splitext(fname)[1].lower()
+                    if ext not in media_extensions:
+                        continue
+                    media_count += 1
+                    media_types.add(ext)
+                    try:
+                        mtime = os.path.getmtime(os.path.join(root, fname))
+                    except OSError:
+                        continue
+                    if last_modified is None or mtime > last_modified:
+                        last_modified = mtime
+
+        info["media_count"] = media_count
+        info["media_types"] = sorted(media_types)
+        if last_modified is not None:
+            info["last_media_modified"] = datetime.fromtimestamp(last_modified).isoformat()
+        info["has_media"] = media_count > 0
+
+        if self.db_manager:
+            db_stats = self.db_manager.summarize_preset_downloads(
+                preset_path=os.path.abspath(preset_path),
+                preset_name=display_name,
+                fallback_last_download=info.get("last_media_modified"),
+                file_count=media_count,
+                file_types=info["media_types"],
+            ) or {}
+            if db_stats.get("last_download_at") and not info.get("last_media_modified"):
+                info["last_media_modified"] = db_stats["last_download_at"]
+            info["has_media"] = info["has_media"] or bool(db_stats.get("total_files_downloaded"))
+            info["db"] = db_stats
+
+        return info
+
+    def _update_preset_status(self, display_names: List[str], mapping: Dict[str, str]) -> None:
+        status: Dict[str, Dict[str, object]] = {}
+        for name in display_names:
+            path = mapping.get(name)
+            if not path:
+                continue
+            status[name] = self._gather_preset_download_info(name, path)
+        self.preset_download_status = status
+
+    def _downloaded_preset_names(self) -> List[str]:
+        downloaded = []
+        for name, info in self.preset_download_status.items():
+            if info.get("has_media"):
+                downloaded.append(name)
+                continue
+            db_info = info.get("db", {}) if isinstance(info, dict) else {}
+            if isinstance(db_info, dict) and db_info.get("total_files_downloaded"):
+                downloaded.append(name)
+        downloaded.sort(key=str.casefold)
+        return downloaded
+
+    def _build_downloaded_css(self, downloaded: Optional[List[str]] = None) -> str:
+        downloaded = downloaded if downloaded is not None else self._downloaded_preset_names()
+        if not downloaded:
+            return "<style id='preset-download-style'></style>"
+        lines = ["<style id='preset-download-style'>"]
+        for name in downloaded:
+            safe = name.replace("\\", "\\\\").replace('"', '\\"')
+            lines.append(
+                f"#preset-checkboxgroup label:has(> input[value=\"{safe}\"]) "
+                "{background-color: #f9d5d5; border-radius: 4px; padding: 4px 6px;}"
+            )
+            lines.append(
+                f"#preset-checkboxgroup input[value=\"{safe}\"] + span "
+                "{background-color: #f9d5d5; border-radius: 4px; padding: 2px 6px;}"
+            )
+        lines.append("</style>")
+        return "\n".join(lines)
+
     def _load_preset_files(self):
         folder = self.get_active_preset_directory()
         json_paths = sorted(glob.glob(os.path.join(folder, "*.json")))
@@ -447,6 +608,7 @@ class Download_tab:
             display_names.append(display)
         self.batch_to_json_map = mapping
         display_names.sort(key=str.casefold)
+        self._update_preset_status(display_names, mapping)
         return display_names, mapping
 
     def _build_preset_folder_notice(self, extra_message=None):
@@ -469,8 +631,8 @@ class Download_tab:
         return self._notice_update()
 
     def refresh_presets_and_notice(self):
-        checkbox_update, dropdown_update = self.refresh_json_options()
-        return checkbox_update, dropdown_update, self._notice_update()
+        checkbox_update, dropdown_update, style_update = self.refresh_json_options()
+        return checkbox_update, dropdown_update, style_update, self._notice_update()
 
     def update_preset_folder_textbox(self, folder_path):
         if isinstance(folder_path, list):
@@ -484,9 +646,15 @@ class Download_tab:
             resolved = self._resolve_folder_path(folder_path)
             os.makedirs(resolved, exist_ok=True)
         except Exception as err:
-            checkbox_update, dropdown_update = self.refresh_json_options()
+            checkbox_update, dropdown_update, style_update = self.refresh_json_options()
             message = f"Failed to set preset folder: {err}"
-            return gr.update(value=self.preset_folder), checkbox_update, dropdown_update, self._notice_update(message)
+            return (
+                gr.update(value=self.preset_folder),
+                checkbox_update,
+                dropdown_update,
+                style_update,
+                self._notice_update(message),
+            )
 
         previous_folder = self.settings_json.get("preset_folder")
         if previous_folder:
@@ -501,8 +669,15 @@ class Download_tab:
         if previous_folder and os.path.abspath(previous_folder) == resolved:
             persist_to_db = False
         self._persist_settings(persist_to_db=persist_to_db)
-        checkbox_update, dropdown_update = self.refresh_json_options()
-        return gr.update(value=self.preset_folder), checkbox_update, dropdown_update, self._notice_update()
+        preset_config.set_preset_folder(self.preset_folder)
+        checkbox_update, dropdown_update, style_update = self.refresh_json_options()
+        return (
+            gr.update(value=self.preset_folder),
+            checkbox_update,
+            dropdown_update,
+            style_update,
+            self._notice_update(),
+        )
 
     def _unique_destination(self, destination):
         base, ext = os.path.splitext(destination)
@@ -516,8 +691,13 @@ class Download_tab:
     def archive_selected_presets(self, selected):
         selected = self._normalize_selection(selected)
         if not selected:
-            checkbox_update, dropdown_update = self.refresh_json_options()
-            return checkbox_update, dropdown_update, self._notice_update("No presets selected to archive.")
+            checkbox_update, dropdown_update, style_update = self.refresh_json_options()
+            return (
+                checkbox_update,
+                dropdown_update,
+                style_update,
+                self._notice_update("No presets selected to archive."),
+            )
 
         archive_dir = os.path.join(self.get_active_preset_directory(), "preset_archive")
         os.makedirs(archive_dir, exist_ok=True)
@@ -534,18 +714,23 @@ class Download_tab:
             moved += 1
             if self.db_manager:
                 self.db_manager.remove_config_by_path(resolved)
-        checkbox_update, dropdown_update = self.refresh_json_options()
+        checkbox_update, dropdown_update, style_update = self.refresh_json_options()
         if moved:
             message = f"Archived {moved} preset{'s' if moved != 1 else ''} to `{archive_dir}`."
         else:
             message = "Selected presets could not be archived."
-        return checkbox_update, dropdown_update, self._notice_update(message)
+        return checkbox_update, dropdown_update, style_update, self._notice_update(message)
 
     def delete_selected_presets(self, selected):
         selected = self._normalize_selection(selected)
         if not selected:
-            checkbox_update, dropdown_update = self.refresh_json_options()
-            return checkbox_update, dropdown_update, self._notice_update("No presets selected to delete.")
+            checkbox_update, dropdown_update, style_update = self.refresh_json_options()
+            return (
+                checkbox_update,
+                dropdown_update,
+                style_update,
+                self._notice_update("No presets selected to delete."),
+            )
 
         removed = 0
         for name in selected:
@@ -558,12 +743,12 @@ class Download_tab:
                 removed += 1
                 if self.db_manager:
                     self.db_manager.remove_config_by_path(resolved)
-        checkbox_update, dropdown_update = self.refresh_json_options()
+        checkbox_update, dropdown_update, style_update = self.refresh_json_options()
         if removed:
             message = f"Deleted {removed} preset{'s' if removed != 1 else ''}."
         else:
             message = "Selected presets could not be deleted."
-        return checkbox_update, dropdown_update, self._notice_update(message)
+        return checkbox_update, dropdown_update, style_update, self._notice_update(message)
 
     def _normalize_selection(self, selected):
         if selected is None:
@@ -578,7 +763,12 @@ class Download_tab:
         """Refresh config dropdown choices based on the active preset folder."""
         batch_names, _ = self._load_preset_files()
         default_value = batch_names[0] if batch_names else None
-        return gr.update(choices=batch_names, value=[]), gr.update(choices=batch_names, value=default_value)
+        style_update = gr.update(value=self._build_downloaded_css())
+        return (
+            gr.update(choices=batch_names, value=[]),
+            gr.update(choices=batch_names, value=default_value),
+            style_update,
+        )
 
     def apply_preset_selection_action(self, action, current_selection):
         batch_names, _ = self._load_preset_files()
@@ -594,7 +784,8 @@ class Download_tab:
             new_selection = list(normalized_selection)
 
         checkbox_update = gr.update(choices=batch_names, value=new_selection)
-        return checkbox_update, gr.update(value=None)
+        style_update = gr.update(value=self._build_downloaded_css())
+        return checkbox_update, gr.update(value=None), style_update
 
     def import_queries(self, query_file):
         """Create configs from query file and insert DB entries."""
@@ -623,7 +814,13 @@ class Download_tab:
                 count += 1
             help.update_JSON(cfg, fpath)
             if self.db_manager:
-                self.db_manager.add_download_record("e621", json.dumps(cfg), fpath)
+                preset_name = os.path.splitext(os.path.basename(fpath))[0]
+                self.db_manager.add_download_record(
+                    "e621",
+                    json.dumps(cfg),
+                    fpath,
+                    preset_name=preset_name,
+                )
 
         return self.refresh_json_options()
 
@@ -1241,8 +1438,13 @@ class Download_tab:
     def remove_json_files(self, selected):
         selected = self._normalize_selection(selected)
         if not selected:
-            checkbox_update, dropdown_update = self.refresh_json_options()
-            return checkbox_update, dropdown_update, self._notice_update("No presets selected to remove.")
+            checkbox_update, dropdown_update, style_update = self.refresh_json_options()
+            return (
+                checkbox_update,
+                dropdown_update,
+                style_update,
+                self._notice_update("No presets selected to remove."),
+            )
 
         removed = 0
         for name in selected:
@@ -1261,13 +1463,19 @@ class Download_tab:
 
         all_json_files_checkboxgroup = gr.update(choices=batch_names, value=[])
         quick_json_select = gr.update(choices=batch_names, value=batch_names[0] if batch_names else None)
+        style_update = gr.update(value=self._build_downloaded_css())
 
         if removed:
             message = f"Removed {removed} preset{'s' if removed != 1 else ''}."
         else:
             message = "Selected presets could not be removed."
 
-        return all_json_files_checkboxgroup, quick_json_select, self._notice_update(message)
+        return (
+            all_json_files_checkboxgroup,
+            quick_json_select,
+            style_update,
+            self._notice_update(message),
+        )
 
 
 
@@ -1564,7 +1772,12 @@ class Download_tab:
             with gr.Accordion("Batch Run", visible=True, open=False):
                 with gr.Row():
                     all_json_files_checkboxgroup = gr.CheckboxGroup(choices=preset_names,
-                                                                label='Select to Run', value=[])
+                                                                label='Select to Run', value=[],
+                                                                elem_id="preset-checkboxgroup")
+                preset_status_style = gr.HTML(
+                    value=self._build_downloaded_css(),
+                    show_label=False,
+                )
                 with gr.Row():
                     preset_selection_action_dropdown = gr.Dropdown(
                         choices=["Select All", "Deselect All", "Invert Selection"],
@@ -1702,6 +1915,7 @@ class Download_tab:
         self.archive_presets_button = archive_presets_button
         self.delete_presets_button = delete_presets_button
         self.preset_folder_notice = preset_folder_notice
+        self.preset_status_style = preset_status_style
         self.override_download_delay_checkbox = override_download_delay_checkbox
         self.custom_download_delay_slider = custom_download_delay_slider
         self.custom_retry_attempts_slider = custom_retry_attempts_slider
@@ -1825,12 +2039,20 @@ class Download_tab:
         self.import_queries_btn.click(
             fn=self.import_queries,
             inputs=[self.query_file],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+            ]
         )
         self.refresh_json_btn.click(
             fn=self.refresh_json_options,
             inputs=None,
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+            ]
         ).then(
             fn=self.update_preset_notice,
             inputs=None,
@@ -1842,13 +2064,18 @@ class Download_tab:
             outputs=[
                 self.all_json_files_checkboxgroup,
                 self.quick_json_select,
+                self.preset_status_style,
                 self.preset_folder_notice,
             ],
         )
         self.preset_selection_action_dropdown.change(
             fn=self.apply_preset_selection_action,
             inputs=[self.preset_selection_action_dropdown, self.all_json_files_checkboxgroup],
-            outputs=[self.all_json_files_checkboxgroup, self.preset_selection_action_dropdown],
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.preset_selection_action_dropdown,
+                self.preset_status_style,
+            ],
         )
         self.preset_folder_browser.change(
             fn=self.update_preset_folder_textbox,
@@ -1862,23 +2089,39 @@ class Download_tab:
                 self.preset_folder_textbox,
                 self.all_json_files_checkboxgroup,
                 self.quick_json_select,
+                self.preset_status_style,
                 self.preset_folder_notice,
             ],
         )
         self.refresh_presets_button.click(
             fn=self.refresh_presets_and_notice,
             inputs=None,
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select, self.preset_folder_notice],
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+                self.preset_folder_notice,
+            ],
         )
         self.archive_presets_button.click(
             fn=self.archive_selected_presets,
             inputs=[self.all_json_files_checkboxgroup],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select, self.preset_folder_notice],
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+                self.preset_folder_notice,
+            ],
         )
         self.delete_presets_button.click(
             fn=self.delete_selected_presets,
             inputs=[self.all_json_files_checkboxgroup],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select, self.preset_folder_notice],
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+                self.preset_folder_notice,
+            ],
         )
 
         self.create_entries_from_checkboxgroup_button_required.click(
@@ -2114,7 +2357,11 @@ class Download_tab:
                 self.custom_download_delay_slider,
                 self.custom_retry_attempts_slider
             ],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+            ]
         ).then(
             fn=self.check_to_reload_auto_complete_config,
             inputs=[],
@@ -2168,7 +2415,11 @@ class Download_tab:
                 self.custom_download_delay_slider,
                 self.custom_retry_attempts_slider
             ],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+            ]
         ).then(
             fn=self.run_script,
             inputs=[self.basefolder,self.settings_path,self.numcpu,self.phaseperbatch,self.keepdb,self.cachepostsdb,self.postscsv,self.tagscsv,self.postsparquet,
@@ -2224,7 +2475,11 @@ class Download_tab:
         ).then(
             fn=self.refresh_json_options,
             inputs=[],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+            ]
         )
         self.run_button_batch.click(
             fn=self.make_run_visible,
@@ -2280,7 +2535,11 @@ class Download_tab:
         ).then(
             fn=self.refresh_json_options,
             inputs=[],
-            outputs=[self.all_json_files_checkboxgroup, self.quick_json_select]
+            outputs=[
+                self.all_json_files_checkboxgroup,
+                self.quick_json_select,
+                self.preset_status_style,
+            ]
         )
         self.remove_button_required.click(
             fn=self.check_box_group_handler_required,

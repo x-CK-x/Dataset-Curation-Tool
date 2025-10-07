@@ -37,7 +37,15 @@ class Import_tab:
                 json_text = json.dumps(settings, indent=2)
             except Exception:
                 json_text = None
-        download_id = self.db_manager.add_download_record(website or "manual", json_text, config_path)
+        preset_name = None
+        if config_path:
+            preset_name = os.path.splitext(os.path.basename(config_path))[0]
+        download_id = self.db_manager.add_download_record(
+            website or "manual",
+            json_text,
+            config_path,
+            preset_name=preset_name,
+        )
         count = 0
         for fname in os.listdir(image_folder):
             img_path = os.path.join(image_folder, fname)
