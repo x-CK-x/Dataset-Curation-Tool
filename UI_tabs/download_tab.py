@@ -594,34 +594,54 @@ class Download_tab:
         style_lines = [
             "<style id='preset-download-style'>",
             "#preset-checkboxgroup label {",
-            "    border-radius: 4px;",
+            "    border-radius: 6px;",
+            "    padding: 2px 8px;",
+            "    display: inline-flex;",
+            "    align-items: center;",
+            "    gap: 6px;",
+            "    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;",
         ]
         style_lines.extend(
             [
-                "    transition: background-color 0.2s ease-in-out;",
                 "}",
-                "#preset-checkboxgroup input + span {",
+                "#preset-checkboxgroup label span,",
+                "#preset-checkboxgroup label div {",
                 "    border-radius: 4px;",
-                "    padding: 2px 6px;",
-                "    transition: background-color 0.2s ease-in-out;",
+                "    padding: 1px 4px;",
+                "    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;",
                 "}",
             ]
         )
 
-        highlight_color = "#f9d5d5"
-        border_color = "#f2a7a7"
+        highlight_color = "#ffb3b3"
+        border_color = "#e57373"
         text_color = "#7a0b0b"
 
         for name in downloaded:
             escaped = self._css_attribute_escape(name)
+            highlight_targets = ",\n".join(
+                [
+                    f'#preset-checkboxgroup input[value="{escaped}"] + span',
+                    f'#preset-checkboxgroup input[value="{escaped}"] ~ span',
+                    f'#preset-checkboxgroup input[value="{escaped}"] ~ div',
+                    f'#preset-checkboxgroup label input[value="{escaped}"] + span',
+                    f'#preset-checkboxgroup label input[value="{escaped}"] ~ span',
+                    f'#preset-checkboxgroup label input[value="{escaped}"] ~ div',
+                ]
+            )
             style_lines.extend(
                 [
-                    f'#preset-checkboxgroup input[value="{escaped}"] + span {{',
+                    f"{highlight_targets} {{",
                     f"    background-color: {highlight_color};",
                     f"    box-shadow: inset 0 0 0 1px {border_color};",
                     f"    color: {text_color};",
                     "}",
-                    f'#preset-checkboxgroup input[value="{escaped}"] {{',
+                    f'#preset-checkboxgroup label:has(> input[value="{escaped}"]) {{',
+                    f"    background-color: {highlight_color};",
+                    f"    box-shadow: inset 0 0 0 1px {border_color};",
+                    f"    color: {text_color};",
+                    "}",
+                    f'#preset-checkboxgroup label input[value="{escaped}"] {{',
                     f"    accent-color: {text_color};",
                     "}",
                 ]
@@ -629,6 +649,60 @@ class Download_tab:
 
         style_lines.append("</style>")
         return "\n".join(style_lines)
+
+    def _gallery_reset_outputs(self):
+        if not self.gallery_tab_manager:
+            return []
+        return [
+            self.gallery_tab_manager.download_folder_type,
+            self.gallery_tab_manager.img_id_textbox,
+            self.gallery_tab_manager.tag_search_textbox,
+            self.gallery_tab_manager.tag_search_suggestion_dropdown,
+            self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup,
+            self.gallery_tab_manager.select_multiple_images_checkbox,
+            self.gallery_tab_manager.select_between_images_checkbox,
+            self.gallery_tab_manager.select_all_checkbox,
+            self.gallery_tab_manager.deselect_all_checkbox,
+            self.gallery_tab_manager.invert_selection_checkbox,
+            self.gallery_tab_manager.apply_datetime_sort_ckbx,
+            self.gallery_tab_manager.apply_datetime_choice_menu,
+            self.gallery_tab_manager.send_img_from_gallery_dropdown,
+            self.gallery_tab_manager.batch_send_from_gallery_checkbox,
+            self.gallery_tab_manager.tag_add_textbox,
+            self.gallery_tab_manager.tag_add_suggestion_dropdown,
+            self.gallery_tab_manager.category_filter_gallery_dropdown,
+            self.gallery_tab_manager.tag_effects_gallery_dropdown,
+            self.gallery_tab_manager.img_artist_tag_checkbox_group,
+            self.gallery_tab_manager.img_character_tag_checkbox_group,
+            self.gallery_tab_manager.img_species_tag_checkbox_group,
+            self.gallery_tab_manager.img_general_tag_checkbox_group,
+            self.gallery_tab_manager.img_meta_tag_checkbox_group,
+            self.gallery_tab_manager.img_rating_tag_checkbox_group,
+            self.gallery_tab_manager.gallery_comp,
+            self.gallery_tab_manager.compare_button,
+            self.gallery_tab_manager.compare_image_left,
+            self.gallery_tab_manager.comp_left_artist,
+            self.gallery_tab_manager.comp_left_character,
+            self.gallery_tab_manager.comp_left_species,
+            self.gallery_tab_manager.comp_left_invalid,
+            self.gallery_tab_manager.comp_left_general,
+            self.gallery_tab_manager.comp_left_meta,
+            self.gallery_tab_manager.comp_left_rating,
+            self.gallery_tab_manager.compare_image_right,
+            self.gallery_tab_manager.comp_right_artist,
+            self.gallery_tab_manager.comp_right_character,
+            self.gallery_tab_manager.comp_right_species,
+            self.gallery_tab_manager.comp_right_invalid,
+            self.gallery_tab_manager.comp_right_general,
+            self.gallery_tab_manager.comp_right_meta,
+            self.gallery_tab_manager.comp_right_rating,
+            self.gallery_tab_manager.transfer_tags_button,
+            self.gallery_tab_manager.remove_tags_button,
+            self.gallery_tab_manager.transfer_tags_button_rl,
+            self.gallery_tab_manager.remove_tags_button_rl,
+            self.gallery_tab_manager.apply_transfer_button,
+            self.gallery_tab_manager.apply_remove_button,
+        ]
 
     def _sanitize_folder_component(self, value: Optional[str]) -> str:
         if not value:
@@ -2354,30 +2428,7 @@ class Download_tab:
         ).then(
             fn=self.gallery_tab_manager.reset_gallery_manager,
             inputs=[],
-            outputs=[
-                self.gallery_tab_manager.download_folder_type,
-                self.gallery_tab_manager.img_id_textbox,
-                self.gallery_tab_manager.tag_search_textbox,
-                self.gallery_tab_manager.tag_search_suggestion_dropdown,
-                self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup,
-                self.gallery_tab_manager.select_multiple_images_checkbox,
-                self.gallery_tab_manager.select_between_images_checkbox,
-                self.gallery_tab_manager.apply_datetime_sort_ckbx,
-                self.gallery_tab_manager.apply_datetime_choice_menu,
-                self.gallery_tab_manager.send_img_from_gallery_dropdown,
-                self.gallery_tab_manager.batch_send_from_gallery_checkbox,
-                self.gallery_tab_manager.tag_add_textbox,
-                self.gallery_tab_manager.tag_add_suggestion_dropdown,
-                self.gallery_tab_manager.category_filter_gallery_dropdown,
-                self.gallery_tab_manager.tag_effects_gallery_dropdown,
-                self.gallery_tab_manager.img_artist_tag_checkbox_group,
-                self.gallery_tab_manager.img_character_tag_checkbox_group,
-                self.gallery_tab_manager.img_species_tag_checkbox_group,
-                self.gallery_tab_manager.img_general_tag_checkbox_group,
-                self.gallery_tab_manager.img_meta_tag_checkbox_group,
-                self.gallery_tab_manager.img_rating_tag_checkbox_group,
-                self.gallery_tab_manager.gallery_comp
-            ]
+            outputs=self._gallery_reset_outputs()
         )
         self.config_save_var.click(
             fn=self.config_save_button,
@@ -2518,30 +2569,7 @@ class Download_tab:
             outputs=[]).then(
             fn=self.gallery_tab_manager.reset_gallery_manager,
             inputs=[],
-            outputs=[
-                self.gallery_tab_manager.download_folder_type,
-                self.gallery_tab_manager.img_id_textbox,
-                self.gallery_tab_manager.tag_search_textbox,
-                self.gallery_tab_manager.tag_search_suggestion_dropdown,
-                self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup,
-                self.gallery_tab_manager.select_multiple_images_checkbox,
-                self.gallery_tab_manager.select_between_images_checkbox,
-                self.gallery_tab_manager.apply_datetime_sort_ckbx,
-                self.gallery_tab_manager.apply_datetime_choice_menu,
-                self.gallery_tab_manager.send_img_from_gallery_dropdown,
-                self.gallery_tab_manager.batch_send_from_gallery_checkbox,
-                self.gallery_tab_manager.tag_add_textbox,
-                self.gallery_tab_manager.tag_add_suggestion_dropdown,
-                self.gallery_tab_manager.category_filter_gallery_dropdown,
-                self.gallery_tab_manager.tag_effects_gallery_dropdown,
-                self.gallery_tab_manager.img_artist_tag_checkbox_group,
-                self.gallery_tab_manager.img_character_tag_checkbox_group,
-                self.gallery_tab_manager.img_species_tag_checkbox_group,
-                self.gallery_tab_manager.img_general_tag_checkbox_group,
-                self.gallery_tab_manager.img_meta_tag_checkbox_group,
-                self.gallery_tab_manager.img_rating_tag_checkbox_group,
-                self.gallery_tab_manager.gallery_comp
-            ]
+            outputs=self._gallery_reset_outputs()
         ).then(
             fn=self.refresh_json_options,
             inputs=[],
@@ -2578,30 +2606,7 @@ class Download_tab:
         ).then(
             fn=self.gallery_tab_manager.reset_gallery_manager,
             inputs=[],
-            outputs=[
-                self.gallery_tab_manager.download_folder_type,
-                self.gallery_tab_manager.img_id_textbox,
-                self.gallery_tab_manager.tag_search_textbox,
-                self.gallery_tab_manager.tag_search_suggestion_dropdown,
-                self.gallery_tab_manager.apply_to_all_type_select_checkboxgroup,
-                self.gallery_tab_manager.select_multiple_images_checkbox,
-                self.gallery_tab_manager.select_between_images_checkbox,
-                self.gallery_tab_manager.apply_datetime_sort_ckbx,
-                self.gallery_tab_manager.apply_datetime_choice_menu,
-                self.gallery_tab_manager.send_img_from_gallery_dropdown,
-                self.gallery_tab_manager.batch_send_from_gallery_checkbox,
-                self.gallery_tab_manager.tag_add_textbox,
-                self.gallery_tab_manager.tag_add_suggestion_dropdown,
-                self.gallery_tab_manager.category_filter_gallery_dropdown,
-                self.gallery_tab_manager.tag_effects_gallery_dropdown,
-                self.gallery_tab_manager.img_artist_tag_checkbox_group,
-                self.gallery_tab_manager.img_character_tag_checkbox_group,
-                self.gallery_tab_manager.img_species_tag_checkbox_group,
-                self.gallery_tab_manager.img_general_tag_checkbox_group,
-                self.gallery_tab_manager.img_meta_tag_checkbox_group,
-                self.gallery_tab_manager.img_rating_tag_checkbox_group,
-                self.gallery_tab_manager.gallery_comp
-            ]
+            outputs=self._gallery_reset_outputs()
         ).then(
             fn=self.refresh_json_options,
             inputs=[],
