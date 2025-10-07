@@ -578,69 +578,57 @@ class Download_tab:
         downloaded.sort(key=str.casefold)
         return downloaded
 
+    def _css_attribute_escape(self, value: str) -> str:
+        escaped = []
+        for char in value:
+            if char == "\\":
+                escaped.append("\\\\")
+            elif char == "\"":
+                escaped.append("\\\"")
+            else:
+                escaped.append(char)
+        return "".join(escaped)
+
     def _build_downloaded_css(self, downloaded: Optional[List[str]] = None) -> str:
         downloaded = downloaded if downloaded is not None else self._downloaded_preset_names()
         style_lines = [
             "<style id='preset-download-style'>",
-            "#preset-checkboxgroup label.preset-downloaded {",
-            "    background-color: #f9d5d5;",
+            "#preset-checkboxgroup label {",
             "    border-radius: 4px;",
-            "    padding: 4px 6px;",
-            "}",
-            "#preset-checkboxgroup label span.preset-downloaded-text {",
-            "    background-color: #f9d5d5;",
-            "    border-radius: 4px;",
-            "    padding: 2px 6px;",
-            "}",
-            "</style>",
         ]
+        style_lines.extend(
+            [
+                "    transition: background-color 0.2s ease-in-out;",
+                "}",
+                "#preset-checkboxgroup input + span {",
+                "    border-radius: 4px;",
+                "    padding: 2px 6px;",
+                "    transition: background-color 0.2s ease-in-out;",
+                "}",
+            ]
+        )
 
-        script_lines = [
-            "<script>",
-            "(function(){",
-            f"  const downloaded = {json.dumps(downloaded)};",
-            "  const root = document.querySelector('#preset-checkboxgroup');",
-            "  if (!root) { return; }",
-            "  const cssEscape = (value) => {",
-            "    if (window.CSS && typeof window.CSS.escape === 'function') {",
-            "      return window.CSS.escape(value);",
-            "    }",
-            "    return String(value).replace(/([^a-zA-Z0-9_\-])/g, match => `\\${match}`);",
-            "  };",
-            "  const apply = () => {",
-            "    const labels = root.querySelectorAll('label');",
-            "    labels.forEach(label => {",
-            "      label.classList.remove('preset-downloaded');",
-            "      const span = label.querySelector('span');",
-            "      if (span) { span.classList.remove('preset-downloaded-text'); }",
-            "    });",
-            "    downloaded.forEach(name => {",
-            "      try {",
-            "        const selector = `input[value=\"${cssEscape(name)}\"]`;",
-            "        const input = root.querySelector(selector);",
-            "        if (!input) { return; }",
-            "        const label = input.closest('label');",
-            "        if (label) {",
-            "          label.classList.add('preset-downloaded');",
-            "          const span = input.nextElementSibling;",
-            "          if (span) { span.classList.add('preset-downloaded-text'); }",
-            "        }",
-            "      } catch (err) {",
-            "        console.warn('Failed to update preset checkbox style', err);",
-            "      }",
-            "    });",
-            "  };",
-            "  if (root.__presetDownloadedObserver) {",
-            "    try { root.__presetDownloadedObserver.disconnect(); } catch (err) { console.warn(err); }",
-            "  }",
-            "  root.__presetDownloadedObserver = new MutationObserver(() => apply());",
-            "  root.__presetDownloadedObserver.observe(root, { childList: true, subtree: true });",
-            "  apply();",
-            "})();",
-            "</script>",
-        ]
+        highlight_color = "#f9d5d5"
+        border_color = "#f2a7a7"
+        text_color = "#7a0b0b"
 
-        return "\n".join(style_lines + script_lines)
+        for name in downloaded:
+            escaped = self._css_attribute_escape(name)
+            style_lines.extend(
+                [
+                    f'#preset-checkboxgroup input[value="{escaped}"] + span {{',
+                    f"    background-color: {highlight_color};",
+                    f"    box-shadow: inset 0 0 0 1px {border_color};",
+                    f"    color: {text_color};",
+                    "}",
+                    f'#preset-checkboxgroup input[value="{escaped}"] {{',
+                    f"    accent-color: {text_color};",
+                    "}",
+                ]
+            )
+
+        style_lines.append("</style>")
+        return "\n".join(style_lines)
 
     def _sanitize_folder_component(self, value: Optional[str]) -> str:
         if not value:
@@ -1859,7 +1847,6 @@ class Download_tab:
                 preset_status_style = gr.HTML(
                     value=self._build_downloaded_css(),
                     show_label=False,
-                    sanitize=False,
                 )
                 with gr.Row():
                     preset_selection_action_dropdown = gr.Dropdown(
