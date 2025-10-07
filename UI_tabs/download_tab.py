@@ -1,6 +1,7 @@
 import copy
 import glob
 import os
+import re
 import shutil
 import time
 from datetime import datetime
@@ -641,6 +642,36 @@ class Download_tab:
 
         return "\n".join(style_lines + script_lines)
 
+    def _sanitize_folder_component(self, value: Optional[str]) -> str:
+        if not value:
+            return ""
+        cleaned = re.sub(r"preset", "", str(value), flags=re.IGNORECASE)
+        cleaned = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in cleaned)
+        cleaned = re.sub(r"_+", "_", cleaned)
+        return cleaned.strip("_-")
+
+    def _determine_batch_base_directory(self) -> str:
+        batch_folder = str(self.settings_json.get("batch_folder", "") or "").strip()
+        if not batch_folder:
+            return "data"
+        normalized = batch_folder.rstrip("/\\")
+        parent = os.path.dirname(normalized)
+        if parent:
+            return parent
+        return normalized or "data"
+
+    def _derive_batch_folder_path(self, query: str, preset_name: str, index: int) -> str:
+        candidates = [query, preset_name]
+        folder_stub = ""
+        for candidate in candidates:
+            folder_stub = self._sanitize_folder_component(candidate)
+            if folder_stub:
+                break
+        if not folder_stub:
+            folder_stub = f"preset_{index}"
+        base_dir = self._determine_batch_base_directory()
+        return os.path.join(base_dir, folder_stub)
+
     def _load_preset_files(self):
         folder = self.get_active_preset_directory()
         json_paths = sorted(glob.glob(os.path.join(folder, "*.json")))
@@ -858,9 +889,14 @@ class Download_tab:
             while os.path.exists(fpath):
                 fpath = os.path.join(cfg_dir, f"{safe or idx}_{count}.json")
                 count += 1
+            preset_name = os.path.splitext(os.path.basename(fpath))[0]
+            cfg["batch_folder"] = self._derive_batch_folder_path(q, preset_name, idx)
+            try:
+                os.makedirs(cfg["batch_folder"], exist_ok=True)
+            except OSError:
+                pass
             help.update_JSON(cfg, fpath)
             if self.db_manager:
-                preset_name = os.path.splitext(os.path.basename(fpath))[0]
                 self.db_manager.add_download_record(
                     "e621",
                     json.dumps(cfg),
@@ -1823,6 +1859,7 @@ class Download_tab:
                 preset_status_style = gr.HTML(
                     value=self._build_downloaded_css(),
                     show_label=False,
+                    sanitize=False,
                 )
                 with gr.Row():
                     preset_selection_action_dropdown = gr.Dropdown(
