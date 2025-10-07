@@ -579,21 +579,67 @@ class Download_tab:
 
     def _build_downloaded_css(self, downloaded: Optional[List[str]] = None) -> str:
         downloaded = downloaded if downloaded is not None else self._downloaded_preset_names()
-        if not downloaded:
-            return "<style id='preset-download-style'></style>"
-        lines = ["<style id='preset-download-style'>"]
-        for name in downloaded:
-            safe = name.replace("\\", "\\\\").replace('"', '\\"')
-            lines.append(
-                f"#preset-checkboxgroup label:has(> input[value=\"{safe}\"]) "
-                "{background-color: #f9d5d5; border-radius: 4px; padding: 4px 6px;}"
-            )
-            lines.append(
-                f"#preset-checkboxgroup input[value=\"{safe}\"] + span "
-                "{background-color: #f9d5d5; border-radius: 4px; padding: 2px 6px;}"
-            )
-        lines.append("</style>")
-        return "\n".join(lines)
+        style_lines = [
+            "<style id='preset-download-style'>",
+            "#preset-checkboxgroup label.preset-downloaded {",
+            "    background-color: #f9d5d5;",
+            "    border-radius: 4px;",
+            "    padding: 4px 6px;",
+            "}",
+            "#preset-checkboxgroup label span.preset-downloaded-text {",
+            "    background-color: #f9d5d5;",
+            "    border-radius: 4px;",
+            "    padding: 2px 6px;",
+            "}",
+            "</style>",
+        ]
+
+        script_lines = [
+            "<script>",
+            "(function(){",
+            f"  const downloaded = {json.dumps(downloaded)};",
+            "  const root = document.querySelector('#preset-checkboxgroup');",
+            "  if (!root) { return; }",
+            "  const cssEscape = (value) => {",
+            "    if (window.CSS && typeof window.CSS.escape === 'function') {",
+            "      return window.CSS.escape(value);",
+            "    }",
+            "    return String(value).replace(/([^a-zA-Z0-9_\-])/g, match => `\\${match}`);",
+            "  };",
+            "  const apply = () => {",
+            "    const labels = root.querySelectorAll('label');",
+            "    labels.forEach(label => {",
+            "      label.classList.remove('preset-downloaded');",
+            "      const span = label.querySelector('span');",
+            "      if (span) { span.classList.remove('preset-downloaded-text'); }",
+            "    });",
+            "    downloaded.forEach(name => {",
+            "      try {",
+            "        const selector = `input[value=\"${cssEscape(name)}\"]`;",
+            "        const input = root.querySelector(selector);",
+            "        if (!input) { return; }",
+            "        const label = input.closest('label');",
+            "        if (label) {",
+            "          label.classList.add('preset-downloaded');",
+            "          const span = input.nextElementSibling;",
+            "          if (span) { span.classList.add('preset-downloaded-text'); }",
+            "        }",
+            "      } catch (err) {",
+            "        console.warn('Failed to update preset checkbox style', err);",
+            "      }",
+            "    });",
+            "  };",
+            "  if (root.__presetDownloadedObserver) {",
+            "    try { root.__presetDownloadedObserver.disconnect(); } catch (err) { console.warn(err); }",
+            "  }",
+            "  root.__presetDownloadedObserver = new MutationObserver(() => apply());",
+            "  root.__presetDownloadedObserver.observe(root, { childList: true, subtree: true });",
+            "  apply();",
+            "})();",
+            "</script>",
+        ]
+
+        return "\n".join(style_lines + script_lines)
 
     def _load_preset_files(self):
         folder = self.get_active_preset_directory()
