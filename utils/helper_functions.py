@@ -1002,8 +1002,11 @@ def chunk_to_dict(chunk):
 
 def parallel_dataframe_to_dict(df, num_threads):
     """Convert the DataFrame to a dictionary using parallel threads."""
+    if len(df) == 0:
+        return {}
+
     # Split DataFrame into chunks based on the number of threads
-    chunk_size = len(df) // num_threads
+    chunk_size = max(1, len(df) // num_threads)
     chunks = [df.iloc[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
 
     result_dict = {}
@@ -1067,6 +1070,15 @@ def load_tags_csv_fast():
     data = pd.read_parquet('preprocessed_tags.parquet')
     # all_tags_ever_dict = data.set_index('name')[['category', 'post_count']].T.to_dict('list')
     all_tags_ever_dict = parallel_dataframe_to_dict(data, mp.cpu_count()) # use all available threads
+
+    # Guard against malformed rows from stale/custom CSVs where tag names can
+    # become NaN/float values and later crash trie insertion.
+    all_tags_ever_dict = {
+        tag: values
+        for tag, values in all_tags_ever_dict.items()
+        if isinstance(tag, str) and tag and tag.lower() != "nan"
+    }
+
     verbose_print("Done Loading Tags!")
     del data
     return all_tags_ever_dict
@@ -1075,6 +1087,8 @@ def load_trie(trie, all_tags_ever_dict):
     verbose_print("Starting Trie Tree Construction!")
     # Add data to the trie with a progress bar
     for tag in tqdm(all_tags_ever_dict.keys(), desc="Loading Trie"):
+        if not isinstance(tag, str):
+            continue
         trie[tag] = all_tags_ever_dict[tag][1]
     verbose_print("Done constructing Trie tree!")
 
