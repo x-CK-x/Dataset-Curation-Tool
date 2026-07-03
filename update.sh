@@ -45,8 +45,8 @@ fi
 
 conda activate "$DCT_ENV_NAME"
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt --upgrade
-python -m pip install -e . --upgrade
+python -m pip install -r requirements.txt --upgrade-strategy only-if-needed
+python -m pip install -e . --no-deps
 python scripts/check_core_dependencies.py
 MODE="${DCT_INSTALL_TORCH:-auto}"
 if [ "$MODE" = "auto" ]; then

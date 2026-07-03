@@ -20,6 +20,19 @@ def update_settings(payload: SettingsUpdate, request: Request):
     for key, value in payload.values.items():
         if key not in allowed:
             continue
+        if key == "tag_text_mode":
+            value = str(value or "underscores").strip().lower()
+            if value not in {"underscores", "spaces"}:
+                value = "underscores"
+            active = getattr(c.settings, "tag_text_mode_active", "underscores") or "underscores"
+            setattr(c.settings, "tag_text_mode_restart_required", value != active)
+            c.db.set_setting("tag_text_mode_restart_required", value != active)
+        if key == "tag_text_mode_active":
+            # Active mode is owned by startup migration, not by normal settings saves.
+            continue
+        if key == "tag_text_mode_restart_required":
+            # Derived from desired-vs-active mode.
+            continue
         if key == "api_token_profiles" and isinstance(value, dict):
             current = getattr(c.settings, "api_token_profiles", {}) or {}
             merged = {}

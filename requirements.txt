@@ -7,7 +7,8 @@ python-multipart>=0.0.9
 orjson>=3.10
 requests>=2.31
 tqdm>=4.66
-opencv-python>=4.9
+# OpenCV/cv2 is installed by Conda via environment.yml (`opencv`).
+# Do not install opencv-python here; Conda-built OpenCV can lack pip RECORD metadata on Windows.
 imageio>=2.34
 imageio-ffmpeg>=0.5
 pyarrow>=16.0

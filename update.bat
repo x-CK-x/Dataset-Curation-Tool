@@ -15,8 +15,8 @@ echo Updating Conda environment: %DCT_ENV_NAME%
 call :ensure_conda_env || (pause & exit /b 1)
 call scripts\activate_data_curation_env.bat || exit /b 1
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt --upgrade || exit /b 1
-python -m pip install -e . --upgrade || exit /b 1
+python -m pip install -r requirements.txt --upgrade-strategy only-if-needed || exit /b 1
+python -m pip install -e . --no-deps || exit /b 1
 python scripts\check_core_dependencies.py || exit /b 1
 if "%DCT_INSTALL_TORCH%"=="" set "DCT_INSTALL_TORCH=auto"
 set "TORCH_MODE=%DCT_INSTALL_TORCH%"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-curation-tool-modern"
-version = "5.75.0"
+version = "5.78.2"
 description = "Modern local-first dataset curation, tagging, captioning, gallery, and model orchestration tool."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,7 +36,8 @@ models = [
   "einops>=0.7",
 ]
 video = [
-  "opencv-python>=4.9",
+  # OpenCV/cv2 is provided by Conda environment.yml (`opencv`) for installer builds.
+  # Keeping opencv-python out of pip extras avoids Windows uninstall-no-record-file failures.
   "imageio>=2.34",
   "imageio-ffmpeg>=0.5",
 ]

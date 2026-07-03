@@ -16,7 +16,7 @@ import requests
 from ..database import Database, now_iso
 from ..jobs import CancelledJobError
 from ..schemas import DownloadRequest
-from ..utils import normalize_tag, tag_string, write_text
+from ..utils import normalize_tag, tag_for_source_query, tag_string, write_text
 from .preset_service import PresetService
 from .tag_service import TagService
 
@@ -794,11 +794,19 @@ class DownloaderService:
         source = preset.get("source", "generic-json")
         if source == "booru":
             source = "e621"
+        preset_options = dict(preset.get("options") or {})
+        if source == "generic-json" and not preset_options.get("api_url") and request is not None:
+            profile_source = str(getattr(request, "tag_profile", "") or "").strip()
+            if profile_source in BOORU_SOURCES and profile_source != "generic-json":
+                # Backward-compatible repair for older direct-download payloads:
+                # the UI used to submit generic-json while tag_profile=e621/e926.
+                source = profile_source
+                preset = {**preset, "source": source, "name": str(preset.get("name") or "direct").replace("direct-generic-json", f"direct-{source}", 1)}
         if source not in BOORU_SOURCES:
             raise ValueError(f"Unsupported source plugin: {source}")
         _raise_if_cancelled(progress)
         source_cfg = dict(BOORU_SOURCES[source])
-        source_cfg.update(preset.get("options") or {})
+        source_cfg.update(preset_options)
         if request is not None:
             if request.api_delay_seconds is not None:
                 source_cfg["delay_seconds"] = max(0.0, float(request.api_delay_seconds))
@@ -811,6 +819,16 @@ class DownloaderService:
             if request.retry_backoff_seconds is not None:
                 source_cfg["retry_backoff_seconds"] = max(0.0, float(request.retry_backoff_seconds))
             source_cfg["force_download"] = bool(getattr(request, "force_download", False))
+            source_cfg["filename_mode"] = str(getattr(request, "filename_mode", "hash_original") or "hash_original")
+            source_cfg["write_metadata_json_sidecar"] = bool(getattr(request, "write_metadata_json_sidecar", True))
+            source_cfg["write_tag_txt_sidecar"] = bool(getattr(request, "write_tag_txt_sidecar", True))
+        preset_filename_mode = preset.get("filename_mode")
+        if preset_filename_mode:
+            source_cfg["filename_mode"] = str(preset_filename_mode)
+        if "write_metadata_json_sidecar" in preset:
+            source_cfg["write_metadata_json_sidecar"] = bool(preset.get("write_metadata_json_sidecar"))
+        if "write_tag_txt_sidecar" in preset:
+            source_cfg["write_tag_txt_sidecar"] = bool(preset.get("write_tag_txt_sidecar"))
         api_url = source_cfg.get("api_url")
         if not api_url:
             raise ValueError("This source requires options.api_url")
@@ -915,11 +933,11 @@ class DownloaderService:
 
     def _fetch_page(self, preset: dict[str, Any], cfg: dict[str, Any], api_url: str, limit: int, page: int | None, request: DownloadRequest | None = None, progress=None) -> list[dict[str, Any]]:
         _raise_if_cancelled(progress)
-        tags = " ".join(preset.get("positive_tags") or [])
-        negative = " ".join(f"-{tag}" for tag in preset.get("negative_tags") or [])
+        tags = " ".join(tag_for_source_query(tag) for tag in (preset.get("positive_tags") or []) if tag_for_source_query(tag))
+        negative = " ".join(f"-{tag_for_source_query(tag)}" for tag in (preset.get("negative_tags") or []) if tag_for_source_query(tag))
         options = dict(preset.get("options") or {})
         raw_logic = str(options.get("_logic_raw") or "").strip()
-        extras = self._query_extras(cfg, request) if request else []
+        extras = [tag_for_source_query(x) if not any(str(x).startswith(prefix) for prefix in ("order:", "sort:", "date:")) else str(x) for x in (self._query_extras(cfg, request) if request else [])]
         params: dict[str, Any] = {
             cfg.get("tags_param", "tags"): " ".join(x for x in [tags, negative, raw_logic, *extras] if x).strip(),
             cfg.get("limit_param", "limit"): limit,
@@ -982,10 +1000,7 @@ class DownloaderService:
             file_url = _nested_get(item, cfg.get("large_file_url_key"))
         if not file_url:
             return None
-        name = _safe_filename(urlparse(str(file_url)).path) or "download.bin"
-        url_hash = hashlib.sha1(str(file_url).encode("utf-8", errors="ignore")).hexdigest()[:12]
-        if not name.startswith(url_hash + "_"):
-            name = f"{url_hash}_{name}"
+        name = _download_filename_for_item(item, cfg, str(file_url))
         subdir = (preset.get("options") or {}).get("output_subdir")
         target_dir = output_dir / str(subdir) if subdir else output_dir
         target = target_dir / name
@@ -1037,13 +1052,16 @@ class DownloaderService:
 
     def _write_metadata_sidecars(self, target: Path, item: dict[str, Any], cfg: dict[str, Any], preset: dict[str, Any]) -> None:
         tags = _extract_tags(item, cfg.get("tags_key"))
-        if tags:
+        if bool(cfg.get("write_tag_txt_sidecar", True)) and tags:
             write_text(target.with_suffix(".txt"), tag_string(tags))
+        if not bool(cfg.get("write_metadata_json_sidecar", True)):
+            return
         meta = {
             "source": preset.get("source"),
             "preset": preset.get("name"),
             "positive_tags": preset.get("positive_tags") or [],
             "negative_tags": preset.get("negative_tags") or [],
+            "filename_mode": cfg.get("filename_mode") or "hash_original",
             "logic_query": (preset.get("options") or {}).get("logic_query") or "",
             "logic_mode": (preset.get("options") or {}).get("logic_mode") or "",
             "logic_clause": (preset.get("options") or {}).get("_logic_clause") or None,
@@ -1161,6 +1179,60 @@ def _extract_tags(item: dict[str, Any], key: str | None) -> list[str]:
     elif isinstance(raw, list):
         tags = [str(x) for x in raw]
     return [normalize_tag(tag) for tag in tags if normalize_tag(tag)]
+
+
+def _download_filename_for_item(item: dict[str, Any], cfg: dict[str, Any], file_url: str) -> str:
+    """Return a stable, safe media filename for a downloader item.
+
+    hash_original preserves the historical behavior: sha1(url)_original_name.ext.
+    post_id and post_id_original are opt-in because some generic JSON sources do
+    not expose a durable post id and because changing filenames can affect user
+    scripts that depend on previous hash-prefixed names.
+    """
+    original_name = _safe_filename(urlparse(str(file_url)).path) or "download.bin"
+    mode = str(cfg.get("filename_mode") or "hash_original").strip().lower()
+    if mode not in {"hash_original", "post_id", "post_id_original", "original"}:
+        mode = "hash_original"
+    if mode == "original":
+        return original_name
+
+    post_id = _item_post_id(item)
+    if post_id and mode in {"post_id", "post_id_original"}:
+        ext = _item_file_extension(item, original_name)
+        base = _safe_filename(str(post_id)) or "post"
+        if mode == "post_id":
+            return f"{base}{ext}"
+        suffix = original_name
+        if suffix.lower().startswith((base + "_").lower()):
+            return suffix
+        return _safe_filename(f"{base}_{suffix}") or f"{base}{ext}"
+
+    url_hash = hashlib.sha1(str(file_url).encode("utf-8", errors="ignore")).hexdigest()[:12]
+    if not original_name.startswith(url_hash + "_"):
+        return f"{url_hash}_{original_name}"
+    return original_name
+
+
+def _item_post_id(item: dict[str, Any]) -> str | None:
+    for field in ("id", "post_id", "post.id", "media_asset.id", "file.id"):
+        value = _nested_get(item, field)
+        if value not in (None, "", [], {}):
+            return re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("._-") or None
+    return None
+
+
+def _item_file_extension(item: dict[str, Any], original_name: str) -> str:
+    ext = ""
+    for field in ("file.ext", "ext", "extension", "file_extension"):
+        value = _nested_get(item, field)
+        if value not in (None, "", [], {}):
+            text = str(value).strip().lstrip(".")
+            if text:
+                ext = "." + re.sub(r"[^A-Za-z0-9]+", "", text)[:12].lower()
+                break
+    if not ext:
+        ext = Path(original_name).suffix
+    return ext or ".bin"
 
 
 def _safe_filename(path: str) -> str:

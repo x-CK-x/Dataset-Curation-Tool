@@ -587,6 +587,12 @@ class DownloadPreset(BaseModel):
     logic_query: str = ""
     logic_mode: Literal["boolean_expand", "raw_append", "raw", "append_raw"] = "boolean_expand"
     logic_max_clauses: int = Field(default=64, ge=1, le=512)
+
+    # Output artifact controls.  Defaults preserve existing behavior while letting
+    # users opt into post-id filenames and suppress per-file JSON sidecars.
+    filename_mode: Literal["hash_original", "post_id", "post_id_original", "original"] = "hash_original"
+    write_metadata_json_sidecar: bool = True
+    write_tag_txt_sidecar: bool = True
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -645,6 +651,12 @@ class DownloadRequest(BaseModel):
     logic_query: str = ""
     logic_mode: Literal["boolean_expand", "raw_append", "raw", "append_raw"] = "boolean_expand"
     logic_max_clauses: int = Field(default=64, ge=1, le=512)
+
+    # Output artifact controls.  Defaults preserve existing behavior while letting
+    # users opt into post-id filenames and suppress per-file JSON sidecars.
+    filename_mode: Literal["hash_original", "post_id", "post_id_original", "original"] = "hash_original"
+    write_metadata_json_sidecar: bool = True
+    write_tag_txt_sidecar: bool = True
 
 
 class ModelChatRequest(ModelPlacementDefaultsMixin):

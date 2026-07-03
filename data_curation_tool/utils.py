@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Iterable
@@ -16,6 +17,40 @@ ANIMATION_EXTENSIONS = {".gif"}
 SIDECAR_EXTENSIONS = {".txt", ".caption", ".json"}
 TAG_SPLIT_RE = re.compile(r"[,\n]+")
 TAG_SAFE_RE = re.compile(r"\s+")
+TAG_TEXT_MODES = {"underscores", "spaces"}
+
+
+def tag_text_mode() -> str:
+    mode = os.environ.get("DCT_TAG_TEXT_MODE_ACTIVE", "underscores").strip().lower()
+    return mode if mode in TAG_TEXT_MODES else "underscores"
+
+
+def set_tag_text_mode(mode: str | None) -> str:
+    clean = str(mode or "underscores").strip().lower()
+    if clean not in TAG_TEXT_MODES:
+        clean = "underscores"
+    os.environ["DCT_TAG_TEXT_MODE_ACTIVE"] = clean
+    return clean
+
+
+def normalize_tag_canonical(tag: str) -> str:
+    text = str(tag).strip()
+    text = text.replace(" ", "_")
+    text = TAG_SAFE_RE.sub("_", text)
+    return text.strip("_,")
+
+
+def format_tag_for_mode(tag: str, mode: str | None = None) -> str:
+    canonical = normalize_tag_canonical(tag)
+    clean_mode = str(mode or tag_text_mode()).strip().lower()
+    if clean_mode == "spaces":
+        return canonical.replace("_", " ").strip(" ,")
+    return canonical
+
+
+def tag_for_source_query(tag: str) -> str:
+    """Return source/API-safe tag text, preserving booru underscore syntax."""
+    return normalize_tag_canonical(tag)
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -84,10 +119,7 @@ def iter_media_files(root: Path, recursive: bool = True) -> Iterable[Path]:
 
 
 def normalize_tag(tag: str) -> str:
-    tag = str(tag).strip()
-    tag = tag.replace(" ", "_")
-    tag = TAG_SAFE_RE.sub("_", tag)
-    return tag.strip("_,")
+    return format_tag_for_mode(tag)
 
 
 def parse_tag_string(tag_string: str, separator: str = ",") -> list[str]:

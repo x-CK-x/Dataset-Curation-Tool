@@ -165,6 +165,12 @@ class AppSettings:
     default_tag_profile: str = "e621"
     default_ordering_strategy: str = "booru"
     retain_imported_tag_order: bool = False
+    # Global tag text policy. Desired can be changed at runtime, but the active
+    # database/text policy is applied on startup so autocomplete dictionaries,
+    # aliases, implications, media tag tables, and sidecars stay consistent.
+    tag_text_mode: str = "underscores"  # underscores, spaces
+    tag_text_mode_active: str = "underscores"
+    tag_text_mode_restart_required: bool = False
     model_temperature: float = 0.2
     model_max_new_tokens: int = 512
     classifier_threshold: float = 0.35
@@ -359,6 +365,13 @@ class AppSettings:
         cleaned["backend_worker_count"] = max(1, int(cleaned.get("backend_worker_count") or 4))
         cleaned["max_concurrent_jobs"] = max(1, int(cleaned.get("max_concurrent_jobs") or cleaned.get("backend_worker_count") or 4))
         cleaned.setdefault("download_max_concurrent_items", 4)
+        cleaned.setdefault("tag_text_mode", "underscores")
+        cleaned.setdefault("tag_text_mode_active", "underscores")
+        if cleaned.get("tag_text_mode") not in {"underscores", "spaces"}:
+            cleaned["tag_text_mode"] = "underscores"
+        if cleaned.get("tag_text_mode_active") not in {"underscores", "spaces"}:
+            cleaned["tag_text_mode_active"] = "underscores"
+        cleaned["tag_text_mode_restart_required"] = cleaned.get("tag_text_mode") != cleaned.get("tag_text_mode_active")
         cleaned.setdefault("download_default_sort_order", "newest_to_oldest")
         cleaned.setdefault("downloader_parallel_presets", False)
         cleaned.setdefault("downloader_download_all_posts_default", True)

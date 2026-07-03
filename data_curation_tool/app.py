@@ -51,10 +51,12 @@ from .services.cloud_provider_service import CloudProviderService
 from .services.agent_tools_service import AgentToolsService
 from .services.mcp_tools_service import MCPToolsService
 from .schemas import ModelLoadRequest
+from .utils import set_tag_text_mode
 
 
 def build_context(paths: AppPaths) -> AppContext:
     app_settings = AppSettings.load(paths.settings)
+    set_tag_text_mode(getattr(app_settings, "tag_text_mode", "underscores"))
     if not app_settings.model_cache_dir:
         app_settings.model_cache_dir = str(paths.models / "hf")
         app_settings.save(paths.settings)
@@ -186,6 +188,19 @@ def create_app(paths: AppPaths | None = None) -> FastAPI:
         c = app.state.context
         if os.environ.get("PYTEST_CURRENT_TEST"):
             return
+        try:
+            desired_tag_mode = getattr(c.settings, "tag_text_mode", "underscores") or "underscores"
+            active_tag_mode = getattr(c.settings, "tag_text_mode_active", "underscores") or "underscores"
+            if desired_tag_mode != active_tag_mode:
+                result = c.tags.apply_tag_text_mode(desired_tag_mode, old_mode=active_tag_mode)
+                c.settings.tag_text_mode_active = desired_tag_mode
+                c.settings.tag_text_mode_restart_required = False
+                c.db.set_setting("tag_text_mode_active", desired_tag_mode)
+                c.db.set_setting("tag_text_mode_restart_required", False)
+                c.settings.save(c.paths.settings)
+                print(f"[Data Curation Tool] Applied tag text mode migration: {active_tag_mode} -> {desired_tag_mode} ({result})")
+        except Exception as exc:
+            print(f"[Data Curation Tool] Tag text mode startup migration failed: {exc}")
         try:
             if getattr(c.settings, "agent_tools_smoke_test_on_startup", True):
                 c.agent_tools.smoke_test_tools(force=True)

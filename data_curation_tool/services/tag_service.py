@@ -22,7 +22,7 @@ from ..database import Database, now_iso
 from ..jobs import CancelledJobError
 from ..paths import AppPaths
 from ..schemas import BulkTagRequest, TagPruneRequest, TagPruneResult
-from ..utils import load_json, normalize_tag, parse_tag_string, save_json, tag_string, write_text
+from ..utils import format_tag_for_mode, load_json, normalize_tag, parse_tag_string, save_json, tag_string, write_text
 
 DEFAULT_IMPLICATIONS = {"1girl": ["girl"], "1boy": ["boy"], "solo": ["single_person"], "portrait": ["face", "upper_body"]}
 # Guardrail for real booru startup syncs: if a generic export URL only imports
@@ -255,6 +255,257 @@ class TagService:
                    VALUES ('legacy', ?, ?, ?, ?, 0, ?)""",
                 [(r["tag"], str(r["tag"]).lower(), r.get("category") or "general", int(r.get("post_count") or 0), r.get("updated_at") or now_iso()) for r in legacy if normalize_tag(r.get("tag"))],
             )
+
+    def apply_tag_text_mode(self, mode: str, old_mode: str | None = None) -> dict[str, Any]:
+        """Convert stored tags/dictionaries between underscore and space display modes.
+
+        The migration runs on startup after a user changes Settings -> Tag Text
+        Format.  It rewrites the app-owned tag tables so autocomplete,
+        category lookup, aliases, implications, custom tags, media tags, and
+        sidecar .txt files all use the same active representation.  Source/API
+        requests still convert tags back to underscore form when talking to
+        booru endpoints.
+        """
+        target_mode = str(mode or "underscores").strip().lower()
+        if target_mode not in {"underscores", "spaces"}:
+            target_mode = "underscores"
+        previous_mode = str(old_mode or "underscores").strip().lower()
+        transform_sql = "replace({expr}, '_', ' ')" if target_mode == "spaces" else "replace({expr}, ' ', '_')"
+        summary: dict[str, Any] = {"old_mode": previous_mode, "mode": target_mode}
+
+        with self.db._lock, self.db.connect() as conn:  # noqa: SLF001 - migration needs one transaction.
+            tag_rows = conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+            conn.execute("DROP TABLE IF EXISTS _dct_tags_text_mode_mig")
+            conn.execute(
+                f"""
+                CREATE TEMP TABLE _dct_tags_text_mode_mig AS
+                SELECT media_id,
+                       {transform_sql.format(expr='tag')} AS tag,
+                       category,
+                       MIN(source) AS source,
+                       MAX(confidence) AS confidence,
+                       MIN(ordinal) AS ordinal,
+                       MIN(created_at) AS created_at
+                FROM tags
+                GROUP BY media_id, {transform_sql.format(expr='tag')}, category
+                """
+            )
+            conn.execute("DELETE FROM tags")
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO tags(media_id, tag, category, source, confidence, ordinal, created_at)
+                SELECT media_id, tag, category, source, confidence, ordinal, created_at
+                FROM _dct_tags_text_mode_mig
+                ORDER BY media_id, ordinal, tag
+                """
+            )
+            conn.execute("DROP TABLE IF EXISTS _dct_tags_text_mode_mig")
+            summary["media_tags"] = tag_rows
+
+            legacy_rows = conn.execute("SELECT COUNT(*) FROM tag_dictionary").fetchone()[0]
+            conn.execute("DROP TABLE IF EXISTS _dct_legacy_dict_text_mode_mig")
+            conn.execute(
+                f"""
+                CREATE TEMP TABLE _dct_legacy_dict_text_mode_mig AS
+                SELECT {transform_sql.format(expr='tag')} AS tag,
+                       MIN(category) AS category,
+                       MAX(post_count) AS post_count,
+                       MAX({transform_sql.format(expr='aliases_json')}) AS aliases_json,
+                       MAX({transform_sql.format(expr='implications_json')}) AS implications_json,
+                       MAX(updated_at) AS updated_at
+                FROM tag_dictionary
+                GROUP BY {transform_sql.format(expr='tag')}
+                """
+            )
+            conn.execute("DELETE FROM tag_dictionary")
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO tag_dictionary(tag, category, post_count, aliases_json, implications_json, updated_at)
+                SELECT tag, category, post_count, aliases_json, implications_json, updated_at
+                FROM _dct_legacy_dict_text_mode_mig
+                """
+            )
+            conn.execute("DROP TABLE IF EXISTS _dct_legacy_dict_text_mode_mig")
+            summary["legacy_dictionary"] = legacy_rows
+
+            entry_rows = conn.execute("SELECT COUNT(*) FROM tag_dictionary_entries").fetchone()[0]
+            conn.execute("DROP TABLE IF EXISTS _dct_entries_text_mode_mig")
+            conn.execute(
+                f"""
+                CREATE TEMP TABLE _dct_entries_text_mode_mig AS
+                SELECT source,
+                       {transform_sql.format(expr='tag')} AS tag,
+                       MIN(category) AS category,
+                       MAX(post_count) AS post_count,
+                       MAX({transform_sql.format(expr='aliases_json')}) AS aliases_json,
+                       MAX({transform_sql.format(expr='implications_json')}) AS implications_json,
+                       MAX(is_custom) AS is_custom,
+                       MAX(updated_at) AS updated_at
+                FROM tag_dictionary_entries
+                GROUP BY source, {transform_sql.format(expr='tag')}
+                """
+            )
+            conn.execute("DELETE FROM tag_dictionary_entries")
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO tag_dictionary_entries(source, tag, category, post_count, aliases_json, implications_json, is_custom, updated_at)
+                SELECT source, tag, category, post_count, aliases_json, implications_json, is_custom, updated_at
+                FROM _dct_entries_text_mode_mig
+                """
+            )
+            conn.execute("DROP TABLE IF EXISTS _dct_entries_text_mode_mig")
+            summary["dictionary_entries"] = entry_rows
+
+            conn.execute("DELETE FROM tag_dictionary_search")
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO tag_dictionary_search(source, tag, tag_lower, category, post_count, is_custom, updated_at)
+                SELECT source, tag, lower(tag), category, post_count, is_custom, updated_at
+                FROM tag_dictionary_entries
+                """
+            )
+            summary["search_entries"] = conn.execute("SELECT COUNT(*) FROM tag_dictionary_search").fetchone()[0]
+
+            alias_rows = conn.execute("SELECT COUNT(*) FROM tag_aliases").fetchone()[0]
+            conn.execute("DROP TABLE IF EXISTS _dct_aliases_text_mode_mig")
+            conn.execute(
+                f"""
+                CREATE TEMP TABLE _dct_aliases_text_mode_mig AS
+                SELECT source,
+                       {transform_sql.format(expr='alias')} AS alias,
+                       {transform_sql.format(expr='target')} AS target,
+                       MAX(status) AS status,
+                       MAX(updated_at) AS updated_at
+                FROM tag_aliases
+                GROUP BY source, {transform_sql.format(expr='alias')}, {transform_sql.format(expr='target')}
+                """
+            )
+            conn.execute("DELETE FROM tag_aliases")
+            conn.execute("INSERT OR REPLACE INTO tag_aliases(source, alias, target, status, updated_at) SELECT source, alias, target, status, updated_at FROM _dct_aliases_text_mode_mig")
+            conn.execute("DROP TABLE IF EXISTS _dct_aliases_text_mode_mig")
+            summary["aliases"] = alias_rows
+
+            implication_rows = conn.execute("SELECT COUNT(*) FROM tag_implications").fetchone()[0]
+            conn.execute("DROP TABLE IF EXISTS _dct_implications_text_mode_mig")
+            conn.execute(
+                f"""
+                CREATE TEMP TABLE _dct_implications_text_mode_mig AS
+                SELECT source,
+                       {transform_sql.format(expr='antecedent')} AS antecedent,
+                       {transform_sql.format(expr='consequent')} AS consequent,
+                       MAX(status) AS status,
+                       MAX(updated_at) AS updated_at
+                FROM tag_implications
+                GROUP BY source, {transform_sql.format(expr='antecedent')}, {transform_sql.format(expr='consequent')}
+                """
+            )
+            conn.execute("DELETE FROM tag_implications")
+            conn.execute("INSERT OR REPLACE INTO tag_implications(source, antecedent, consequent, status, updated_at) SELECT source, antecedent, consequent, status, updated_at FROM _dct_implications_text_mode_mig")
+            conn.execute("DROP TABLE IF EXISTS _dct_implications_text_mode_mig")
+            summary["implications"] = implication_rows
+
+            artist_rows = conn.execute("SELECT COUNT(*) FROM artist_aliases").fetchone()[0]
+            conn.execute("DROP TABLE IF EXISTS _dct_artist_aliases_text_mode_mig")
+            conn.execute(
+                f"""
+                CREATE TEMP TABLE _dct_artist_aliases_text_mode_mig AS
+                SELECT source,
+                       {transform_sql.format(expr='artist_name')} AS artist_name,
+                       {transform_sql.format(expr='alias')} AS alias,
+                       MAX(is_active) AS is_active,
+                       MAX(updated_at) AS updated_at
+                FROM artist_aliases
+                GROUP BY source, {transform_sql.format(expr='artist_name')}, {transform_sql.format(expr='alias')}
+                """
+            )
+            conn.execute("DELETE FROM artist_aliases")
+            conn.execute("INSERT OR REPLACE INTO artist_aliases(source, artist_name, alias, is_active, updated_at) SELECT source, artist_name, alias, is_active, updated_at FROM _dct_artist_aliases_text_mode_mig")
+            conn.execute("DROP TABLE IF EXISTS _dct_artist_aliases_text_mode_mig")
+            summary["artist_aliases"] = artist_rows
+
+            score_rows = conn.execute("SELECT COUNT(*) FROM tag_prediction_scores").fetchone()[0]
+            conn.execute("DROP TABLE IF EXISTS _dct_scores_text_mode_mig")
+            conn.execute(
+                f"""
+                CREATE TEMP TABLE _dct_scores_text_mode_mig AS
+                SELECT media_id, run_id, model_name, kind,
+                       {transform_sql.format(expr='tag')} AS tag,
+                       MAX(score) AS score,
+                       MAX(payload_json) AS payload_json,
+                       MIN(created_at) AS created_at,
+                       MAX(updated_at) AS updated_at
+                FROM tag_prediction_scores
+                GROUP BY media_id, model_name, kind, {transform_sql.format(expr='tag')}
+                """
+            )
+            conn.execute("DELETE FROM tag_prediction_scores")
+            conn.execute("INSERT OR IGNORE INTO tag_prediction_scores(media_id, run_id, model_name, kind, tag, score, payload_json, created_at, updated_at) SELECT media_id, run_id, model_name, kind, tag, score, payload_json, created_at, updated_at FROM _dct_scores_text_mode_mig")
+            conn.execute("DROP TABLE IF EXISTS _dct_scores_text_mode_mig")
+            summary["prediction_scores"] = score_rows
+
+        summary["custom_tags_file"] = self._rewrite_custom_tags_file(target_mode)
+        summary["sidecar_txt_files"] = self._rewrite_media_tag_sidecars(target_mode)
+        self._suggest_cache.clear()
+        return summary
+
+    def _rewrite_custom_tags_file(self, mode: str) -> int:
+        if not self._custom_tags_path.exists():
+            return 0
+        try:
+            payload = load_json(self._custom_tags_path, None)
+        except Exception:
+            return 0
+        changed = 0
+
+        def convert(value: Any) -> Any:
+            nonlocal changed
+            if isinstance(value, str):
+                new_value = format_tag_for_mode(value, mode)
+                if new_value != value:
+                    changed += 1
+                return new_value
+            if isinstance(value, list):
+                return [convert(v) for v in value]
+            if isinstance(value, dict):
+                out: dict[str, Any] = {}
+                for key, val in value.items():
+                    new_key = format_tag_for_mode(key, mode)
+                    if new_key != key:
+                        changed += 1
+                    out[new_key] = convert(val)
+                return out
+            return value
+
+        converted = convert(payload)
+        if changed:
+            save_json(self._custom_tags_path, converted)
+        return changed
+
+    def _rewrite_media_tag_sidecars(self, mode: str) -> int:
+        rows = self.db.query("SELECT path, tag_path FROM media WHERE active=1")
+        changed = 0
+        for row in rows:
+            raw_path = row.get("tag_path") or str(Path(row.get("path") or "").with_suffix(".txt"))
+            path = Path(raw_path)
+            if not path.exists() or path.suffix.lower() != ".txt":
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore").strip()
+            except Exception:
+                continue
+            if not text:
+                continue
+            tags = [format_tag_for_mode(part, mode) for part in re.split(r"[,;\n]+", text) if format_tag_for_mode(part, mode)]
+            if not tags:
+                continue
+            new_text = ", ".join(dict.fromkeys(tags))
+            if new_text != text:
+                try:
+                    write_text(path, new_text)
+                    changed += 1
+                except Exception:
+                    pass
+        return changed
 
     def ensure_default_profiles(self) -> None:
         for key, profile in DEFAULT_PROFILES.items():

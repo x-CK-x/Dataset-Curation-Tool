@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Request, HTTPException
@@ -45,6 +47,38 @@ def open_local_path(payload: OpenLocalPathRequest, request: Request):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Could not open local path: {exc}") from exc
     return {"ok": True, "path": str(path.resolve())}
+
+
+
+
+@router.post("/system/restart")
+def restart_application(request: Request):
+    """Best-effort self-restart for settings that are intentionally startup-applied.
+
+    The normal run scripts still remain the most reliable restart path.  This
+    endpoint exists for the red "apply on restart" button in the Settings UI and
+    uses the current Python executable/module with the active runtime/model/output
+    folders and host/port settings.
+    """
+    c = ctx(request)
+    python = sys.executable or "python"
+    host = str(getattr(c.settings, "host", "127.0.0.1") or "127.0.0.1")
+    port = str(getattr(c.settings, "port", 7865) or 7865)
+    base_cmd = [python, "-m", "data_curation_tool", "--host", host, "--port", port, "--runtime", str(c.paths.runtime), "--models", str(c.paths.models), "--outputs", str(c.paths.outputs), "--open-browser"]
+
+    def relaunch_and_exit() -> None:
+        time.sleep(0.75)
+        try:
+            if os.name == "nt":
+                quoted = " ".join(subprocess.list2cmdline([arg]) for arg in base_cmd)
+                subprocess.Popen(["cmd", "/c", f"timeout /t 2 /nobreak > nul & {quoted}"], cwd=str(c.paths.root), close_fds=True)
+            else:
+                subprocess.Popen(["sh", "-c", "sleep 2; exec \"$@\"", "dct-restart", *base_cmd], cwd=str(c.paths.root), close_fds=True)
+        finally:
+            os._exit(0)
+
+    threading.Thread(target=relaunch_and_exit, daemon=True).start()
+    return {"ok": True, "message": "Restart requested. The browser may briefly disconnect while the local app relaunches."}
 
 
 @router.get("/system/summary")

@@ -1591,8 +1591,12 @@ function datasetsTable() {
   ]);
 }
 
+function activeTagTextMode() { return (state.settings?.tag_text_mode_active || 'underscores') === 'spaces' ? 'spaces' : 'underscores'; }
 function parseTagString(raw) { return String(raw || '').split(/[;,\n]+/).map(x => normalizeTag(x)).filter(Boolean); }
-function normalizeTag(x) { return String(x || '').trim().replace(/\s+/g, '_').toLowerCase(); }
+function normalizeTag(x) {
+  const canonical = String(x || '').trim().replace(/\s+/g, '_').toLowerCase().replace(/^[_ ,]+|[_ ,]+$/g, '');
+  return activeTagTextMode() === 'spaces' ? canonical.replace(/_/g, ' ') : canonical;
+}
 function firstTag(raw) { return parseTagString(raw)[0] || ''; }
 function currentToken(input) { const text = input.value || ''; const pos = input.selectionStart ?? text.length; const left = text.slice(0, pos); const m = left.match(/([^,;\n]*)$/); return normalizeTag(m ? m[1] : text); }
 function insertTokenAtCursor(input, tag) {
@@ -6901,7 +6905,16 @@ function downloadControls() {
   const logic = el('textarea', { rows: 3, placeholder: 'Optional Boolean logic query, e.g. wolf AND (solo OR duo) AND NOT sketch. Supports AND/OR/NOT, parentheses, && || ! and -tag.', style: 'width:100%' });
   const logicMode = el('select', {}, [el('option', { value: 'boolean_expand' }, 'Boolean expand: OR becomes multiple deduped queries'), el('option', { value: 'raw_append' }, 'Raw append: send expression to source tags parameter')]);
   const logicMax = el('input', { type: 'number', min: '1', max: '512', value: state.settings.downloader_logic_max_clauses || 64, title: 'Safety cap for OR expansion clauses.' });
-  return { categories, allCategories, downloadAllPosts, dedupe, membershipIndex, allowDuplicateFolders, mode, from, to, order, workers, parallelPresets, perCat, perTag, apiDelay, fileDelay, timeout, retries, backoff, maxPages, startPage, logic, logicMode, logicMax };
+  const filenameMode = el('select', {}, [
+    el('option', { value: 'hash_original' }, 'Hash + original filename'),
+    el('option', { value: 'post_id' }, 'Post ID only'),
+    el('option', { value: 'post_id_original' }, 'Post ID + original filename'),
+    el('option', { value: 'original' }, 'Original filename only')
+  ]);
+  filenameMode.value = state.settings.downloader_filename_mode || 'hash_original';
+  const metadataJson = el('input', { type: 'checkbox', checked: state.settings.downloader_write_metadata_json_sidecar !== false, title: 'Write per-file .download.json metadata next to downloaded media.' });
+  const tagTxt = el('input', { type: 'checkbox', checked: state.settings.downloader_write_tag_txt_sidecar !== false, title: 'Write per-file .txt tag sidecars next to downloaded media.' });
+  return { categories, allCategories, downloadAllPosts, dedupe, membershipIndex, allowDuplicateFolders, mode, from, to, order, workers, parallelPresets, perCat, perTag, apiDelay, fileDelay, timeout, retries, backoff, maxPages, startPage, logic, logicMode, logicMax, filenameMode, metadataJson, tagTxt };
 }
 function buildDownloadPayload(ctrl) {
   return {
@@ -6932,6 +6945,9 @@ function buildDownloadPayload(ctrl) {
     logic_query: ctrl.logic.value.trim(),
     logic_mode: ctrl.logicMode.value,
     logic_max_clauses: Number(ctrl.logicMax.value || 64),
+    filename_mode: ctrl.filenameMode.value,
+    write_metadata_json_sidecar: ctrl.metadataJson.checked,
+    write_tag_txt_sidecar: ctrl.tagTxt.checked,
     tag_profile: state.tagProfile,
   };
 }
@@ -7586,6 +7602,9 @@ async function pickFilePath(targetInput, title = 'Select file') {
 
 function downloadsView() {
   const source = el('select', { onchange: e => { if (state.tagProfiles.some(p => p.key === e.target.value)) state.tagProfile = e.target.value; render(); } }, state.downloadSources.map(s => el('option', { value: s.key }, s.label || s.key)));
+  const preferredDirectSource = state.downloadSources.some(s => s.key === state.tagProfile) ? state.tagProfile : (state.downloadSources.some(s => s.key === 'e621') ? 'e621' : (state.downloadSources[0]?.key || 'generic-json'));
+  source.value = preferredDirectSource;
+  const directApiUrl = el('input', { placeholder: 'Required only when Source is Generic JSON/custom', style: 'min-width:320px' });
   const posCtl = tagAutocompleteControl({ placeholder: 'positive tags', multiline: true });
   const negCtl = tagAutocompleteControl({ placeholder: 'negative tags', multiline: true });
   const max = el('input', { type: 'number', value: '100', min: '1', max: '5000' });
@@ -7600,6 +7619,8 @@ function downloadsView() {
     el('div', { class: 'row' }, [el('label', {}, [ctrl.downloadAllPosts, ' DOWNLOAD ALL POSTS until source is exhausted']), el('label', {}, [ctrl.allCategories, ' Download all tags in selected category/categories']), ctrl.categories, ctrl.mode]),
     el('div', { class: 'row' }, [el('label', {}, ['Category tag limit', ctrl.perCat]), el('label', {}, ['Items per expanded tag', ctrl.perTag]), el('label', {}, [ctrl.dedupe, ' Deduplicate across categories/presets']), el('label', {}, [ctrl.membershipIndex, ' Write membership index']), el('label', {}, [ctrl.allowDuplicateFolders, ' Legacy duplicate tag folders'])]),
     el('p', { class: 'muted tiny' }, 'Default behavior stores each media file once and writes _download_index/download_membership.json showing which categories/tags matched it. Only enable legacy duplicate tag folders when you intentionally want repeated media copies.'),
+    el('div', { class: 'row' }, [el('label', {}, ['Filename mode', ctrl.filenameMode]), el('label', {}, [ctrl.metadataJson, ' Write .download.json sidecars']), el('label', {}, [ctrl.tagTxt, ' Write .txt tag sidecars'])]),
+    el('p', { class: 'muted tiny' }, 'Post ID filenames are useful for booru/e621 archives. Keep hash-prefixed names when you need maximum collision resistance across generic sources.'),
     el('div', { class: 'row' }, [el('label', {}, ['Date from', ctrl.from]), el('label', {}, ['Date to', ctrl.to]), ctrl.order, el('label', {}, ['Parallel downloads / jobs', ctrl.workers]), el('label', {}, [ctrl.parallelPresets, ' Parallelize presets/category jobs'])]),
     el('div', { class: 'row' }, [el('label', {}, ['API/page delay sec', ctrl.apiDelay]), el('label', {}, ['File delay sec', ctrl.fileDelay]), el('label', {}, ['Timeout sec', ctrl.timeout]), el('label', {}, ['Retries', ctrl.retries]), el('label', {}, ['Backoff sec', ctrl.backoff])]),
     el('div', { class: 'row' }, [el('label', {}, ['Max pages safety cap (0 = source exhausted)', ctrl.maxPages]), el('label', {}, ['Start page/pid', ctrl.startPage])]),
@@ -7619,7 +7640,7 @@ function downloadsView() {
       ]),
       state.downloadValidation ? el('pre', { class: 'log' }, JSON.stringify(state.downloadValidation, null, 2)) : el('p', { class: 'muted' }, 'No source diagnostics run yet.')
     ]),
-    card('Direct Booru / JSON Download', [el('p', { class: 'muted' }, 'Tag fields use active dictionary autocomplete. Date/order/category controls are folded into the source query where supported.'), el('div', { class: 'row' }, [source, max, tagProfileSelect()]), ...advancedControls(directCtl), el('label', { class: 'label' }, ['Positive tags', posCtl.wrap]), el('label', { class: 'label' }, ['Negative tags', negCtl.wrap]), el('div', { class: 'row' }, [outDirect, el('button', { class: 'secondary', onclick: async () => await pickFolder(outDirect, 'Select download output folder') }, 'Browse Output...')]), el('label', {}, [authDirect, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const sourceKey = source.value || 'generic-json'; const body = { ...buildDownloadPayload(directCtl), preset: { name: `direct-${sourceKey}-${Date.now()}`, source: sourceKey, positive_tags: parseTagString(posCtl.input.value), negative_tags: parseTagString(negCtl.input.value), options: {} }, output_dir: outDirect.value || null, confirmed_authorized: authDirect.checked, max_items: Number(max.value || 100), tag_profile: state.tagProfile }; const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Direct Download')]),
+    card('Direct Booru / JSON Download', [el('p', { class: 'muted' }, 'Tag fields use active dictionary autocomplete. Date/order/category controls are folded into the source query where supported. Generic JSON requires an explicit API URL; e621/e926/etc. use built-in endpoints.'), el('div', { class: 'row' }, [source, max, tagProfileSelect()]), directApiUrl, ...advancedControls(directCtl), el('label', { class: 'label' }, ['Positive tags', posCtl.wrap]), el('label', { class: 'label' }, ['Negative tags', negCtl.wrap]), el('div', { class: 'row' }, [outDirect, el('button', { class: 'secondary', onclick: async () => await pickFolder(outDirect, 'Select download output folder') }, 'Browse Output...')]), el('label', {}, [authDirect, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const sourceKey = source.value || preferredDirectSource || 'e621'; const options = {}; if (sourceKey === 'generic-json') { if (!directApiUrl.value.trim()) throw new Error('Generic JSON source requires options.api_url. Choose e621/e926/etc. for built-in booru downloads, or enter a Generic JSON API URL.'); options.api_url = directApiUrl.value.trim(); } const body = { ...buildDownloadPayload(directCtl), preset: { name: `direct-${sourceKey}-${Date.now()}`, source: sourceKey, positive_tags: parseTagString(posCtl.input.value), negative_tags: parseTagString(negCtl.input.value), options }, output_dir: outDirect.value || null, confirmed_authorized: authDirect.checked, max_items: Number(max.value || 100), tag_profile: state.tagProfile }; const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Direct Download')]),
     card('Preset Download Runner', [el('div', { class: 'row' }, [preset, out, el('button', { class: 'secondary', onclick: async () => await pickFolder(out, 'Select download output folder') }, 'Browse Output...')]), ...advancedControls(presetCtl), el('label', {}, [auth, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const names = [...preset.selectedOptions].map(o => o.value); const r = await api('/api/downloads/run', { method: 'POST', body: { ...buildDownloadPayload(presetCtl), preset_names: names, output_dir: out.value || null, confirmed_authorized: auth.checked, tag_profile: state.tagProfile } }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Presets')]),
     card('Source Config Validation', [
       el('p', { class: 'muted' }, 'Offline fixture validation for every supported source. This checks parser keys, tag extraction, URL extraction, page/limit params, and avoids treating only e621 as validated.'),
@@ -7833,7 +7854,7 @@ function migrationView() {
 
 
 function codeAssistantView() {
-  const root = el('input', { value: state.codeProjectRoot || '', placeholder: 'Project root path, e.g. C:\Users\<USERNAME>\Desktop\my_project', style: 'min-width:420px', oninput: e => { state.codeProjectRoot = e.target.value; } });
+  const root = el('input', { value: state.codeProjectRoot || '', placeholder: 'Project root path, e.g. C:\Users\CK\Desktop\my_project', style: 'min-width:420px', oninput: e => { state.codeProjectRoot = e.target.value; } });
   const chatModels = sortedModels(state.models.filter(m => { const caps = new Set(m.capabilities || []); return caps.has('chat') || caps.has('llm') || caps.has('assistant') || caps.has('orchestration') || m.cloud; }));
   const model = el('select', {}, chatModels.length ? chatModels.map(modelOptionNode) : modelOptions());
   const preferred = chatModels.find(m => m.name === state.assistantConfig?.orchestrator_model_name) || chatModels.find(m => String(m.name || '').includes('kimi')) || chatModels.find(m => m.name === 'openrouter-auto') || chatModels[0];
@@ -8012,6 +8033,12 @@ function settingsView() {
   const defaultProfile = tagProfileSelect(); defaultProfile.value = s.default_tag_profile || state.tagProfile;
   const defaultOrder = el('select', {}, ['retain', 'booru', 'custom_profile', 'lora_purpose'].map(x => el('option', { value: x }, x))); defaultOrder.value = s.default_ordering_strategy || state.orderingStrategy;
   const retain = el('input', { type: 'checkbox', checked: Boolean(s.retain_imported_tag_order) });
+  const tagTextMode = el('select', { title: 'Controls whether app-owned tags are stored/displayed as blue_eyes or blue eyes. Applied on startup so dictionaries, aliases, implications, media tags, and sidecars stay consistent.' }, [
+    el('option', { value: 'underscores' }, 'Use underscores: blue_eyes'),
+    el('option', { value: 'spaces' }, 'Use spaces: blue eyes')
+  ]);
+  tagTextMode.value = s.tag_text_mode || 'underscores';
+  const tagModeRestartNeeded = Boolean(s.tag_text_mode_restart_required || ((s.tag_text_mode || 'underscores') !== (s.tag_text_mode_active || 'underscores')));
   const metaExtractImport = el('input', { type: 'checkbox', checked: Boolean(s.metadata_extract_on_import) });
   const metaApplyFallback = el('input', { type: 'checkbox', checked: s.metadata_apply_when_no_sidecar !== false });
   const metaTagSource = el('select', {}, ['positive_prompt', 'all', 'character_prompts', 'lora_refs', 'training_tags', 'negative_prompt'].map(x => el('option', { value: x }, x))); metaTagSource.value = s.metadata_default_tag_source || 'positive_prompt';
@@ -8160,7 +8187,18 @@ function settingsView() {
         state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); toast('Runtime settings saved'); render();
       } catch (err) { toast(err.message, false); } } }, 'Save Runtime Settings')
     ]),
-    card('Frontend / Model Defaults', [el('div', { class: 'row' }, [defaultProfile, defaultOrder, el('label', {}, [retain, ' Retain imported tag order by default'])]), el('div', { class: 'row' }, [tagCount, temp, maxTokens, threshold]), el('div', { class: 'row' }, [defGpuIds, defShard, defDtype, defQuant]), el('button', { class: 'primary', onclick: async () => { try { const values = { default_tag_profile: defaultProfile.value, default_ordering_strategy: defaultOrder.value, retain_imported_tag_order: retain.checked, tag_suggestion_count: Number(tagCount.value || 40), model_temperature: Number(temp.value || 0.2), model_max_new_tokens: Number(maxTokens.value || 512), classifier_threshold: Number(threshold.value || 0.35), default_model_device_ids: parseGpuIds(defGpuIds.value), default_model_sharding_strategy: defShard.value, default_model_sharding: defShard.value !== 'none', default_model_dtype: defDtype.value, default_model_quantization: defQuant.value }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); state.tagProfile = values.default_tag_profile; state.orderingStrategy = values.default_ordering_strategy; toast('Default settings saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Defaults')]),
+    card('Frontend / Model Defaults', [
+      el('div', { class: 'row' }, [defaultProfile, defaultOrder, el('label', {}, [retain, ' Retain imported tag order by default'])]),
+      el('div', { class: 'row' }, [el('label', {}, ['Tag text format ', tagTextMode]), el('span', { class: tagModeRestartNeeded ? 'badge failed' : 'badge ok' }, tagModeRestartNeeded ? 'restart required' : `active: ${s.tag_text_mode_active || 'underscores'}`)]),
+      tagModeRestartNeeded ? el('div', { class: 'bad-panel' }, [
+        el('strong', {}, 'Tag text format change is pending.'),
+        el('p', { class: 'muted tiny' }, 'Press the red restart button to apply it immediately. Otherwise, the migration runs the next time you start the app. The startup migration updates tag dictionaries, aliases, implications, media tag rows, and .txt sidecars.'),
+        el('button', { class: 'danger', onclick: async () => { try { await api('/api/system/restart', { method: 'POST', body: {} }); toast('Restart requested; the app will briefly disconnect.'); } catch (err) { toast(err.message, false); } } }, 'Restart Tool Now + Apply Tag Format')
+      ]) : null,
+      el('div', { class: 'row' }, [tagCount, temp, maxTokens, threshold]),
+      el('div', { class: 'row' }, [defGpuIds, defShard, defDtype, defQuant]),
+      el('button', { class: 'primary', onclick: async () => { try { const values = { default_tag_profile: defaultProfile.value, default_ordering_strategy: defaultOrder.value, retain_imported_tag_order: retain.checked, tag_text_mode: tagTextMode.value, tag_suggestion_count: Number(tagCount.value || 40), model_temperature: Number(temp.value || 0.2), model_max_new_tokens: Number(maxTokens.value || 512), classifier_threshold: Number(threshold.value || 0.35), default_model_device_ids: parseGpuIds(defGpuIds.value), default_model_sharding_strategy: defShard.value, default_model_sharding: defShard.value !== 'none', default_model_dtype: defDtype.value, default_model_quantization: defQuant.value }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); state.tagProfile = values.default_tag_profile; state.orderingStrategy = values.default_ordering_strategy; toast((state.settings.tag_text_mode_restart_required || state.settings.tag_text_mode !== state.settings.tag_text_mode_active) ? 'Default settings saved; restart required to apply tag text format.' : 'Default settings saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Defaults')
+    ].filter(Boolean)),
     card('Assistant Thinking / Visible Planning Defaults', [
       el('p', { class: 'muted' }, 'Controls how assistant-capable models think longer. The app can run a separate user-visible planning pass before the final answer and raise token/continuation budgets. This does not expose provider/private hidden chain-of-thought.'),
       el('div', { class: 'row' }, [el('label', {}, ['thinking mode ', thinkMode]), el('label', {}, ['reasoning effort ', reasoningEffort]), el('label', {}, [showVisiblePlan, ' show visible plan/action notes']), el('label', {}, [showLiveActionNotes, ' show live action-notes overlay'])]),
