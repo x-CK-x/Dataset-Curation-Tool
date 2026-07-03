@@ -6,7 +6,7 @@ Repository: https://github.com/x-CK-x/Dataset-Curation-Tool
 
 Data Curation Tool is a local-first dataset curation, tagging, model-management, downloader, 3D generation, media metadata, and tool-orchestration application. The current documentation set is stored in `docs/wiki/` and is designed to be pushed directly into the repository or copied into the GitHub Wiki.
 
-## WIKI-Page / Tutorial for this Repository [HERE](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki)
+## [WIKI & Tutorial](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki)
 
 ## Current highlights
 
