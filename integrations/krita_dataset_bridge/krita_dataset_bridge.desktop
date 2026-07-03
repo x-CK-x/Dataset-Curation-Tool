@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=krita_dataset_bridge
+X-Python-2-Compatible=false
+Name=Dataset Bridge
+Comment=Send the active Krita document back to the local Data Curation Tool.
