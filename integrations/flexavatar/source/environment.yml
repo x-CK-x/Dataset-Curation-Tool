@@ -1,0 +1,38 @@
+# Note: conda dependencies have only 1 "="
+#       pip dependencies have 2 "=="
+# Fuse pip dependencies together under one " - pip" item
+#       Otherwise, only some of the are installed, because conda creates a temporary requirements.txt file
+#       only the last -pip section
+
+name: flexavatar
+
+channels:
+  - nvidia/label/cuda-11.8.0
+
+dependencies:
+  - python=3.9
+  - pip
+  - jupyterlab
+
+  - cuda-toolkit
+  - cuda-nvcc  # for nvcc
+  - cuda-cudart-dev  # for cuda_runtime.h
+  - libcusparse-dev  # For StyleGAN kernels
+  - libcublas-dev
+  - libcusolver-dev
+
+  - pip:
+      - --index-url https://download.pytorch.org/whl/cu118
+      - torch==2.7.1
+      - dreifus
+      - elias
+      - visage
+      - environs
+      - torchvision
+      - einops
+      - git+https://github.com/tobias-kirschstein/stylegan-generators.git
+      - gaussian_splatting@git+https://github.com/tobias-kirschstein/gaussian-splatting.git
+      - modnet@git+https://github.com/tobias-kirschstein/MODNet.git
+      - git+https://github.com/tobias-kirschstein/sheap-3.9.git
+      - diffusers
+      - mediapy

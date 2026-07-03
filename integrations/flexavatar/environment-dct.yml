@@ -1,0 +1,55 @@
+# Optional isolated runtime for FlexAvatar. It is deliberately separate from
+# the main data-curation-tool environment because the official research code
+# targets Python 3.9, PyTorch 2.7.1, and CUDA 11.8.
+name: dct-flexavatar
+channels:
+  - nvidia/label/cuda-11.8.0
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip>=23
+  - git
+  - ffmpeg
+  - cmake
+  - ninja
+  - pip:
+      # Keep CUDA PyTorch on the official cu118 index while allowing all other
+      # packages to resolve from PyPI. Without the extra index, a pip-created
+      # requirements file may look only at the PyTorch wheel repository.
+      - --index-url https://download.pytorch.org/whl/cu118
+      - --extra-index-url https://pypi.org/simple
+      - torch==2.7.1
+      - torchvision
+      # The research stack and bridge utilities are conservative about NumPy
+      # ABI compatibility; NumPy 1.x avoids extension breakage in older CUDA
+      # modules while leaving ample performance for preprocessing.
+      - numpy<2
+      - scipy
+      - pillow
+      - tqdm
+      - pyyaml
+      - requests
+      - packaging
+      - dreifus
+      - elias
+      - visage
+      - environs
+      - einops
+      - tyro
+      - trimesh
+      - mediapy
+      - dearpygui
+      - opencv-python
+      - imageio
+      - imageio-ffmpeg
+      - diffusers
+      # FlexAvatar's fitting module imports these perceptual-loss packages
+      # directly. They are made explicit because they are not declared in the
+      # upstream package metadata.
+      - sam_loss
+      - dino_loss
+      - git+https://github.com/tobias-kirschstein/stylegan-generators.git
+      - gaussian_splatting@git+https://github.com/tobias-kirschstein/gaussian-splatting.git
+      - modnet@git+https://github.com/tobias-kirschstein/MODNet.git
+      - git+https://github.com/tobias-kirschstein/sheap-3.9.git
