@@ -1,0 +1,9 @@
+# Lightweight 2D + world-3D pose runtime.
+mediapipe>=0.10.14
+
+# YOLO pose inference and custom YOLO pose checkpoints.
+ultralytics
+
+# MMPose is intentionally installed through OpenMIM by install_pose_models.*
+# because MMEngine/MMCV/MMDetection wheels must match the active PyTorch/CUDA build.
+openmim>=0.3.9

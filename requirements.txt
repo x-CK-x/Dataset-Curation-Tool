@@ -1,0 +1,27 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+pillow>=10.0
+numpy>=1.26
+python-multipart>=0.0.9
+orjson>=3.10
+requests>=2.31
+tqdm>=4.66
+opencv-python>=4.9
+imageio>=2.34
+imageio-ffmpeg>=0.5
+pyarrow>=16.0
+huggingface_hub>=0.23
+transformers>=4.57
+accelerate>=0.30
+safetensors>=0.4
+selenium>=4.20
+
+PyYAML>=6.0
+
+einops>=0.7
+soundfile>=0.12
+librosa>=0.10
+sounddevice>=0.4
+
+# Optional local voice I/O runtimes; core STT/TTS adapters import them lazily.

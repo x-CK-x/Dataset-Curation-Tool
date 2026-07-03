@@ -1,0 +1,8 @@
+-r requirements.txt
+# Optional local/open-source image enhancement runtimes. Commercial tools such
+# as Topaz are launched via user-configured executable/CLI templates and are not
+# installed by this file.
+realesrgan>=0.3.0
+basicsr>=1.4.2
+facexlib>=0.3.0
+gfpgan>=1.3.8

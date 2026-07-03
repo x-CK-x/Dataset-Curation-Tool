@@ -1,0 +1,8 @@
+# Optional heavy local-serving/runtime dependencies for large sharded models.
+# These are intentionally not installed by default because they are large,
+# CUDA/platform-sensitive, and may not support every Windows configuration.
+-r requirements-models.txt
+vllm; platform_system != "Windows"
+sglang; platform_system != "Windows"
+bitsandbytes; platform_system != "Windows"
+selenium>=4.20

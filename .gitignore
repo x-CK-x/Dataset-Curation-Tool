@@ -1,8 +1,16 @@
-# This will have to be updated soon for the V5 release of the tool
-
-# The previous rules you wanted
-# Ignore __pycache__ directories
 __pycache__/
-
-# Ignore .pyc files
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+*.db
+*.sqlite
+runtime/
+outputs/
+models/
+node_modules/
+dist/

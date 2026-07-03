@@ -1,0 +1,11 @@
+# Optional voice I/O runtimes. Install this if you want local STT/TTS beyond
+# browser recording. Base app imports these lazily.
+soundfile>=0.12
+librosa>=0.10
+sounddevice>=0.4
+kokoro>=0.9
+kokoro-onnx>=0.4
+TTS>=0.22
+# NVIDIA NeMo ASR for Parakeet/Canary rows can be installed separately because
+# its dependency stack is heavier and platform-specific:
+# nemo_toolkit[asr]

@@ -1,0 +1,5 @@
+# Optional runtime for external creative-tool MCP bridges.
+mcp>=1.11.0
+fastmcp>=2.0.0
+requests>=2.31.0
+websockets>=12.0

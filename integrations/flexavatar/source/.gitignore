@@ -1,0 +1,15 @@
+# Python cache
+_pycache__
+*.py[cod]
+
+# PyCharm/Jupyter
+.idea
+.ipynb_checkpoints
+
+# build artifacts
+*.egg-info
+/docs/build/
+dist
+
+data/avatar_codes
+models/FLEX-1/checkpoints
