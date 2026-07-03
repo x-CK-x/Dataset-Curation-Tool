@@ -1,0 +1,68 @@
+{
+  "schema": "dct.voice_dataset_consent_manifest.v1",
+  "voice_profile_id": "example_voice_profile",
+  "display_name": "Example Voice Profile",
+  "speaker_identity": {
+    "type": "self | hired_voice_actor | public_domain_character | synthetic | other",
+    "name_or_alias": "",
+    "contact_or_record_reference": "",
+    "notes": ""
+  },
+  "consent": {
+    "status": "explicit_consent_required | explicit_consent_obtained | public_domain | synthetic | not_allowed",
+    "consent_document_path": "",
+    "consent_date": "YYYY-MM-DD",
+    "allowed_uses": [
+      "personal_research",
+      "dataset_curation",
+      "tts_output",
+      "training"
+    ],
+    "disallowed_uses": [
+      "impersonation",
+      "commercial_use_without_contract",
+      "redistribution_without_permission"
+    ]
+  },
+  "source_audio": {
+    "dataset_root": "",
+    "files": [],
+    "recording_conditions": "",
+    "language_codes": [],
+    "estimated_total_duration_seconds": 0,
+    "quality_notes": ""
+  },
+  "license_and_rights": {
+    "license": "",
+    "rights_holder": "",
+    "redistribution_allowed": false,
+    "derivative_model_allowed": false,
+    "generated_audio_allowed": false,
+    "notes": ""
+  },
+  "curation": {
+    "transcript_required": true,
+    "diarization_required": false,
+    "speaker_verification_required": true,
+    "noise_cleaning_allowed": true,
+    "manual_review_required": true,
+    "reviewer": "",
+    "review_date": ""
+  },
+  "training": {
+    "approved_for_training": false,
+    "train_split_path": "",
+    "validation_split_path": "",
+    "test_split_path": "",
+    "model_outputs_root": "",
+    "notes": ""
+  },
+  "tts_integration": {
+    "approved_for_runtime_voice_selection": false,
+    "compatible_backends": [],
+    "voice_embedding_path": "",
+    "checkpoint_path": "",
+    "default_speaker_id": "",
+    "notes": ""
+  }
+}
