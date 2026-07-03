@@ -11,7 +11,11 @@ dependencies:
   - opencv
   - numpy
   - pillow>=10
-  - soundfile
+  # Conda package name is pysoundfile; it provides the importable soundfile module.
+  # Do not use a conda dependency named "soundfile" here; that is the PyPI name.
+  - libsndfile
+  - cffi
+  - pysoundfile>=0.12
   - librosa
   - pyarrow>=16
   - pandas>=2.2
