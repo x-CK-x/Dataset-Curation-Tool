@@ -29,6 +29,14 @@ def logic_preview(query: str = "", max_clauses: int = 64):
     return booru_logic_summary(query, max_clauses=max(1, min(int(max_clauses or 64), 512)))
 
 
+
+
+@router.post("/preflight")
+def preflight_download(payload: DownloadRequest, request: Request):
+    c = ctx(request)
+    return c.downloads.preflight(payload)
+
+
 @router.post("/run")
 def run_download(payload: DownloadRequest, request: Request):
     c = ctx(request)

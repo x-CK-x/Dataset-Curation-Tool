@@ -593,6 +593,20 @@ class DownloadPreset(BaseModel):
     filename_mode: Literal["hash_original", "post_id", "post_id_original", "original"] = "hash_original"
     write_metadata_json_sidecar: bool = True
     write_tag_txt_sidecar: bool = True
+
+    # Source/content filters. Ratings are source-native short codes where possible
+    # (e621/e926: s/q/e). Empty rating list means no rating filter.
+    rating_filter: list[str] = Field(default_factory=list)
+    allow_animated: bool = True
+    allow_video: bool = True
+    allow_3d: bool = True
+    allow_blender: bool = True
+    allow_render: bool = True
+    allow_images: bool = True
+    allow_audio: bool = True
+    allow_other_media: bool = True
+    apply_source_blacklists: bool = False
+    estimate_total_before_download: bool = False
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -657,6 +671,20 @@ class DownloadRequest(BaseModel):
     filename_mode: Literal["hash_original", "post_id", "post_id_original", "original"] = "hash_original"
     write_metadata_json_sidecar: bool = True
     write_tag_txt_sidecar: bool = True
+
+    # Source/content filters. Defaults are intentionally permissive: the tool
+    # should not silently impose site-like blacklists or hidden exclusions.
+    rating_filter: list[str] = Field(default_factory=list)
+    allow_animated: bool = True
+    allow_video: bool = True
+    allow_3d: bool = True
+    allow_blender: bool = True
+    allow_render: bool = True
+    allow_images: bool = True
+    allow_audio: bool = True
+    allow_other_media: bool = True
+    apply_source_blacklists: bool = False
+    estimate_total_before_download: bool = False
 
 
 class ModelChatRequest(ModelPlacementDefaultsMixin):

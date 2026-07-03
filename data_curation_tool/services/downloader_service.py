@@ -16,7 +16,7 @@ import requests
 from ..database import Database, now_iso
 from ..jobs import CancelledJobError
 from ..schemas import DownloadRequest
-from ..utils import normalize_tag, tag_for_source_query, tag_string, write_text
+from ..utils import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, normalize_tag, tag_for_source_query, tag_string, write_text
 from .preset_service import PresetService
 from .tag_service import TagService
 
@@ -178,16 +178,40 @@ _LOGIC_STARTERS = {"TAG", "LPAREN", "NOT"}
 _LOGIC_ENDERS = {"TAG", "RPAREN"}
 
 
+_LOGIC_KEYWORDS = {"AND", "OR", "NOT", "EXCEPT"}
+
+
+def _match_logic_keyword(src: str, index: int) -> tuple[str, int] | None:
+    """Return an explicit Boolean keyword token at index.
+
+    Tag text can now contain spaces. To avoid corrupting tags such as
+    ``black and white``, alphabetic Boolean operators are intentionally
+    recognized only in uppercase word form. Symbol operators still work in any
+    tag mode: ``&&``, ``||``, ``!``, ``-tag``, commas, and parentheses.
+    """
+    for word in sorted(_LOGIC_KEYWORDS, key=len, reverse=True):
+        end = index + len(word)
+        if src[index:end] != word:
+            continue
+        before_ok = index == 0 or not (src[index - 1].isalnum() or src[index - 1] == "_")
+        after_ok = end >= len(src) or not (src[end].isalnum() or src[end] == "_")
+        if before_ok and after_ok:
+            return ("NOT" if word == "EXCEPT" else word, end)
+    return None
+
+
 def _logic_tokenize(expression: str) -> list[tuple[str, str]]:
     """Tokenize a booru/e621 Boolean tag expression.
 
     Supported examples:
       cat AND (solo OR duo) AND NOT sketch
       wolf && (male || female) && -animated
-      rating:s score:>100 (standing OR sitting)
+      blue eyes AND (red hair OR black fur)
+      rating:s AND score:>100 AND (standing OR sitting)
 
-    Commas are treated as AND separators. Quoted tags are accepted for user
-    convenience, but booru-style tags should normally use underscores.
+    Commas are treated as AND separators. Whitespace inside tag names is
+    preserved; whitespace alone is not a tag separator. Use AND/OR/NOT,
+    parentheses, symbols, or commas to separate clauses.
     """
     src = str(expression or "").strip()
     tokens: list[tuple[str, str]] = []
@@ -196,6 +220,12 @@ def _logic_tokenize(expression: str) -> list[tuple[str, str]]:
         ch = src[i]
         if ch.isspace():
             i += 1
+            continue
+        kw = _match_logic_keyword(src, i)
+        if kw:
+            kind, end = kw
+            tokens.append((kind, kind))
+            i = end
             continue
         if ch == ',':
             tokens.append(("AND", "AND"))
@@ -216,12 +246,10 @@ def _logic_tokenize(expression: str) -> list[tuple[str, str]]:
         if ch == '!':
             tokens.append(("NOT", "NOT")); i += 1; continue
         if ch == '-':
-            # Prefix negative operator unless part of an unusual tag token.
             tokens.append(("NOT", "NOT")); i += 1; continue
         if ch in {'"', "'"}:
             quote = ch
             i += 1
-            start = i
             buf = []
             while i < len(src):
                 if src[i] == '\\' and i + 1 < len(src):
@@ -236,18 +264,41 @@ def _logic_tokenize(expression: str) -> list[tuple[str, str]]:
             if value:
                 tokens.append(("TAG", value))
             continue
+
         start = i
-        while i < len(src) and not src[i].isspace() and src[i] not in '(),&|!':
+        while i < len(src):
+            ch = src[i]
+            if ch in '(),&|!':
+                break
+            if ch == '-':
+                # A hyphen only acts as a negative operator at token start. Inside
+                # a tag it remains part of the tag text.
+                if i == start:
+                    break
+                i += 1
+                continue
+            if ch.isspace():
+                j = i
+                while j < len(src) and src[j].isspace():
+                    j += 1
+                if j >= len(src):
+                    i = j
+                    break
+                if _match_logic_keyword(src, j) or src[j] in '(),&|!':
+                    break
+                # Preserve internal spaces as tag text, but skip over repeated
+                # whitespace efficiently. normalize_tag() handles final cleanup.
+                i = j
+                continue
+            kw = _match_logic_keyword(src, i)
+            if kw:
+                break
             i += 1
         word = src[start:i].strip()
-        upper = word.upper()
-        if upper in {"AND", "OR"}:
-            tokens.append((upper, upper))
-        elif upper in {"NOT", "EXCEPT"}:
-            tokens.append(("NOT", "NOT"))
-        elif word:
+        if word:
             tokens.append(("TAG", word))
-    # Insert implicit AND between adjacent terms: "cat (solo OR duo)" and "cat -sketch".
+    # Insert implicit AND between adjacent structural terms, not whitespace-separated
+    # tag text: "cat (solo OR duo)" and "cat -sketch" still work.
     out: list[tuple[str, str]] = []
     for tok in tokens:
         if out and out[-1][0] in _LOGIC_ENDERS and tok[0] in _LOGIC_STARTERS:
@@ -414,8 +465,12 @@ def source_definitions() -> list[dict[str, Any]]:
             "category_options": DEFAULT_DOWNLOAD_CATEGORIES,
             "parallel_download_supported": True,
             "supports_logic_gates": True,
+            "supports_preflight_count": True,
+            "blacklists_applied_by_default": False,
+            "content_filter_keys": ["animated", "video", "3d", "blender", "render", "images", "audio", "other"],
+            "rating_filter_keys": ["safe", "questionable", "explicit"],
             "logic_gate_modes": ["boolean_expand", "raw_append"],
-            "logic_gate_syntax": "AND / OR / NOT / parentheses; && || ! and -tag aliases are accepted. OR expands into multiple deduped source queries.",
+            "logic_gate_syntax": "AND / OR / NOT / parentheses; && || ! commas and -tag aliases are accepted. Whitespace inside tag names is preserved; whitespace alone is not a separator. OR expands into multiple deduped source queries.",
             "default_delay_seconds": value.get("delay_seconds", 1.0),
             "default_timeout_seconds": value.get("timeout_seconds", 60),
         }
@@ -476,6 +531,96 @@ def validate_source_configs() -> dict[str, Any]:
             "notes": cfg.get("notes", ""),
         })
     return {"ok": all_ok, "sources": rows, "count": len(rows)}
+
+
+CONTENT_FILTER_TAGS: dict[str, tuple[str, ...]] = {
+    "animated": ("animated", "animation"),
+    "3d": ("3d", "3d_(artwork)", "3d_artwork"),
+    "blender": ("blender",),
+    "render": ("render", "rendered", "3d_render", "cgi"),
+}
+RATING_ALIASES = {
+    "s": "s", "safe": "s", "rating:s": "s", "rating_safe": "s",
+    "q": "q", "questionable": "q", "rating:q": "q", "rating_questionable": "q",
+    "e": "e", "explicit": "e", "rating:e": "e", "rating_explicit": "e",
+    "g": "g", "general": "g", "rating:g": "g", "rating_general": "g",
+}
+
+def _rating_codes(values: list[str] | tuple[str, ...] | None) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in values or []:
+        code = RATING_ALIASES.get(str(raw or "").strip().lower())
+        if code and code not in seen:
+            seen.add(code)
+            out.append(code)
+    return out
+
+def _item_ext(item: dict[str, Any], cfg: dict[str, Any], url: str | None = None) -> str:
+    for key in ("file.ext", "ext", "file_ext", "file.extension", "image", "sample.ext"):
+        value = _nested_get(item, key)
+        if isinstance(value, str) and value.strip():
+            clean = value.strip().lower().lstrip(".")
+            if 1 <= len(clean) <= 8 and re.fullmatch(r"[a-z0-9]+", clean):
+                return f".{clean}"
+    candidate = str(url or _nested_get(item, cfg.get("file_url_key")) or "")
+    try:
+        path = urlparse(candidate).path
+        suffix = Path(path).suffix.lower()
+        return suffix
+    except Exception:
+        return ""
+
+def _item_rating(item: dict[str, Any]) -> str:
+    for key in ("rating", "post.rating", "safe_rating"):
+        value = _nested_get(item, key)
+        if value not in (None, "", [], {}):
+            text = str(value).strip().lower()
+            return RATING_ALIASES.get(text, text[:1] if text else "")
+    tags = {tag_for_source_query(t).lower() for t in _extract_tags(item, "tags")}
+    for tag in tags:
+        code = RATING_ALIASES.get(tag)
+        if code:
+            return code
+    return ""
+
+def _item_has_any_tag(item: dict[str, Any], cfg: dict[str, Any], candidates: tuple[str, ...]) -> bool:
+    tags = {tag_for_source_query(t).lower() for t in _extract_tags(item, cfg.get("tags_key"))}
+    normalized = {tag_for_source_query(t).lower() for t in candidates}
+    return bool(tags.intersection(normalized))
+
+def _item_allowed_by_request(item: dict[str, Any], cfg: dict[str, Any], request: DownloadRequest | None, source_url: str | None = None) -> bool:
+    if request is None:
+        return True
+    ratings = set(_rating_codes(getattr(request, "rating_filter", []) or []))
+    if ratings:
+        rating = _item_rating(item)
+        if rating and rating not in ratings:
+            return False
+    ext = _item_ext(item, cfg, source_url)
+    if ext in IMAGE_EXTENSIONS and not bool(getattr(request, "allow_images", True)):
+        return False
+    if ext in VIDEO_EXTENSIONS and not bool(getattr(request, "allow_video", True)):
+        return False
+    if ext in AUDIO_EXTENSIONS and not bool(getattr(request, "allow_audio", True)):
+        return False
+    if ext and ext not in IMAGE_EXTENSIONS and ext not in VIDEO_EXTENSIONS and ext not in AUDIO_EXTENSIONS and not bool(getattr(request, "allow_other_media", True)):
+        return False
+    if not bool(getattr(request, "allow_animated", True)) and (ext == ".gif" or _item_has_any_tag(item, cfg, CONTENT_FILTER_TAGS["animated"])):
+        return False
+    for key, tags in (("3d", CONTENT_FILTER_TAGS["3d"]), ("blender", CONTENT_FILTER_TAGS["blender"]), ("render", CONTENT_FILTER_TAGS["render"])):
+        attr = f"allow_{key}" if key != "3d" else "allow_3d"
+        if not bool(getattr(request, attr, True)) and _item_has_any_tag(item, cfg, tags):
+            return False
+    return True
+
+def _download_eta(started_at: float, done: int, total: int | None) -> str:
+    elapsed = max(0.001, time.time() - started_at)
+    rate = done / elapsed if done > 0 else 0.0
+    if not total or done <= 0 or rate <= 0:
+        return f"elapsed {elapsed/60:.1f}m"
+    remaining = max(0, total - done) / rate
+    return f"elapsed {elapsed/60:.1f}m · ETA {remaining/60:.1f}m"
 
 def _sample_item_for_source(key: str) -> dict[str, Any]:
     if key in {"e621", "e926"}:
@@ -579,11 +724,7 @@ class DownloaderService:
             "max_limit": cfg.get("max_limit"),
         }
 
-    def run(self, request: DownloadRequest, progress) -> dict[str, Any]:
-        if not request.confirmed_authorized:
-            raise PermissionError("Confirm that the configured source permits this download before running.")
-        output_dir = Path(request.output_dir or "runtime/downloads").expanduser().resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
+    def _collect_request_presets(self, request: DownloadRequest) -> list[dict[str, Any]]:
         presets: list[dict[str, Any]] = []
         if request.preset:
             presets.append(request.preset.model_dump())
@@ -591,20 +732,153 @@ class DownloaderService:
             preset = self.presets.get(name)
             if preset:
                 presets.append(preset)
+        return presets
+
+    def _prepare_presets(self, request: DownloadRequest) -> list[dict[str, Any]]:
+        presets = self._collect_request_presets(request)
         if not presets:
             raise ValueError("No download presets selected.")
         presets = self._expand_presets_for_categories(presets, request)
         presets = self._expand_presets_for_logic(presets, request)
         if not presets:
             raise ValueError("No tags were found for the selected download category/profile or logic expression.")
+        return presets
+
+    def _resolved_source_config(self, preset: dict[str, Any], request: DownloadRequest | None = None) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        source = preset.get("source", "generic-json")
+        if source == "booru":
+            source = "e621"
+        preset_options = dict(preset.get("options") or {})
+        if source == "generic-json" and not preset_options.get("api_url") and request is not None:
+            profile_source = str(getattr(request, "tag_profile", "") or "").strip()
+            if profile_source in BOORU_SOURCES and profile_source != "generic-json":
+                source = profile_source
+                preset = {**preset, "source": source, "name": str(preset.get("name") or "direct").replace("direct-generic-json", f"direct-{source}", 1)}
+        if source not in BOORU_SOURCES:
+            raise ValueError(f"Unsupported source plugin: {source}")
+        cfg = dict(BOORU_SOURCES[source])
+        cfg.update(preset_options)
+        if request is not None:
+            if request.api_delay_seconds is not None:
+                cfg["delay_seconds"] = max(0.0, float(request.api_delay_seconds))
+            if request.file_delay_seconds is not None:
+                cfg["file_delay_seconds"] = max(0.0, float(request.file_delay_seconds))
+            if request.request_timeout_seconds is not None:
+                cfg["timeout_seconds"] = max(5, int(request.request_timeout_seconds))
+            if request.max_retries is not None:
+                cfg["max_retries"] = max(0, int(request.max_retries))
+            if request.retry_backoff_seconds is not None:
+                cfg["retry_backoff_seconds"] = max(0.0, float(request.retry_backoff_seconds))
+            cfg["force_download"] = bool(getattr(request, "force_download", False))
+            cfg["filename_mode"] = str(getattr(request, "filename_mode", "hash_original") or "hash_original")
+            cfg["write_metadata_json_sidecar"] = bool(getattr(request, "write_metadata_json_sidecar", True))
+            cfg["write_tag_txt_sidecar"] = bool(getattr(request, "write_tag_txt_sidecar", True))
+            cfg["apply_source_blacklists"] = bool(getattr(request, "apply_source_blacklists", False))
+        preset_filename_mode = preset.get("filename_mode")
+        if preset_filename_mode:
+            cfg["filename_mode"] = str(preset_filename_mode)
+        if "write_metadata_json_sidecar" in preset:
+            cfg["write_metadata_json_sidecar"] = bool(preset.get("write_metadata_json_sidecar"))
+        if "write_tag_txt_sidecar" in preset:
+            cfg["write_tag_txt_sidecar"] = bool(preset.get("write_tag_txt_sidecar"))
+        api_url = cfg.get("api_url")
+        if not api_url:
+            raise ValueError("This source requires options.api_url")
+        return source, preset, cfg
+
+    def preflight(self, request: DownloadRequest, progress=None) -> dict[str, Any]:
+        presets = self._prepare_presets(request)
+        total_unique = 0
+        total_seen = 0
+        total_pages = 0
+        rows: list[dict[str, Any]] = []
+        global_keys: set[str] = set()
+        started = time.time()
+        for idx, preset in enumerate(presets, start=1):
+            source, resolved_preset, cfg = self._resolved_source_config(preset, request)
+            api_url = cfg.get("api_url")
+            source_max_limit = int(cfg.get("max_limit", 100))
+            per_page = source_max_limit if request.download_all_posts else min(int(request.max_items or source_max_limit), source_max_limit)
+            page_param = cfg.get("page_param")
+            page = int(request.start_page if request.start_page is not None else cfg.get("start_page", 0 if page_param == "pid" else 1))
+            max_pages = int(request.max_pages if request.max_pages is not None else cfg.get("max_pages", 0) or 0)
+            pages = 0
+            unique = 0
+            seen = 0
+            while request.download_all_posts or seen < int(request.max_items or 1):
+                if max_pages and pages >= max_pages:
+                    break
+                pages += 1
+                total_pages += 1
+                batch = self._fetch_page(resolved_preset, cfg, api_url, per_page, page if page_param else None, request=request, progress=progress)
+                if not batch:
+                    break
+                for item in batch:
+                    url = str(_nested_get(item, cfg.get("file_url_key")) or (cfg.get("large_file_url_key") and _nested_get(item, cfg.get("large_file_url_key"))) or "")
+                    if not url or not _item_allowed_by_request(item, cfg, request, url):
+                        continue
+                    seen += 1
+                    total_seen += 1
+                    keys = _dedupe_keys_for_item(item, cfg, source, url)
+                    compound = [f"{source}:{k}" for k in keys] or [f"url:{url}"]
+                    if request.dedupe_across_presets and any(k in global_keys for k in compound):
+                        continue
+                    global_keys.update(compound)
+                    unique += 1
+                    total_unique += 1
+                    if not request.download_all_posts and unique >= int(request.max_items or 1):
+                        break
+                if progress:
+                    progress(min(0.99, idx / max(len(presets), 1)), f"Preflight counted {total_unique} unique post(s) across {total_pages} page(s); {_download_eta(started, total_unique, None)}")
+                if not request.download_all_posts and unique >= int(request.max_items or 1):
+                    break
+                if not page_param or len(batch) < per_page:
+                    break
+                page += 1
+                delay = float(cfg.get("delay_seconds", 0.0) or 0.0)
+                if delay > 0 and (request.download_all_posts or max_pages):
+                    _cancelable_sleep(delay, progress)
+            rows.append({"preset": resolved_preset.get("name"), "source": source, "pages": pages, "matching_items": seen, "unique_items": unique})
+        if progress:
+            progress(1.0, f"Preflight complete: {total_unique} unique downloadable post(s) estimated across {len(presets)} expanded query clause(s).")
+        return {
+            "estimated_total": total_unique,
+            "matching_items_seen": total_seen,
+            "expanded_presets": len(presets),
+            "pages_fetched": total_pages,
+            "dedupe_across_presets": bool(request.dedupe_across_presets),
+            "download_all_posts": bool(request.download_all_posts),
+            "max_pages": request.max_pages,
+            "source_blacklists_applied": bool(request.apply_source_blacklists),
+            "blacklists_applied_by_default": False,
+            "rows": rows,
+        }
+
+    def run(self, request: DownloadRequest, progress) -> dict[str, Any]:
+        if not request.confirmed_authorized:
+            raise PermissionError("Confirm that the configured source permits this download before running.")
+        output_dir = Path(request.output_dir or "runtime/downloads").expanduser().resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        presets = self._prepare_presets(request)
         downloaded: list[str] = []
         workers = max(1, min(int(request.parallel_workers or request.max_concurrent_downloads or 1), 32))
         parallel_presets = bool(request.parallel_presets and workers > 1 and len(presets) > 1)
         all_posts = bool(request.download_all_posts)
         preset_limits = [None if all_posts else max(1, int((preset.get("options") or {}).get("_max_items") or request.max_items or 1)) for preset in presets]
         total_expected = None if all_posts else max(1, sum(int(x or 0) for x in preset_limits))
+        if all_posts and bool(getattr(request, "estimate_total_before_download", False)):
+            progress(0.0, "Preflight counting matching posts before download...")
+            try:
+                preflight = self.preflight(request, progress=progress)
+                estimated = int(preflight.get("estimated_total") or 0)
+                if estimated > 0:
+                    total_expected = estimated
+                    progress(0.0, f"Preflight estimate: {estimated} unique post(s) before download starts.")
+            except Exception as exc:
+                progress(0.0, f"Preflight estimate failed; continuing with unknown total: {exc}")
         counter_lock = threading.Lock()
         completed_files = 0
+        started_at = time.time()
         shared_seen_urls: set[str] = set()
         shared_seen_keys: set[str] = set()
         shared_url_to_path: dict[str, str] = {}
@@ -615,15 +889,15 @@ class DownloaderService:
             if skipped_duplicate:
                 with counter_lock:
                     done = completed_files
-                progress(0.0 if total_expected is None else min(0.99, done / max(total_expected, 1)), f"{source}: skipped duplicate; downloaded {done}" + ("" if total_expected is None else f"/{total_expected}"))
+                progress(0.0 if total_expected is None else min(0.99, done / max(total_expected, 1)), f"{source}: skipped duplicate; downloaded {done}" + ("" if total_expected is None else f"/{total_expected}") + f" · {_download_eta(started_at, done, total_expected)}")
                 return
             with counter_lock:
                 completed_files += 1
                 done = completed_files
             if total_expected is None:
-                progress(min(0.99, done / max(done + 1, 1)), f"{source}: downloaded {done} file(s); all-posts mode continues until the source is exhausted")
+                progress(min(0.99, done / max(done + 1, 1)), f"{source}: downloaded {done} file(s); all-posts mode continues until the source is exhausted · {_download_eta(started_at, done, None)}")
             else:
-                progress(min(1.0, done / total_expected), f"{source}: downloaded {done}/{total_expected}")
+                progress(min(1.0, done / total_expected), f"{source}: downloaded {done}/{total_expected} · {_download_eta(started_at, done, total_expected)}")
 
         def claim_url(url: str, source: str, preset: dict[str, Any], item: dict[str, Any] | None = None, cfg: dict[str, Any] | None = None) -> bool:
             if not bool(request.dedupe_across_presets):
@@ -791,47 +1065,9 @@ class DownloaderService:
         return tags or [category]
 
     def _download_source(self, preset: dict[str, Any], output_dir: Path, max_items: int | None, progress, preset_idx: int, preset_total: int, request: DownloadRequest | None = None, download_workers: int = 1, report_file=None, claim_url=None, register_url_path=None) -> list[str]:
-        source = preset.get("source", "generic-json")
-        if source == "booru":
-            source = "e621"
-        preset_options = dict(preset.get("options") or {})
-        if source == "generic-json" and not preset_options.get("api_url") and request is not None:
-            profile_source = str(getattr(request, "tag_profile", "") or "").strip()
-            if profile_source in BOORU_SOURCES and profile_source != "generic-json":
-                # Backward-compatible repair for older direct-download payloads:
-                # the UI used to submit generic-json while tag_profile=e621/e926.
-                source = profile_source
-                preset = {**preset, "source": source, "name": str(preset.get("name") or "direct").replace("direct-generic-json", f"direct-{source}", 1)}
-        if source not in BOORU_SOURCES:
-            raise ValueError(f"Unsupported source plugin: {source}")
+        source, preset, source_cfg = self._resolved_source_config(preset, request)
         _raise_if_cancelled(progress)
-        source_cfg = dict(BOORU_SOURCES[source])
-        source_cfg.update(preset_options)
-        if request is not None:
-            if request.api_delay_seconds is not None:
-                source_cfg["delay_seconds"] = max(0.0, float(request.api_delay_seconds))
-            if request.file_delay_seconds is not None:
-                source_cfg["file_delay_seconds"] = max(0.0, float(request.file_delay_seconds))
-            if request.request_timeout_seconds is not None:
-                source_cfg["timeout_seconds"] = max(5, int(request.request_timeout_seconds))
-            if request.max_retries is not None:
-                source_cfg["max_retries"] = max(0, int(request.max_retries))
-            if request.retry_backoff_seconds is not None:
-                source_cfg["retry_backoff_seconds"] = max(0.0, float(request.retry_backoff_seconds))
-            source_cfg["force_download"] = bool(getattr(request, "force_download", False))
-            source_cfg["filename_mode"] = str(getattr(request, "filename_mode", "hash_original") or "hash_original")
-            source_cfg["write_metadata_json_sidecar"] = bool(getattr(request, "write_metadata_json_sidecar", True))
-            source_cfg["write_tag_txt_sidecar"] = bool(getattr(request, "write_tag_txt_sidecar", True))
-        preset_filename_mode = preset.get("filename_mode")
-        if preset_filename_mode:
-            source_cfg["filename_mode"] = str(preset_filename_mode)
-        if "write_metadata_json_sidecar" in preset:
-            source_cfg["write_metadata_json_sidecar"] = bool(preset.get("write_metadata_json_sidecar"))
-        if "write_tag_txt_sidecar" in preset:
-            source_cfg["write_tag_txt_sidecar"] = bool(preset.get("write_tag_txt_sidecar"))
         api_url = source_cfg.get("api_url")
-        if not api_url:
-            raise ValueError("This source requires options.api_url")
         source_max_limit = int(source_cfg.get("max_limit", 100))
         per_page = source_max_limit if max_items is None else min(int(max_items or source_max_limit), source_max_limit)
         page_param = source_cfg.get("page_param")
@@ -862,7 +1098,7 @@ class DownloaderService:
             for item in batch:
                 url = str(_nested_get(item, source_cfg.get("file_url_key")) or (source_cfg.get("large_file_url_key") and _nested_get(item, source_cfg.get("large_file_url_key"))) or "")
                 keys = _dedupe_keys_for_item(item, source_cfg, source, url)
-                if not url or url in seen_urls or any(key in seen_keys for key in keys):
+                if not url or not _item_allowed_by_request(item, source_cfg, request, url) or url in seen_urls or any(key in seen_keys for key in keys):
                     continue
                 if claim_url is not None and not claim_url(url, source, preset, item, source_cfg):
                     if report_file:
@@ -923,9 +1159,12 @@ class DownloaderService:
                 break
             if not page_param or len(batch) < per_page:
                 break
-            if not files and before_extend == len(downloaded):
-                break
             page += 1
+            if not files and before_extend == len(downloaded):
+                # A page can contain only duplicates or items excluded by media/rating filters.
+                # Continue paging instead of assuming the entire source is exhausted.
+                _cancelable_sleep(float(source_cfg.get("delay_seconds", 1.0)), progress)
+                continue
             if item_workers > 1:
                 # Friendly pacing per API page while file transfers inside page are parallel.
                 _cancelable_sleep(float(source_cfg.get("delay_seconds", 1.0)), progress)
@@ -978,6 +1217,21 @@ class DownloaderService:
             extras.append(f"date:>={_safe_date(request.date_from)}")
         if request.date_to:
             extras.append(f"date:<={_safe_date(request.date_to)}")
+        ratings = _rating_codes(getattr(request, "rating_filter", []) or [])
+        if len(ratings) == 1:
+            extras.append(f"rating:{ratings[0]}")
+        # Blacklists are disabled by default. This branch exists so future source
+        # adapters can explicitly opt into account/source blacklist behavior.
+        if bool(getattr(request, "apply_source_blacklists", False)) and cfg.get("blacklist_query"):
+            extras.append(str(cfg["blacklist_query"]))
+        if not bool(getattr(request, "allow_animated", True)):
+            extras.append("-animated")
+        if not bool(getattr(request, "allow_3d", True)):
+            extras.append("-3d")
+        if not bool(getattr(request, "allow_blender", True)):
+            extras.append("-blender")
+        if not bool(getattr(request, "allow_render", True)):
+            extras.append("-render")
         return [x for x in extras if x]
 
     def _download_item_compat(self, item: dict[str, Any], cfg: dict[str, Any], output_dir: Path, preset: dict[str, Any], progress=None) -> str | None:

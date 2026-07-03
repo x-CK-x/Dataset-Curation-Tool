@@ -1608,14 +1608,38 @@ function insertTokenAtCursor(input, tag) {
   input.value = `${before}${sep}${tag}${after ? after : ', '}`;
 }
 
-function tagAutocompleteControl({ placeholder = 'tag', value = '', multiline = false, onPick = null, onCommit = null, onChange = null, profileGetter = () => state.tagProfile } = {}) {
+function currentLogicToken(input) {
+  const text = input.value || '';
+  const pos = input.selectionStart ?? text.length;
+  const left = text.slice(0, pos);
+  const m = left.match(/(?:^|[\s(),!|&-])([^\s(),!|&-]*)$/);
+  const raw = (m ? m[1] : '').trim();
+  if (!raw || ['AND', 'OR', 'NOT'].includes(raw.toUpperCase())) return '';
+  return normalizeTag(raw.replace(/^['"]|['"]$/g, ''));
+}
+function insertLogicTokenAtCursor(input, tag) {
+  const clean = String(tag || '').trim();
+  if (!clean) return;
+  const token = /\s/.test(clean) ? `"${clean.replace(/"/g, '\"')}"` : clean;
+  const text = input.value || '';
+  const pos = input.selectionStart ?? text.length;
+  const before = text.slice(0, pos).replace(/[^\s(),!|&-]*$/, '');
+  const after = text.slice(pos).replace(/^[^\s(),!|&-]*/, '');
+  const sep = before && !/[\s(]$/.test(before) ? ' ' : '';
+  input.value = `${before}${sep}${token} ${after}`;
+  input.focus();
+  const next = (`${before}${sep}${token} `).length;
+  input.setSelectionRange(next, next);
+}
+
+function tagAutocompleteControl({ placeholder = 'tag', value = '', multiline = false, onPick = null, onCommit = null, onChange = null, profileGetter = () => state.tagProfile, tokenMode = 'tag' } = {}) {
   const input = el(multiline ? 'textarea' : 'input', { placeholder, value, class: 'tag-autocomplete-input' });
   const box = el('div', { class: 'suggestions' });
   const wrap = el('div', { class: 'suggest-wrap' }, [input, box]);
   let timer = null;
   let latest = 0;
   async function updateSuggestions() {
-    const token = currentToken(input);
+    const token = tokenMode === 'logic' ? currentLogicToken(input) : currentToken(input);
     if (!token) { box.classList.remove('open'); box.replaceChildren(); return; }
     const requestNo = ++latest;
     const limit = Number(state.settings.tag_suggestion_count || 40);
@@ -1624,14 +1648,14 @@ function tagAutocompleteControl({ placeholder = 'tag', value = '', multiline = f
     if (requestNo !== latest) return;
     const createButton = el('button', { class: 'suggestion create-suggestion', onmousedown: async e => {
       e.preventDefault();
-      if (onCommit) await onCommit(token, null, true); else insertTokenAtCursor(input, token);
+      if (onCommit) await onCommit(token, null, true); else (tokenMode === 'logic' ? insertLogicTokenAtCursor(input, token) : insertTokenAtCursor(input, token));
       box.classList.remove('open');
     } }, [el('span', { class: 'chip cat-unknown' }, `Create/remember: ${token}`), el('span', { class: 'muted tiny' }, 'unknown/custom')]);
     const buttons = items.map(s => el('button', { class: 'suggestion', onmousedown: async e => {
       e.preventDefault();
       state.tagMeta[profileKey] ||= {};
       state.tagMeta[profileKey][s.tag] = { tag: s.tag, category: s.category, post_count: s.post_count, known: true, custom: Boolean(s.custom) };
-      if (onPick) await onPick(s.tag, s); else insertTokenAtCursor(input, s.tag);
+      if (onPick) await onPick(s.tag, s); else (tokenMode === 'logic' ? insertLogicTokenAtCursor(input, s.tag) : insertTokenAtCursor(input, s.tag));
       box.classList.remove('open');
       if (onChange) onChange(input.value);
     } }, [el('span', { class: `chip ${categoryCss(s.category)}`, style: categoryStyle(s.category) }, s.tag), el('span', { class: 'muted tiny' }, `${s.category}${s.post_count ? ` · ${s.post_count}` : ''}${s.custom ? ' · custom' : ''}`)]));
@@ -6902,9 +6926,26 @@ function downloadControls() {
   const backoff = el('input', { type: 'number', min: '0', step: '0.5', value: state.settings.downloader_retry_backoff_seconds ?? 2.0, title: 'Retry backoff seconds' });
   const maxPages = el('input', { type: 'number', min: '0', value: state.settings.downloader_max_pages || 0, title: '0 = no explicit page cap; recommended safety cap in Download All Posts mode' });
   const startPage = el('input', { type: 'number', min: '0', value: state.settings.downloader_start_page || '', title: 'Optional start page / pid' });
-  const logic = el('textarea', { rows: 3, placeholder: 'Optional Boolean logic query, e.g. wolf AND (solo OR duo) AND NOT sketch. Supports AND/OR/NOT, parentheses, && || ! and -tag.', style: 'width:100%' });
+  const logicCtl = tagAutocompleteControl({ placeholder: 'Optional Boolean logic query: wolf AND (solo OR duo) AND NOT sketch. Type a tag fragment here for dictionary suggestions.', multiline: true, tokenMode: 'logic' });
+  logicCtl.input.rows = 3;
+  logicCtl.input.style.width = '100%';
+  const logic = logicCtl.input;
+  const logicWrap = logicCtl.wrap;
   const logicMode = el('select', {}, [el('option', { value: 'boolean_expand' }, 'Boolean expand: OR becomes multiple deduped queries'), el('option', { value: 'raw_append' }, 'Raw append: send expression to source tags parameter')]);
   const logicMax = el('input', { type: 'number', min: '1', max: '512', value: state.settings.downloader_logic_max_clauses || 64, title: 'Safety cap for OR expansion clauses.' });
+  const ratingSafe = el('input', { type: 'checkbox', checked: true });
+  const ratingQuestionable = el('input', { type: 'checkbox', checked: true });
+  const ratingExplicit = el('input', { type: 'checkbox', checked: true });
+  const allowAnimated = el('input', { type: 'checkbox', checked: true });
+  const allowVideo = el('input', { type: 'checkbox', checked: true });
+  const allow3d = el('input', { type: 'checkbox', checked: true });
+  const allowBlender = el('input', { type: 'checkbox', checked: true });
+  const allowRender = el('input', { type: 'checkbox', checked: true });
+  const allowImages = el('input', { type: 'checkbox', checked: true });
+  const allowAudio = el('input', { type: 'checkbox', checked: true });
+  const allowOtherMedia = el('input', { type: 'checkbox', checked: true });
+  const applySourceBlacklists = el('input', { type: 'checkbox', checked: false, title: 'Disabled by default. Enable only when you intentionally want a source/account blacklist to constrain results.' });
+  const estimateTotal = el('input', { type: 'checkbox', checked: true, title: 'Fetch metadata pages first to estimate total matching posts before downloading media. For very large searches, set Max pages or turn this off.' });
   const filenameMode = el('select', {}, [
     el('option', { value: 'hash_original' }, 'Hash + original filename'),
     el('option', { value: 'post_id' }, 'Post ID only'),
@@ -6914,7 +6955,7 @@ function downloadControls() {
   filenameMode.value = state.settings.downloader_filename_mode || 'hash_original';
   const metadataJson = el('input', { type: 'checkbox', checked: state.settings.downloader_write_metadata_json_sidecar !== false, title: 'Write per-file .download.json metadata next to downloaded media.' });
   const tagTxt = el('input', { type: 'checkbox', checked: state.settings.downloader_write_tag_txt_sidecar !== false, title: 'Write per-file .txt tag sidecars next to downloaded media.' });
-  return { categories, allCategories, downloadAllPosts, dedupe, membershipIndex, allowDuplicateFolders, mode, from, to, order, workers, parallelPresets, perCat, perTag, apiDelay, fileDelay, timeout, retries, backoff, maxPages, startPage, logic, logicMode, logicMax, filenameMode, metadataJson, tagTxt };
+  return { categories, allCategories, downloadAllPosts, dedupe, membershipIndex, allowDuplicateFolders, mode, from, to, order, workers, parallelPresets, perCat, perTag, apiDelay, fileDelay, timeout, retries, backoff, maxPages, startPage, logic, logicWrap, logicMode, logicMax, ratingSafe, ratingQuestionable, ratingExplicit, allowAnimated, allowVideo, allow3d, allowBlender, allowRender, allowImages, allowAudio, allowOtherMedia, applySourceBlacklists, estimateTotal, filenameMode, metadataJson, tagTxt };
 }
 function buildDownloadPayload(ctrl) {
   return {
@@ -6945,6 +6986,17 @@ function buildDownloadPayload(ctrl) {
     logic_query: ctrl.logic.value.trim(),
     logic_mode: ctrl.logicMode.value,
     logic_max_clauses: Number(ctrl.logicMax.value || 64),
+    rating_filter: [['s', ctrl.ratingSafe], ['q', ctrl.ratingQuestionable], ['e', ctrl.ratingExplicit]].filter(([_, box]) => box.checked).map(([code]) => code).length === 3 ? [] : [['s', ctrl.ratingSafe], ['q', ctrl.ratingQuestionable], ['e', ctrl.ratingExplicit]].filter(([_, box]) => box.checked).map(([code]) => code),
+    allow_animated: ctrl.allowAnimated.checked,
+    allow_video: ctrl.allowVideo.checked,
+    allow_3d: ctrl.allow3d.checked,
+    allow_blender: ctrl.allowBlender.checked,
+    allow_render: ctrl.allowRender.checked,
+    allow_images: ctrl.allowImages.checked,
+    allow_audio: ctrl.allowAudio.checked,
+    allow_other_media: ctrl.allowOtherMedia.checked,
+    apply_source_blacklists: ctrl.applySourceBlacklists.checked,
+    estimate_total_before_download: ctrl.estimateTotal.checked,
     filename_mode: ctrl.filenameMode.value,
     write_metadata_json_sidecar: ctrl.metadataJson.checked,
     write_tag_txt_sidecar: ctrl.tagTxt.checked,
@@ -7624,13 +7676,40 @@ function downloadsView() {
     el('div', { class: 'row' }, [el('label', {}, ['Date from', ctrl.from]), el('label', {}, ['Date to', ctrl.to]), ctrl.order, el('label', {}, ['Parallel downloads / jobs', ctrl.workers]), el('label', {}, [ctrl.parallelPresets, ' Parallelize presets/category jobs'])]),
     el('div', { class: 'row' }, [el('label', {}, ['API/page delay sec', ctrl.apiDelay]), el('label', {}, ['File delay sec', ctrl.fileDelay]), el('label', {}, ['Timeout sec', ctrl.timeout]), el('label', {}, ['Retries', ctrl.retries]), el('label', {}, ['Backoff sec', ctrl.backoff])]),
     el('div', { class: 'row' }, [el('label', {}, ['Max pages safety cap (0 = source exhausted)', ctrl.maxPages]), el('label', {}, ['Start page/pid', ctrl.startPage])]),
-    el('details', { class: 'details-card' }, [
+    el('details', { class: 'details-card', open: true }, [
       el('summary', {}, 'Logic gates for e621 / booru queries'),
-      el('p', { class: 'muted tiny' }, 'Positive/negative fields still work. This optional expression adds AND/OR/NOT and parentheses. Boolean expand executes OR as multiple source queries while the downloader dedupes shared results.'),
-      ctrl.logic,
+      el('p', { class: 'muted tiny' }, 'Use either the logic expression OR the Positive/Negative fields. When logic is filled in, you do not need to repeat those tags above; the downloader expands the logic into source queries and dedupes overlaps.'),
+      ctrl.logicWrap,
       el('div', { class: 'row' }, [ctrl.logicMode, el('label', {}, ['Max expanded clauses', ctrl.logicMax]), el('button', { class: 'secondary small', onclick: async () => { try { const q = ctrl.logic.value.trim(); if (!q) throw new Error('Enter a logic expression first.'); const r = await api(`/api/downloads/logic/preview?query=${encodeURIComponent(q)}&max_clauses=${encodeURIComponent(ctrl.logicMax.value || 64)}`); toast(`Logic expands to ${r.count} source query clause(s).`); state.downloadValidation = { logic_preview: r }; render(true, true); } catch (err) { toast(err.message, false); } } }, 'Preview logic expansion')])
+    ]),
+    el('details', { class: 'details-card', open: true }, [
+      el('summary', {}, 'Ratings, media/content filters, and blacklist policy'),
+      el('p', { class: 'muted tiny' }, 'All ratings and media/content types are allowed by default. Uncheck a box to disallow that class. Source/account blacklists are disabled by default so hidden site filters do not silently reduce totals.'),
+      el('div', { class: 'row' }, [el('label', {}, [ctrl.ratingSafe, ' safe']), el('label', {}, [ctrl.ratingQuestionable, ' questionable']), el('label', {}, [ctrl.ratingExplicit, ' explicit'])]),
+      el('div', { class: 'row' }, [el('label', {}, [ctrl.allowAnimated, ' allow animated']), el('label', {}, [ctrl.allowVideo, ' allow video']), el('label', {}, [ctrl.allow3d, ' allow 3D']), el('label', {}, [ctrl.allowBlender, ' allow Blender']), el('label', {}, [ctrl.allowRender, ' allow render'])]),
+      el('div', { class: 'row' }, [el('label', {}, [ctrl.allowImages, ' allow images']), el('label', {}, [ctrl.allowAudio, ' allow audio']), el('label', {}, [ctrl.allowOtherMedia, ' allow other/unknown media']), el('label', {}, [ctrl.applySourceBlacklists, ' apply source/account blacklists'])]),
+      el('div', { class: 'row' }, [el('label', {}, [ctrl.estimateTotal, ' preflight-count total before download'])])
     ])
   ];
+  const makeDirectDownloadBody = () => {
+    const sourceKey = source.value || preferredDirectSource || 'e621';
+    const options = {};
+    if (sourceKey === 'generic-json') {
+      if (!directApiUrl.value.trim()) throw new Error('Generic JSON source requires options.api_url. Choose e621/e926/etc. for built-in booru downloads, or enter a Generic JSON API URL.');
+      options.api_url = directApiUrl.value.trim();
+    }
+    return { ...buildDownloadPayload(directCtl), preset: { name: `direct-${sourceKey}-${Date.now()}`, source: sourceKey, positive_tags: parseTagString(posCtl.input.value), negative_tags: parseTagString(negCtl.input.value), options }, output_dir: outDirect.value || null, confirmed_authorized: authDirect.checked, max_items: Number(max.value || 100), tag_profile: state.tagProfile };
+  };
+  const makePresetDownloadBody = () => {
+    const names = [...preset.selectedOptions].map(o => o.value);
+    return { ...buildDownloadPayload(presetCtl), preset_names: names, output_dir: out.value || null, confirmed_authorized: auth.checked, tag_profile: state.tagProfile };
+  };
+  const previewPreflight = async body => {
+    const r = await api('/api/downloads/preflight', { method: 'POST', body: { ...body, confirmed_authorized: true } });
+    state.downloadValidation = { preflight: r };
+    toast(`Preflight estimate: ${r.estimated_total || 0} unique downloadable post(s) across ${r.expanded_presets || 0} expanded query clause(s).`);
+    render(true, true);
+  };
   return el('div', { class: 'grid cols-2' }, [
     card('Booru Source Diagnostics', [
       el('p', { class: 'muted' }, 'Offline validation checks every configured booru/downloader plugin. Live smoke testing performs a tiny metadata request without downloading media.'),
@@ -7640,8 +7719,8 @@ function downloadsView() {
       ]),
       state.downloadValidation ? el('pre', { class: 'log' }, JSON.stringify(state.downloadValidation, null, 2)) : el('p', { class: 'muted' }, 'No source diagnostics run yet.')
     ]),
-    card('Direct Booru / JSON Download', [el('p', { class: 'muted' }, 'Tag fields use active dictionary autocomplete. Date/order/category controls are folded into the source query where supported. Generic JSON requires an explicit API URL; e621/e926/etc. use built-in endpoints.'), el('div', { class: 'row' }, [source, max, tagProfileSelect()]), directApiUrl, ...advancedControls(directCtl), el('label', { class: 'label' }, ['Positive tags', posCtl.wrap]), el('label', { class: 'label' }, ['Negative tags', negCtl.wrap]), el('div', { class: 'row' }, [outDirect, el('button', { class: 'secondary', onclick: async () => await pickFolder(outDirect, 'Select download output folder') }, 'Browse Output...')]), el('label', {}, [authDirect, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const sourceKey = source.value || preferredDirectSource || 'e621'; const options = {}; if (sourceKey === 'generic-json') { if (!directApiUrl.value.trim()) throw new Error('Generic JSON source requires options.api_url. Choose e621/e926/etc. for built-in booru downloads, or enter a Generic JSON API URL.'); options.api_url = directApiUrl.value.trim(); } const body = { ...buildDownloadPayload(directCtl), preset: { name: `direct-${sourceKey}-${Date.now()}`, source: sourceKey, positive_tags: parseTagString(posCtl.input.value), negative_tags: parseTagString(negCtl.input.value), options }, output_dir: outDirect.value || null, confirmed_authorized: authDirect.checked, max_items: Number(max.value || 100), tag_profile: state.tagProfile }; const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Direct Download')]),
-    card('Preset Download Runner', [el('div', { class: 'row' }, [preset, out, el('button', { class: 'secondary', onclick: async () => await pickFolder(out, 'Select download output folder') }, 'Browse Output...')]), ...advancedControls(presetCtl), el('label', {}, [auth, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const names = [...preset.selectedOptions].map(o => o.value); const r = await api('/api/downloads/run', { method: 'POST', body: { ...buildDownloadPayload(presetCtl), preset_names: names, output_dir: out.value || null, confirmed_authorized: auth.checked, tag_profile: state.tagProfile } }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Presets')]),
+    card('Direct Booru / JSON Download', [el('p', { class: 'muted' }, 'Tag fields use active dictionary autocomplete. Date/order/category controls are folded into the source query where supported. Generic JSON requires an explicit API URL; e621/e926/etc. use built-in endpoints.'), el('div', { class: 'row' }, [source, max, tagProfileSelect()]), directApiUrl, ...advancedControls(directCtl), el('label', { class: 'label' }, ['Positive tags', posCtl.wrap]), el('label', { class: 'label' }, ['Negative tags', negCtl.wrap]), el('div', { class: 'row' }, [outDirect, el('button', { class: 'secondary', onclick: async () => await pickFolder(outDirect, 'Select download output folder') }, 'Browse Output...')]), el('label', {}, [authDirect, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const body = makeDirectDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Direct Download'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makeDirectDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total')]),
+    card('Preset Download Runner', [el('div', { class: 'row' }, [preset, out, el('button', { class: 'secondary', onclick: async () => await pickFolder(out, 'Select download output folder') }, 'Browse Output...')]), ...advancedControls(presetCtl), el('label', {}, [auth, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const body = makePresetDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Presets'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makePresetDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total')]),
     card('Source Config Validation', [
       el('p', { class: 'muted' }, 'Offline fixture validation for every supported source. This checks parser keys, tag extraction, URL extraction, page/limit params, and avoids treating only e621 as validated.'),
       el('button', { class: 'secondary', onclick: async () => { try { state.sourceValidation = await api('/api/downloads/source-validation'); render(); } catch (err) { toast(err.message, false); } } }, 'Validate Source Parsers'),
@@ -7656,12 +7735,15 @@ function presetsView() {
   const posCtl = tagAutocompleteControl({ placeholder: 'positive tags', multiline: true });
   const negCtl = tagAutocompleteControl({ placeholder: 'negative tags', multiline: true });
   const apiUrl = el('input', { placeholder: 'options.api_url for generic-json/custom sources', style: 'width:100%' });
-  const logicQuery = el('textarea', { rows: 3, placeholder: 'Optional logic query: character_a AND (solo OR portrait) AND NOT sketch', style: 'width:100%' });
+  const logicCtl = tagAutocompleteControl({ placeholder: 'Optional logic query: character_a AND (solo OR portrait) AND NOT sketch. Tag suggestions work here too.', multiline: true, tokenMode: 'logic' });
+  logicCtl.input.rows = 3;
+  logicCtl.input.style.width = '100%';
+  const logicQuery = logicCtl.input;
   const logicMode = el('select', {}, [el('option', { value: 'boolean_expand' }, 'Boolean expand'), el('option', { value: 'raw_append' }, 'Raw append')]);
   const logicMax = el('input', { type: 'number', min: '1', max: '512', value: state.settings.downloader_logic_max_clauses || 64 });
   const importText = el('textarea', { placeholder: 'name: example\npositive: tag_one tag_two\nnegative: bad_tag\nlogic: tag_one AND (solo OR portrait) AND NOT sketch\n;;;\nname: second...' });
   return el('div', { class: 'grid cols-2' }, [
-    card('Create / Update Preset', [name, source, tagProfileSelect(), el('label', { class: 'label' }, ['Positive', posCtl.wrap]), el('label', { class: 'label' }, ['Negative', negCtl.wrap]), apiUrl, el('details', {}, [el('summary', {}, 'Optional e621 / booru logic gates'), logicQuery, el('div', { class: 'row' }, [logicMode, el('label', {}, ['Max clauses', logicMax]), el('button', { class: 'secondary small', onclick: async () => { try { if (!logicQuery.value.trim()) throw new Error('Enter a logic expression first.'); const r = await api(`/api/downloads/logic/preview?query=${encodeURIComponent(logicQuery.value.trim())}&max_clauses=${encodeURIComponent(logicMax.value || 64)}`); toast(`Logic expands to ${r.count} source query clause(s).`); state.downloadValidation = { logic_preview: r }; render(true, true); } catch (err) { toast(err.message, false); } } }, 'Preview')])]), el('button', { class: 'primary', onclick: async () => { try { const options = apiUrl.value ? { api_url: apiUrl.value } : {}; const body = { name: name.value, source: source.value, positive_tags: parseTagString(posCtl.input.value), negative_tags: parseTagString(negCtl.input.value), logic_query: logicQuery.value.trim(), logic_mode: logicMode.value, logic_max_clauses: Number(logicMax.value || 64), options }; await api('/api/presets', { method: 'POST', body }); toast('Preset saved'); await refreshAll(); render(); } catch (err) { toast(err.message, false); } } }, 'Save Preset')]),
+    card('Create / Update Preset', [name, source, tagProfileSelect(), el('label', { class: 'label' }, ['Positive', posCtl.wrap]), el('label', { class: 'label' }, ['Negative', negCtl.wrap]), apiUrl, el('details', { open: true }, [el('summary', {}, 'Optional e621 / booru logic gates'), el('p', { class: 'muted tiny' }, 'Use either this logic expression OR the positive/negative fields; you do not need to fill both. Spaces inside tag names are preserved, so use AND / OR / NOT, commas, or parentheses to separate tags.'), logicCtl.wrap, el('div', { class: 'row' }, [logicMode, el('label', {}, ['Max clauses', logicMax]), el('button', { class: 'secondary small', onclick: async () => { try { if (!logicQuery.value.trim()) throw new Error('Enter a logic expression first.'); const r = await api(`/api/downloads/logic/preview?query=${encodeURIComponent(logicQuery.value.trim())}&max_clauses=${encodeURIComponent(logicMax.value || 64)}`); toast(`Logic expands to ${r.count} source query clause(s).`); state.downloadValidation = { logic_preview: r }; render(true, true); } catch (err) { toast(err.message, false); } } }, 'Preview')])]), el('button', { class: 'primary', onclick: async () => { try { const options = apiUrl.value ? { api_url: apiUrl.value } : {}; const body = { name: name.value, source: source.value, positive_tags: parseTagString(posCtl.input.value), negative_tags: parseTagString(negCtl.input.value), logic_query: logicQuery.value.trim(), logic_mode: logicMode.value, logic_max_clauses: Number(logicMax.value || 64), options }; await api('/api/presets', { method: 'POST', body }); toast('Preset saved'); await refreshAll(); render(); } catch (err) { toast(err.message, false); } } }, 'Save Preset')]),
     card('Import Preset Text', [importText, el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/presets/import-text', { method: 'POST', body: { content: importText.value, source: source.value || 'e621' } }); toast(`Created ${r.created.length} presets`); await refreshAll(); render(); } catch (err) { toast(err.message, false); } } }, 'Import')]),
     card('Presets', [presetsTable()])
   ]);
