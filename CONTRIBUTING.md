@@ -1,4 +1,5 @@
-- have the PR in it's own branch "ideally" with the name of the feature/bug being added/resolved
-- it needs to be an updated branch with the repo, so there's no concenr of it creating broken changes on the main branch
-- contributor must have extensively tested their own feature for it to be merged
+- have the PR in it's own **feature** or **dev** branch for features & bugs respectively with the prefix before your branch name **i.e. feature/bug being added/resolved**
+- it needs to be an updated branch with the repo **i.e. NO broken changes on the main branch**
+- contributor **MUST** have tested their own feature/s with the codebase thoroughly for it to be merged
 - a discrete summary of the feature or bug fix in the PR
+- want to use ai models to help you with development for the repo?  sure, but you **MUST** disclose that ai is being used (even if it's partial)
