@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data Curation Tool Modern</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <section class="card frontend-loading" style="margin:24px">
+        <h2>Loading Data Curation Tool…</h2>
+        <p class="muted">Starting the local browser UI and checking the backend API.</p>
+      </section>
+    </div>
+    <script>
+      (function () {
+        function showStartupProblem(title, detail) {
+          var app = document.getElementById('app');
+          if (!app || window.__DCT_APP_RENDERED) return;
+          var section = document.createElement('section');
+          section.className = 'card frontend-fatal';
+          section.style.margin = '24px';
+          var h = document.createElement('h2');
+          h.textContent = title || 'Frontend failed to start';
+          var p = document.createElement('p');
+          p.className = 'muted';
+          p.textContent = 'The backend server responded, but the browser UI did not finish loading. This panel is intentionally shown instead of a blank page.';
+          var row = document.createElement('div');
+          row.className = 'row';
+          var reload = document.createElement('button');
+          reload.className = 'secondary';
+          reload.textContent = 'Reload Page';
+          reload.onclick = function () { window.location.reload(); };
+          var copy = document.createElement('button');
+          copy.className = 'secondary';
+          copy.textContent = 'Copy Startup Error';
+          copy.onclick = function () { try { navigator.clipboard && navigator.clipboard.writeText(String(detail || '')); } catch (_) {} };
+          row.append(reload, copy);
+          var pre = document.createElement('pre');
+          pre.className = 'log full-log debug-log';
+          pre.textContent = String(detail || 'No browser error was reported. Check the terminal and browser console.');
+          section.append(h, p, row, pre);
+          app.replaceChildren(section);
+        }
+        window.addEventListener('error', function (event) {
+          if (window.__DCT_APP_RENDERED) return;
+          var detail = event && event.error && event.error.stack ? event.error.stack : (event.message || event.filename || 'Unknown script error');
+          showStartupProblem('Frontend JavaScript startup error', detail);
+        });
+        window.addEventListener('unhandledrejection', function (event) {
+          if (window.__DCT_APP_RENDERED) return;
+          var reason = event && event.reason;
+          var detail = reason && reason.stack ? reason.stack : String(reason || 'Unhandled frontend startup promise rejection');
+          showStartupProblem('Frontend startup promise failed', detail);
+        });
+        setTimeout(function () {
+          if (!window.__DCT_APP_RENDERED) {
+            var detail = window.__DCT_APP_JS_MODULE_EVALUATED
+              ? 'app.js loaded, but the first render did not complete yet. The backend may be busy or a startup API may be blocked.'
+              : 'app.js did not evaluate. This usually means a module syntax/import error prevented the browser from running the UI.';
+            showStartupProblem('Frontend did not finish loading', detail);
+          }
+        }, 20000);
+      }());
+    </script>
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
