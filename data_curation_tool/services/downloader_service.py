@@ -181,20 +181,36 @@ _LOGIC_ENDERS = {"TAG", "RPAREN"}
 _LOGIC_KEYWORDS = {"AND", "OR", "NOT", "EXCEPT"}
 
 
+def _logic_boundary_before(src: str, index: int) -> bool:
+    if index <= 0:
+        return True
+    prev = src[index - 1]
+    return prev.isspace() or prev in "(,|&!"
+
+
+def _logic_boundary_after(src: str, index: int) -> bool:
+    if index >= len(src):
+        return True
+    nxt = src[index]
+    return nxt.isspace() or nxt in "),|&!"
+
+
 def _match_logic_keyword(src: str, index: int) -> tuple[str, int] | None:
     """Return an explicit Boolean keyword token at index.
 
-    Tag text can now contain spaces. To avoid corrupting tags such as
-    ``black and white``, alphabetic Boolean operators are intentionally
-    recognized only in uppercase word form. Symbol operators still work in any
-    tag mode: ``&&``, ``||``, ``!``, ``-tag``, commas, and parentheses.
+    Tag text can contain spaces, so whitespace alone is never a separator.
+    Boolean words are accepted case-insensitively when they appear as a
+    standalone logic word at a structural boundary. Tags that literally contain
+    these words can still be wrapped in quotes, e.g. ``"black and white"``.
+    Symbol operators remain unambiguous: ``&&``, ``||``, ``!``, ``-tag``,
+    commas, and parentheses.
     """
     for word in sorted(_LOGIC_KEYWORDS, key=len, reverse=True):
         end = index + len(word)
-        if src[index:end] != word:
+        if src[index:end].upper() != word:
             continue
-        before_ok = index == 0 or not (src[index - 1].isalnum() or src[index - 1] == "_")
-        after_ok = end >= len(src) or not (src[end].isalnum() or src[end] == "_")
+        before_ok = _logic_boundary_before(src, index)
+        after_ok = _logic_boundary_after(src, end)
         if before_ok and after_ok:
             return ("NOT" if word == "EXCEPT" else word, end)
     return None
@@ -470,7 +486,7 @@ def source_definitions() -> list[dict[str, Any]]:
             "content_filter_keys": ["animated", "video", "3d", "blender", "render", "images", "audio", "other"],
             "rating_filter_keys": ["safe", "questionable", "explicit"],
             "logic_gate_modes": ["boolean_expand", "raw_append"],
-            "logic_gate_syntax": "AND / OR / NOT / parentheses; && || ! commas and -tag aliases are accepted. Whitespace inside tag names is preserved; whitespace alone is not a separator. OR expands into multiple deduped source queries.",
+            "logic_gate_syntax": "AND / OR / NOT / parentheses; lower-case and/or/not, && || ! commas and -tag aliases are accepted. Whitespace inside tag names is preserved; whitespace alone is not a separator. Quote tags that literally contain operator words. OR expands into multiple deduped source queries.",
             "default_delay_seconds": value.get("delay_seconds", 1.0),
             "default_timeout_seconds": value.get("timeout_seconds", 60),
         }
@@ -728,6 +744,8 @@ class DownloaderService:
         presets: list[dict[str, Any]] = []
         if request.preset:
             presets.append(request.preset.model_dump())
+        for direct_preset in getattr(request, "presets", []) or []:
+            presets.append(direct_preset.model_dump() if hasattr(direct_preset, "model_dump") else dict(direct_preset))
         for name in request.preset_names:
             preset = self.presets.get(name)
             if preset:
@@ -758,6 +776,22 @@ class DownloaderService:
             raise ValueError(f"Unsupported source plugin: {source}")
         cfg = dict(BOORU_SOURCES[source])
         cfg.update(preset_options)
+        # Apply preset-local output settings before request-level settings.
+        #
+        # Direct UI presets are validated by Pydantic, so omitted fields are
+        # materialized with defaults such as filename_mode="hash_original".  In
+        # v5.78.8 those defaults were applied after the page/run-level controls
+        # and therefore overwrote a user-selected "Post ID only" mode.  The
+        # run-level DownloadRequest values must be authoritative because the
+        # dropdown on the Downloads page describes the current run, including
+        # direct multi-source and saved-preset runs.
+        preset_filename_mode = preset.get("filename_mode")
+        if preset_filename_mode:
+            cfg["filename_mode"] = str(preset_filename_mode)
+        if "write_metadata_json_sidecar" in preset:
+            cfg["write_metadata_json_sidecar"] = bool(preset.get("write_metadata_json_sidecar"))
+        if "write_tag_txt_sidecar" in preset:
+            cfg["write_tag_txt_sidecar"] = bool(preset.get("write_tag_txt_sidecar"))
         if request is not None:
             if request.api_delay_seconds is not None:
                 cfg["delay_seconds"] = max(0.0, float(request.api_delay_seconds))
@@ -774,13 +808,6 @@ class DownloaderService:
             cfg["write_metadata_json_sidecar"] = bool(getattr(request, "write_metadata_json_sidecar", True))
             cfg["write_tag_txt_sidecar"] = bool(getattr(request, "write_tag_txt_sidecar", True))
             cfg["apply_source_blacklists"] = bool(getattr(request, "apply_source_blacklists", False))
-        preset_filename_mode = preset.get("filename_mode")
-        if preset_filename_mode:
-            cfg["filename_mode"] = str(preset_filename_mode)
-        if "write_metadata_json_sidecar" in preset:
-            cfg["write_metadata_json_sidecar"] = bool(preset.get("write_metadata_json_sidecar"))
-        if "write_tag_txt_sidecar" in preset:
-            cfg["write_tag_txt_sidecar"] = bool(preset.get("write_tag_txt_sidecar"))
         api_url = cfg.get("api_url")
         if not api_url:
             raise ValueError("This source requires options.api_url")
@@ -1011,10 +1038,15 @@ class DownloaderService:
                 continue
             if logic_mode in {"raw", "raw_append", "append_raw", "source_raw"}:
                 clone = json.loads(json.dumps(preset))
+                # Logic mode is authoritative. Do not require or silently merge
+                # positive/negative boxes when a logic expression is supplied.
+                clone["positive_tags"] = []
+                clone["negative_tags"] = []
                 opts = dict(clone.get("options") or {})
                 opts["_logic_raw"] = logic_query
                 opts["logic_query"] = logic_query
                 opts["logic_mode"] = "raw_append"
+                opts["_logic_overrode_manual_tags"] = True
                 clone["options"] = opts
                 clone["name"] = f"{preset.get('name') or preset.get('source')}-logic-raw"
                 expanded.append(clone)
@@ -1025,12 +1057,17 @@ class DownloaderService:
                 continue
             for idx, clause in enumerate(clauses, start=1):
                 clone = json.loads(json.dumps(preset))
-                positives = [normalize_tag(x) for x in clone.get("positive_tags", []) if normalize_tag(x)]
-                negatives = [normalize_tag(x) for x in clone.get("negative_tags", []) if normalize_tag(x)]
+                # Logic expression replaces the positive/negative boxes. This
+                # makes the new logic field usable by itself and avoids stale
+                # tag-box values accidentally narrowing the query.
+                positives: list[str] = []
+                negatives: list[str] = []
                 for tag in clause.get("positive") or []:
+                    tag = normalize_tag(tag)
                     if tag and tag not in positives:
                         positives.append(tag)
                 for tag in clause.get("negative") or []:
+                    tag = normalize_tag(tag)
                     if tag and tag not in negatives:
                         negatives.append(tag)
                 clone["positive_tags"] = positives
@@ -1039,6 +1076,7 @@ class DownloaderService:
                 opts["logic_query"] = logic_query
                 opts["logic_mode"] = "boolean_expand"
                 opts["_logic_clause"] = {"index": idx, "count": len(clauses), **clause}
+                opts["_logic_overrode_manual_tags"] = True
                 clone["options"] = opts
                 clone["name"] = f"{preset.get('name') or preset.get('source')}-logic-{idx:02d}-of-{len(clauses):02d}"
                 expanded.append(clone)

@@ -613,6 +613,9 @@ class DownloadPreset(BaseModel):
 class DownloadRequest(BaseModel):
     preset_names: list[str] = Field(default_factory=list)
     preset: DownloadPreset | None = None
+    # Direct multi-source runs can provide multiple ephemeral presets without
+    # requiring users to save each site as a named preset first.
+    presets: list[DownloadPreset] = Field(default_factory=list)
     output_dir: str | None = None
     confirmed_authorized: bool = False
     # Top-K/capped mode.  Ignored when download_all_posts=True.
@@ -873,10 +876,41 @@ class VoiceModelLoadRequest(ModelPlacementDefaultsMixin):
 
 class DistributedNode(BaseModel):
     name: str
-    base_url: str
+    # Optional HTTP endpoint of a running Data Curation Tool worker, e.g.
+    # http://192.168.1.22:7865.  Existing callers that only used base_url still
+    # work, while new SSH/SCP-only devices may leave it blank.
+    base_url: str = ""
     role: Literal["coordinator", "worker"] = "worker"
     enabled: bool = True
     capabilities: list[str] = Field(default_factory=list)
+
+    # SSH/SCP connection profile.  The app does not store SSH passwords; use
+    # OpenSSH keys, agent forwarding, or OS-level credential handling.
+    host: str = ""
+    port: int = 22
+    username: str = ""
+    ssh_executable: str = "ssh"
+    scp_executable: str = "scp"
+    ssh_key_path: str = ""
+    ssh_extra_args: list[str] = Field(default_factory=list)
+    scp_extra_args: list[str] = Field(default_factory=list)
+    strict_host_key_checking: bool = False
+    connect_timeout_seconds: int = 10
+    allow_remote_shell: bool = False
+    allow_scp: bool = True
+
+    # Remote worker/app layout.  Smaller devices can be marked as lite or
+    # downloader-only so future runtime code can avoid loading heavy models.
+    platform: Literal["linux", "windows", "macos", "unknown"] = "linux"
+    remote_root: str = "~/DataCurationToolRemote"
+    remote_project_path: str = ""
+    remote_output_dir: str = ""
+    conda_env: str = "data-curation-tool"
+    python_command: str = "python"
+    worker_api_port: int = 7865
+    worker_mode: Literal["full", "lite", "downloader-only"] = "full"
+    startup_command_template: str = ""
+    notes: str = ""
 
 
 class Health(BaseModel):

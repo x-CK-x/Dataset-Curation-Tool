@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-curation-tool-modern"
-version = "5.78.2"
+version = "5.78.9"
 description = "Modern local-first dataset curation, tagging, captioning, gallery, and model orchestration tool."
 readme = "README.md"
 requires-python = ">=3.10"

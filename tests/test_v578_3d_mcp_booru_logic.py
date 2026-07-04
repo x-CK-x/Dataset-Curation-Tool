@@ -58,8 +58,12 @@ def test_logic_presets_expand_into_deduped_source_queries(tmp_path: Path):
     )
     expanded = svc._expand_presets_for_logic([base], request)
     assert len(expanded) == 2
-    assert {tuple(row["positive_tags"]) for row in expanded} == {("female", "fox"), ("female", "wolf")}
-    assert all("comic" in row["negative_tags"] and "sketch" in row["negative_tags"] for row in expanded)
+    # Current downloader behavior: a filled logic expression is the query source
+    # for the run/preset and intentionally overrides stale positive/negative
+    # boxes rather than merging with them.
+    assert {tuple(row["positive_tags"]) for row in expanded} == {("fox",), ("wolf",)}
+    assert all(row["negative_tags"] == ["sketch"] for row in expanded)
+    assert all((row.get("options") or {}).get("_logic_overrode_manual_tags") for row in expanded)
     assert all((row.get("options") or {}).get("_logic_clause", {}).get("count") == 2 for row in expanded)
 
 

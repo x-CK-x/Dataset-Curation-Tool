@@ -305,6 +305,12 @@ const state = {
   browserStatus: null,
   browserOutput: null,
   mcpToolStatus: null,
+  distributedNodes: [],
+  distributedOutput: null,
+  remoteDeviceDraft: {},
+  remoteCommandText: '',
+  remoteScpLocal: '',
+  remoteScpRemote: '',
   jobDetailId: null,
   lastModelRunJob: null,
   migrationSourceText: '',
@@ -318,7 +324,7 @@ const state = {
 const tabs = [
   'Dashboard', 'Import', 'Gallery', 'Tag Editor', 'Detection & Boxes', 'Segmentation & Masks', 'Pose & 3D', '3D Studio', '3D Viewport', 'ComfyUI Bridge', 'FlexAvatar', 'Compare', 'Batch Tags',
   'Prediction Analytics', 'Media Tools', 'Reference Finder', 'Source Browser', 'Assistant', 'Orchestrate', 'Models', 'Augment', 'Downloads', 'Presets',
-  'Tag Dictionaries', 'Database', 'Install Migration', 'Code Assistant', 'Agent Tools', 'MCP Tools', 'Future Modalities', 'Settings', 'Help & Workflows', 'Jobs'
+  'Tag Dictionaries', 'Database', 'Install Migration', 'Code Assistant', 'Agent Tools', 'Remote Devices', 'MCP Tools', 'Future Modalities', 'Settings', 'Help & Workflows', 'Jobs'
 ];
 
 const EXTERNAL_APP_OPTIONS = [
@@ -982,20 +988,21 @@ function clearSelectedMedia() { state.selected.clear(); }
 
 async function refreshAll() {
   try {
-    const [summary, datasets, jobs, models, modelStatuses, modelResource, assistantConfig, presets, settings, profiles, sources, templates, detectionModels, segmentationModels, poseTemplates, threeDProviders, threeDAssets, flexAvatarStatus, flexAvatarAssets, agentStatus, voiceStatus, mcpToolStatus] = await Promise.all([
+    const [summary, datasets, jobs, models, modelStatuses, modelResource, assistantConfig, presets, settings, profiles, sources, templates, detectionModels, segmentationModels, poseTemplates, threeDProviders, threeDAssets, flexAvatarStatus, flexAvatarAssets, agentStatus, voiceStatus, mcpToolStatus, distributedNodes] = await Promise.all([
       api('/api/system/summary'), api('/api/datasets'), api('/api/jobs'), api('/api/models'), api('/api/models/status').catch(() => ({ stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} })), api('/api/models/resource-status').catch(() => ({ devices: [], loaded_models: [], loading_reservations: [], warnings: [] })), api('/api/models/assistant-config').catch(() => null),
       api('/api/presets'), api('/api/settings'), api('/api/tags/profiles').catch(() => []),
       api('/api/downloads/sources').catch(() => []), api('/api/orchestration/templates').catch(() => []),
       api('/api/spatial/detection/models').catch(() => []), api('/api/spatial/segmentation/models').catch(() => []),
       api('/api/reference/annotations/pose-templates').catch(() => []), api('/api/three-d/providers').catch(() => ({ generation: [], rigging: [] })),
-      api('/api/three-d/assets').catch(() => []), api('/api/flexavatar/status').catch(() => null), api('/api/flexavatar/assets').catch(() => ({ inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] })), api('/api/agent-tools/status').catch(() => null), api('/api/voice/status').catch(() => null), api('/api/mcp-tools/status').catch(() => null)
+      api('/api/three-d/assets').catch(() => []), api('/api/flexavatar/status').catch(() => null), api('/api/flexavatar/assets').catch(() => ({ inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] })), api('/api/agent-tools/status').catch(() => null), api('/api/voice/status').catch(() => null), api('/api/mcp-tools/status').catch(() => null), api('/api/distributed/nodes').catch(() => [])
     ]);
-    Object.assign(state, { summary, datasets, jobs, models, modelStatuses: modelStatuses || { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} }, modelResource: modelResource || { devices: [], loaded_models: [], loading_reservations: [], warnings: [] }, assistantConfig, presets, settings, tagProfiles: profiles || [], downloadSources: sources || [], orchestrationTemplates: templates || [], detectionModels: detectionModels || [], segmentationModels: segmentationModels || [], poseTemplates: poseTemplates || [], threeDProviders: threeDProviders || { generation: [], rigging: [] }, threeDAssets: threeDAssets || [], flexAvatarStatus, flexAvatarAssets: flexAvatarAssets || { inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] }, agentStatus, voiceStatus, mcpToolStatus });
+    Object.assign(state, { summary, datasets, jobs, models, modelStatuses: modelStatuses || { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} }, modelResource: modelResource || { devices: [], loaded_models: [], loading_reservations: [], warnings: [] }, assistantConfig, presets, settings, tagProfiles: profiles || [], downloadSources: sources || [], orchestrationTemplates: templates || [], detectionModels: detectionModels || [], segmentationModels: segmentationModels || [], poseTemplates: poseTemplates || [], threeDProviders: threeDProviders || { generation: [], rigging: [] }, threeDAssets: threeDAssets || [], flexAvatarStatus, flexAvatarAssets: flexAvatarAssets || { inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] }, agentStatus, voiceStatus, mcpToolStatus, distributedNodes: distributedNodes || [] });
     if (settings?.default_tag_profile && state.tagProfiles.some(p => p.key === settings.default_tag_profile)) state.tagProfile = settings.default_tag_profile;
     if (!state.tagProfiles.some(p => p.key === state.tagProfile) && state.tagProfiles.length) state.tagProfile = state.tagProfiles[0].key;
     state.orderingStrategy = settings?.default_ordering_strategy || state.orderingStrategy;
     state.retainImportedOrder = Boolean(settings?.retain_imported_tag_order);
     if (settings?.preferred_external_image_tool) state.quickExternalTool = settings.preferred_external_image_tool;
+    try { state.dictionaryStatus = await api(`/api/tags/dictionary/status?profile_key=${encodeURIComponent(state.tagProfile)}`); } catch (statusErr) { console.warn('dictionary status refresh failed', statusErr); }
   } catch (err) { console.error(err); toast(err.message, false); }
 }
 
@@ -5436,6 +5443,103 @@ function agentToolsView() {
 }
 
 
+
+function remoteDeviceSelect(attrs = {}) {
+  const nodes = state.distributedNodes || [];
+  return el('select', attrs, [el('option', { value: '' }, 'Select remote device'), ...nodes.map(n => el('option', { value: n.name }, `${n.name}${n.host ? ` · ${n.host}` : ''}${n.base_url ? ` · ${n.base_url}` : ''}`))]);
+}
+function remoteDevicesView() {
+  const nodes = state.distributedNodes || [];
+  const draft = state.remoteDeviceDraft || {};
+  const name = el('input', { value: draft.name || '', placeholder: 'device name, e.g. orin-nano-01', oninput: e => { state.remoteDeviceDraft.name = e.target.value; } });
+  const host = el('input', { value: draft.host || '', placeholder: 'SSH host/IP, e.g. 192.168.1.50', oninput: e => { state.remoteDeviceDraft.host = e.target.value; } });
+  const username = el('input', { value: draft.username || '', placeholder: 'SSH username', oninput: e => { state.remoteDeviceDraft.username = e.target.value; } });
+  const port = el('input', { type: 'number', min: '1', max: '65535', value: draft.port || 22, oninput: e => { state.remoteDeviceDraft.port = Number(e.target.value || 22); } });
+  const baseUrl = el('input', { value: draft.base_url || '', placeholder: 'worker API URL, e.g. http://192.168.1.50:7865', style: 'min-width:330px', oninput: e => { state.remoteDeviceDraft.base_url = e.target.value; } });
+  const keyPath = el('input', { value: draft.ssh_key_path || '', placeholder: 'optional SSH key path', style: 'min-width:330px', oninput: e => { state.remoteDeviceDraft.ssh_key_path = e.target.value; } });
+  const remoteRoot = el('input', { value: draft.remote_root || '~/DataCurationToolRemote', placeholder: 'remote root', style: 'min-width:260px', oninput: e => { state.remoteDeviceDraft.remote_root = e.target.value; } });
+  const remoteProject = el('input', { value: draft.remote_project_path || '', placeholder: 'remote project path if already installed', style: 'min-width:360px', oninput: e => { state.remoteDeviceDraft.remote_project_path = e.target.value; } });
+  const remoteOutput = el('input', { value: draft.remote_output_dir || '', placeholder: 'remote output folder for merge-back', style: 'min-width:360px', oninput: e => { state.remoteDeviceDraft.remote_output_dir = e.target.value; } });
+  const condaEnv = el('input', { value: draft.conda_env || 'data-curation-tool', placeholder: 'conda env', oninput: e => { state.remoteDeviceDraft.conda_env = e.target.value; } });
+  const pythonCmd = el('input', { value: draft.python_command || 'python', placeholder: 'python command', oninput: e => { state.remoteDeviceDraft.python_command = e.target.value; } });
+  const apiPort = el('input', { type: 'number', value: draft.worker_api_port || 7865, oninput: e => { state.remoteDeviceDraft.worker_api_port = Number(e.target.value || 7865); } });
+  const platform = el('select', { onchange: e => { state.remoteDeviceDraft.platform = e.target.value; } }, ['linux','windows','macos','unknown'].map(v => el('option', { value: v }, v)));
+  platform.value = draft.platform || 'linux';
+  const workerMode = el('select', { onchange: e => { state.remoteDeviceDraft.worker_mode = e.target.value; } }, [['full','full app'], ['lite','lite / low-memory'], ['downloader-only','downloader-only worker']].map(([v,l]) => el('option', { value: v }, l)));
+  workerMode.value = draft.worker_mode || 'full';
+  const enabled = el('input', { type: 'checkbox', checked: draft.enabled !== false, onchange: e => { state.remoteDeviceDraft.enabled = e.target.checked; } });
+  const allowShell = el('input', { type: 'checkbox', checked: Boolean(draft.allow_remote_shell), onchange: e => { state.remoteDeviceDraft.allow_remote_shell = e.target.checked; } });
+  const allowScp = el('input', { type: 'checkbox', checked: draft.allow_scp !== false, onchange: e => { state.remoteDeviceDraft.allow_scp = e.target.checked; } });
+  const notes = el('textarea', { rows: 2, value: draft.notes || '', placeholder: 'notes/capabilities, e.g. Jetson Orin Nano, low RAM, downloads only', oninput: e => { state.remoteDeviceDraft.notes = e.target.value; } });
+  const selected = remoteDeviceSelect({ onchange: e => { const n = nodes.find(x => x.name === e.target.value); if (n) { state.remoteDeviceDraft = { ...n }; render(true, true); } } });
+  const selectedForAction = remoteDeviceSelect({ onchange: e => { state.remoteActionNode = e.target.value; } });
+  selectedForAction.value = state.remoteActionNode || '';
+  const command = el('textarea', { rows: 5, style: 'width:100%', placeholder: 'Remote command to run over SSH. Example: nvidia-smi or python --version', value: state.remoteCommandText || '', oninput: e => { state.remoteCommandText = e.target.value; } });
+  const approved = el('input', { type: 'checkbox', checked: false });
+  const approvedScp = el('input', { type: 'checkbox', checked: false });
+  const timeout = el('input', { type: 'number', value: 120, min: 1, max: 86400 });
+  const scpLocal = el('input', { value: state.remoteScpLocal || '', placeholder: 'local path', style: 'min-width:360px', oninput: e => { state.remoteScpLocal = e.target.value; } });
+  const scpRemote = el('input', { value: state.remoteScpRemote || '', placeholder: 'remote path', style: 'min-width:360px', oninput: e => { state.remoteScpRemote = e.target.value; } });
+  const mergeRemote = el('input', { placeholder: 'optional remote output path override', style: 'min-width:360px' });
+  const mergeRunId = el('input', { placeholder: 'optional merge/run id' });
+  const table = el('table', { class: 'table' }, [
+    el('thead', {}, el('tr', {}, ['Name','SSH','Worker API','Mode','Enabled','Actions'].map(h => el('th', {}, h)))),
+    el('tbody', {}, nodes.map(n => el('tr', {}, [
+      el('td', {}, [el('b', {}, n.name), n.notes ? el('div', { class: 'muted tiny' }, n.notes) : null].filter(Boolean)),
+      el('td', {}, n.host ? `${n.username ? `${n.username}@` : ''}${n.host}:${n.port || 22}` : '—'),
+      el('td', {}, n.base_url || '—'),
+      el('td', {}, n.worker_mode || 'full'),
+      el('td', {}, n.enabled !== false ? el('span', { class: 'badge ok' }, 'enabled') : el('span', { class: 'badge' }, 'disabled')),
+      el('td', {}, el('div', { class: 'row' }, [
+        el('button', { class: 'secondary small', onclick: () => { state.remoteDeviceDraft = { ...n }; state.remoteActionNode = n.name; render(true, true); } }, 'Edit'),
+        el('button', { class: 'secondary small', onclick: async () => { try { state.distributedOutput = await api(`/api/distributed/nodes/${encodeURIComponent(n.name)}/test`, { method: 'POST', body: {} }); toast(`SSH test finished for ${n.name}`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Test SSH'),
+        el('button', { class: 'danger small', onclick: async () => { if (!confirm(`Remove remote device ${n.name}?`)) return; await api(`/api/distributed/nodes/${encodeURIComponent(n.name)}`, { method: 'DELETE' }); state.distributedNodes = await api('/api/distributed/nodes'); toast('Remote device removed'); render(true, true); } }, 'Remove')
+      ]))
+    ])))
+  ]);
+  const upsertPayload = () => ({
+    name: name.value.trim(), host: host.value.trim(), username: username.value.trim(), port: Number(port.value || 22), base_url: baseUrl.value.trim(), ssh_key_path: keyPath.value.trim(), remote_root: remoteRoot.value.trim() || '~/DataCurationToolRemote', remote_project_path: remoteProject.value.trim(), remote_output_dir: remoteOutput.value.trim(), conda_env: condaEnv.value.trim(), python_command: pythonCmd.value.trim() || 'python', worker_api_port: Number(apiPort.value || 7865), platform: platform.value, worker_mode: workerMode.value, enabled: enabled.checked, allow_remote_shell: allowShell.checked, allow_scp: allowScp.checked, notes: notes.value.trim(), role: 'worker', capabilities: []
+  });
+  return el('div', { class: 'grid' }, [
+    card('Remote Devices / Dispatch Workers', [
+      el('p', { class: 'muted' }, 'Add devices that already have OpenSSH configured. This tool uses your local ssh/scp commands, does not store SSH passwords, and can start remote worker app instances or dispatch download shards to running worker URLs.'),
+      el('div', { class: 'row' }, [el('button', { class: 'secondary', onclick: async () => { state.distributedNodes = await api('/api/distributed/nodes'); toast('Remote devices refreshed'); render(true, true); } }, 'Refresh Devices'), selected]),
+      table
+    ]),
+    card('Add / Edit Device', [
+      el('div', { class: 'row' }, [name, el('label', {}, [enabled, ' enabled']), platform, workerMode]),
+      el('div', { class: 'row' }, [host, username, el('label', {}, ['port ', port]), baseUrl]),
+      el('div', { class: 'row' }, [keyPath, remoteRoot, remoteProject]),
+      el('div', { class: 'row' }, [remoteOutput, condaEnv, pythonCmd, el('label', {}, ['API port ', apiPort])]),
+      el('div', { class: 'row' }, [el('label', {}, [allowShell, ' allow approved SSH shell commands']), el('label', {}, [allowScp, ' allow approved SCP transfer/merge'])]),
+      notes,
+      el('div', { class: 'row' }, [
+        el('button', { class: 'primary', onclick: async () => { try { const saved = await api('/api/distributed/nodes', { method: 'POST', body: upsertPayload() }); state.remoteDeviceDraft = { ...saved }; state.distributedNodes = await api('/api/distributed/nodes'); toast('Remote device saved'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Save Device'),
+        el('button', { class: 'secondary', onclick: () => { state.remoteDeviceDraft = {}; render(true, true); } }, 'Clear Form')
+      ])
+    ]),
+    card('SSH Command / Start Worker', [
+      el('p', { class: 'muted tiny' }, 'Remote shell execution is intentionally opt-in per device and per action. Use this for commands like checking GPUs, starting the worker app, or launching maintenance scripts on devices you control.'),
+      el('div', { class: 'row' }, [selectedForAction, el('label', {}, ['timeout sec ', timeout]), el('label', {}, [approved, ' I approve this remote command'])]),
+      command,
+      el('div', { class: 'row' }, [
+        el('button', { class: 'secondary', onclick: async () => { try { if (!selectedForAction.value) throw new Error('Select a remote device first.'); state.distributedOutput = await api('/api/distributed/ssh', { method: 'POST', body: { name: selectedForAction.value, command: command.value, timeout_seconds: Number(timeout.value || 120), user_approved: approved.checked } }); toast('Remote command finished'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Run Approved SSH Command'),
+        el('button', { class: 'primary', onclick: async () => { try { if (!selectedForAction.value) throw new Error('Select a remote device first.'); state.distributedOutput = await api('/api/distributed/start-tool', { method: 'POST', body: { name: selectedForAction.value, user_approved: approved.checked, worker_mode: workerMode.value || 'full' } }); toast('Remote worker start command sent'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Start Tool on Device')
+      ])
+    ]),
+    card('SCP Upload / Download / Merge-back', [
+      el('p', { class: 'muted tiny' }, 'Use SCP to copy a project/package to a configured device, retrieve outputs, or merge remote worker outputs back into this main node.'),
+      el('div', { class: 'row' }, [scpLocal, scpRemote, el('label', {}, [approvedScp, ' approve SCP action'])]),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'secondary', onclick: async () => { try { if (!selectedForAction.value) throw new Error('Select a remote device first.'); state.distributedOutput = await api('/api/distributed/scp-upload', { method: 'POST', body: { name: selectedForAction.value, local_path: scpLocal.value, remote_path: scpRemote.value, recursive: true, user_approved: approvedScp.checked } }); toast('SCP upload finished'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Upload Local → Remote'),
+        el('button', { class: 'secondary', onclick: async () => { try { if (!selectedForAction.value) throw new Error('Select a remote device first.'); state.distributedOutput = await api('/api/distributed/scp-download', { method: 'POST', body: { name: selectedForAction.value, local_path: scpLocal.value, remote_path: scpRemote.value, recursive: true, user_approved: approvedScp.checked } }); toast('SCP download finished'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Download Remote → Local')
+      ]),
+      el('div', { class: 'row' }, [mergeRemote, mergeRunId, el('button', { class: 'primary', onclick: async () => { try { const names = selectedForAction.value ? [selectedForAction.value] : []; state.distributedOutput = await api('/api/distributed/merge-back', { method: 'POST', body: { node_names: names, remote_path: mergeRemote.value.trim() || null, run_id: mergeRunId.value.trim() || null, user_approved: approvedScp.checked } }); toast('Merge-back finished'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Merge Back Outputs')])
+    ]),
+    card('Latest Remote / Dispatch Result', [state.distributedOutput ? el('pre', { class: 'log full-log' }, JSON.stringify(state.distributedOutput, null, 2)) : el('p', { class: 'muted' }, 'No remote action result yet.')])
+  ]);
+}
+
 function mcpToolsView() {
   const status = state.mcpToolStatus || {};
   const tools = status.tools || [];
@@ -7652,10 +7756,40 @@ async function pickFilePath(targetInput, title = 'Select file') {
   } catch (err) { toast(err.message, false); return null; }
 }
 
+
+function remoteWorkerOptions(selectedNames = []) {
+  const selected = new Set(selectedNames || []);
+  const nodes = (state.distributedNodes || []).filter(n => n.enabled !== false && (n.role || 'worker') === 'worker');
+  return nodes.map(n => el('option', { value: n.name, selected: selected.has(n.name) }, `${n.name}${n.base_url ? ' · API' : ''}${n.host ? ' · SSH' : ''}`));
+}
+function selectedRemoteWorkerNames(select) { return [...(select?.selectedOptions || [])].map(o => o.value).filter(Boolean); }
+function remoteDispatchControls(bodyFactory, label = 'download') {
+  const workers = el('select', { multiple: 'multiple', size: '4', title: 'Select remote workers configured under Remote Devices.' }, remoteWorkerOptions());
+  const includeLocal = el('input', { type: 'checkbox', checked: false });
+  const parallel = el('select', {}, [el('option', { value: 'parallel' }, 'parallel remote workers'), el('option', { value: 'sequential' }, 'sequential remote workers')]);
+  const workerCount = (state.distributedNodes || []).filter(n => n.enabled !== false && (n.role || 'worker') === 'worker').length;
+  return el('details', { class: 'details-card' }, [
+    el('summary', {}, `Remote worker dispatch (${workerCount} configured)`),
+    el('p', { class: 'muted tiny' }, 'Optional: split this same downloader request across configured devices. Each worker uses its own local app/device settings. Configure SSH/API endpoints under Remote Devices first.'),
+    workers,
+    el('div', { class: 'row' }, [el('label', {}, [includeLocal, ' include this main node as one shard']), parallel,
+      el('button', { class: 'secondary', onclick: async () => { try { state.distributedNodes = await api('/api/distributed/nodes'); toast('Remote device list refreshed'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Refresh Workers'),
+      el('button', { class: 'secondary', onclick: async () => { try { const body = bodyFactory(); const r = await api('/api/distributed/download-plan', { method: 'POST', body: { payload: body, node_names: selectedRemoteWorkerNames(workers), include_local: includeLocal.checked } }); state.distributedOutput = r; toast(`Planned ${r.worker_count || 0} shard(s)`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Plan Shards'),
+      el('button', { class: 'primary', onclick: async () => { try { const body = bodyFactory(); const r = await api('/api/distributed/download-dispatch', { method: 'POST', body: { payload: body, node_names: selectedRemoteWorkerNames(workers), include_local: includeLocal.checked, parallel: parallel.value === 'parallel' } }); state.distributedOutput = r; toast(`Dispatched ${label} to ${(r.remote_results || []).length} remote worker(s)`); render(true, true); } catch (err) { toast(err.message, false); } } }, `Dispatch ${label}`)
+    ]),
+    state.distributedOutput ? el('pre', { class: 'log compact' }, JSON.stringify(state.distributedOutput, null, 2)) : null
+  ].filter(Boolean));
+}
+
 function downloadsView() {
   const source = el('select', { onchange: e => { if (state.tagProfiles.some(p => p.key === e.target.value)) state.tagProfile = e.target.value; render(); } }, state.downloadSources.map(s => el('option', { value: s.key }, s.label || s.key)));
   const preferredDirectSource = state.downloadSources.some(s => s.key === state.tagProfile) ? state.tagProfile : (state.downloadSources.some(s => s.key === 'e621') ? 'e621' : (state.downloadSources[0]?.key || 'generic-json'));
   source.value = preferredDirectSource;
+  const additionalSources = el('select', { multiple: 'multiple', size: '5', title: 'Optional: select extra sources to run with the same query in the same job.' }, state.downloadSources.map(s => el('option', { value: s.key }, s.label || s.key)));
+  const directRunMode = el('select', { title: 'Controls whether selected direct sources run sequentially or in parallel inside one download job.' }, [
+    el('option', { value: 'one_job_sequential' }, 'One job: queue selected sources sequentially'),
+    el('option', { value: 'one_job_parallel' }, 'One job: run selected sources in parallel')
+  ]);
   const directApiUrl = el('input', { placeholder: 'Required only when Source is Generic JSON/custom', style: 'min-width:320px' });
   const posCtl = tagAutocompleteControl({ placeholder: 'positive tags', multiline: true });
   const negCtl = tagAutocompleteControl({ placeholder: 'negative tags', multiline: true });
@@ -7678,7 +7812,7 @@ function downloadsView() {
     el('div', { class: 'row' }, [el('label', {}, ['Max pages safety cap (0 = source exhausted)', ctrl.maxPages]), el('label', {}, ['Start page/pid', ctrl.startPage])]),
     el('details', { class: 'details-card', open: true }, [
       el('summary', {}, 'Logic gates for e621 / booru queries'),
-      el('p', { class: 'muted tiny' }, 'Use either the logic expression OR the Positive/Negative fields. When logic is filled in, you do not need to repeat those tags above; the downloader expands the logic into source queries and dedupes overlaps.'),
+      el('p', { class: 'muted tiny' }, 'Use either the logic expression OR the Positive/Negative fields. When logic is filled in, you do not need to repeat those tags above; the backend ignores the tag boxes for that run and uses the logic expression as the query source. Operators can be AND/OR/NOT or and/or/not; quote tags that literally contain those words.'),
       ctrl.logicWrap,
       el('div', { class: 'row' }, [ctrl.logicMode, el('label', {}, ['Max expanded clauses', ctrl.logicMax]), el('button', { class: 'secondary small', onclick: async () => { try { const q = ctrl.logic.value.trim(); if (!q) throw new Error('Enter a logic expression first.'); const r = await api(`/api/downloads/logic/preview?query=${encodeURIComponent(q)}&max_clauses=${encodeURIComponent(ctrl.logicMax.value || 64)}`); toast(`Logic expands to ${r.count} source query clause(s).`); state.downloadValidation = { logic_preview: r }; render(true, true); } catch (err) { toast(err.message, false); } } }, 'Preview logic expansion')])
     ]),
@@ -7692,13 +7826,33 @@ function downloadsView() {
     ])
   ];
   const makeDirectDownloadBody = () => {
-    const sourceKey = source.value || preferredDirectSource || 'e621';
-    const options = {};
-    if (sourceKey === 'generic-json') {
-      if (!directApiUrl.value.trim()) throw new Error('Generic JSON source requires options.api_url. Choose e621/e926/etc. for built-in booru downloads, or enter a Generic JSON API URL.');
-      options.api_url = directApiUrl.value.trim();
+    const primarySource = source.value || preferredDirectSource || 'e621';
+    const sourceKeys = [...new Set([primarySource, ...[...additionalSources.selectedOptions].map(o => o.value)].filter(Boolean))];
+    const base = buildDownloadPayload(directCtl);
+    const logicText = (base.logic_query || '').trim();
+    const makePresetForSource = sourceKey => {
+      const options = {};
+      if (sourceKey === 'generic-json') {
+        if (!directApiUrl.value.trim()) throw new Error('Generic JSON source requires options.api_url. Choose e621/e926/etc. for built-in booru downloads, or enter a Generic JSON API URL.');
+        options.api_url = directApiUrl.value.trim();
+      }
+      if (sourceKeys.length > 1) options.output_subdir = sourceKey;
+      return {
+        name: `direct-${sourceKey}-${Date.now()}`,
+        source: sourceKey,
+        positive_tags: logicText ? [] : parseTagString(posCtl.input.value),
+        negative_tags: logicText ? [] : parseTagString(negCtl.input.value),
+        options
+      };
+    };
+    const body = { ...base, output_dir: outDirect.value || null, confirmed_authorized: authDirect.checked, max_items: Number(max.value || 100), tag_profile: state.tagProfile };
+    if (sourceKeys.length === 1) {
+      body.preset = makePresetForSource(sourceKeys[0]);
+    } else {
+      body.presets = sourceKeys.map(makePresetForSource);
+      body.parallel_presets = directRunMode.value === 'one_job_parallel' || Boolean(body.parallel_presets);
     }
-    return { ...buildDownloadPayload(directCtl), preset: { name: `direct-${sourceKey}-${Date.now()}`, source: sourceKey, positive_tags: parseTagString(posCtl.input.value), negative_tags: parseTagString(negCtl.input.value), options }, output_dir: outDirect.value || null, confirmed_authorized: authDirect.checked, max_items: Number(max.value || 100), tag_profile: state.tagProfile };
+    return body;
   };
   const makePresetDownloadBody = () => {
     const names = [...preset.selectedOptions].map(o => o.value);
@@ -7719,8 +7873,8 @@ function downloadsView() {
       ]),
       state.downloadValidation ? el('pre', { class: 'log' }, JSON.stringify(state.downloadValidation, null, 2)) : el('p', { class: 'muted' }, 'No source diagnostics run yet.')
     ]),
-    card('Direct Booru / JSON Download', [el('p', { class: 'muted' }, 'Tag fields use active dictionary autocomplete. Date/order/category controls are folded into the source query where supported. Generic JSON requires an explicit API URL; e621/e926/etc. use built-in endpoints.'), el('div', { class: 'row' }, [source, max, tagProfileSelect()]), directApiUrl, ...advancedControls(directCtl), el('label', { class: 'label' }, ['Positive tags', posCtl.wrap]), el('label', { class: 'label' }, ['Negative tags', negCtl.wrap]), el('div', { class: 'row' }, [outDirect, el('button', { class: 'secondary', onclick: async () => await pickFolder(outDirect, 'Select download output folder') }, 'Browse Output...')]), el('label', {}, [authDirect, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const body = makeDirectDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Direct Download'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makeDirectDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total')]),
-    card('Preset Download Runner', [el('div', { class: 'row' }, [preset, out, el('button', { class: 'secondary', onclick: async () => await pickFolder(out, 'Select download output folder') }, 'Browse Output...')]), ...advancedControls(presetCtl), el('label', {}, [auth, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const body = makePresetDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Presets'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makePresetDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total')]),
+    card('Direct Booru / JSON Download', [el('p', { class: 'muted' }, 'Tag fields use active dictionary autocomplete. Date/order/category controls are folded into the source query where supported. Generic JSON requires an explicit API URL; e621/e926/etc. use built-in endpoints. Fill either logic OR positive/negative tags; logic-only searches are valid.'), el('div', { class: 'row' }, [el('label', {}, ['Primary source', source]), el('label', {}, ['Max items', max]), tagProfileSelect()]), el('label', { class: 'label' }, ['Optional additional sources for the same query', additionalSources]), el('p', { class: 'muted tiny' }, 'Use this to run e621/e926/Danbooru/Gelbooru-style sources in one job. Multi-source direct runs are placed into source-named subfolders to avoid filename collisions. Choose the parallel run mode below when you have the bandwidth and the source rules allow it.'), directApiUrl, ...advancedControls(directCtl), el('label', { class: 'label' }, ['Positive tags', posCtl.wrap]), el('label', { class: 'label' }, ['Negative tags', negCtl.wrap]), el('div', { class: 'row' }, [outDirect, el('button', { class: 'secondary', onclick: async () => await pickFolder(outDirect, 'Select download output folder') }, 'Browse Output...')]), el('label', {}, [authDirect, ' I am authorized to download from this source']), el('div', { class: 'row' }, [directRunMode, el('button', { class: 'primary', onclick: async () => { try { const body = makeDirectDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Direct Download'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makeDirectDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total')]), remoteDispatchControls(makeDirectDownloadBody, 'direct download')]),
+    card('Preset Download Runner', [el('div', { class: 'row' }, [preset, out, el('button', { class: 'secondary', onclick: async () => await pickFolder(out, 'Select download output folder') }, 'Browse Output...')]), ...advancedControls(presetCtl), el('label', {}, [auth, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const body = makePresetDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Presets'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makePresetDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total'), remoteDispatchControls(makePresetDownloadBody, 'preset download')]),
     card('Source Config Validation', [
       el('p', { class: 'muted' }, 'Offline fixture validation for every supported source. This checks parser keys, tag extraction, URL extraction, page/limit params, and avoids treating only e621 as validated.'),
       el('button', { class: 'secondary', onclick: async () => { try { state.sourceValidation = await api('/api/downloads/source-validation'); render(); } catch (err) { toast(err.message, false); } } }, 'Validate Source Parsers'),
@@ -7743,7 +7897,7 @@ function presetsView() {
   const logicMax = el('input', { type: 'number', min: '1', max: '512', value: state.settings.downloader_logic_max_clauses || 64 });
   const importText = el('textarea', { placeholder: 'name: example\npositive: tag_one tag_two\nnegative: bad_tag\nlogic: tag_one AND (solo OR portrait) AND NOT sketch\n;;;\nname: second...' });
   return el('div', { class: 'grid cols-2' }, [
-    card('Create / Update Preset', [name, source, tagProfileSelect(), el('label', { class: 'label' }, ['Positive', posCtl.wrap]), el('label', { class: 'label' }, ['Negative', negCtl.wrap]), apiUrl, el('details', { open: true }, [el('summary', {}, 'Optional e621 / booru logic gates'), el('p', { class: 'muted tiny' }, 'Use either this logic expression OR the positive/negative fields; you do not need to fill both. Spaces inside tag names are preserved, so use AND / OR / NOT, commas, or parentheses to separate tags.'), logicCtl.wrap, el('div', { class: 'row' }, [logicMode, el('label', {}, ['Max clauses', logicMax]), el('button', { class: 'secondary small', onclick: async () => { try { if (!logicQuery.value.trim()) throw new Error('Enter a logic expression first.'); const r = await api(`/api/downloads/logic/preview?query=${encodeURIComponent(logicQuery.value.trim())}&max_clauses=${encodeURIComponent(logicMax.value || 64)}`); toast(`Logic expands to ${r.count} source query clause(s).`); state.downloadValidation = { logic_preview: r }; render(true, true); } catch (err) { toast(err.message, false); } } }, 'Preview')])]), el('button', { class: 'primary', onclick: async () => { try { const options = apiUrl.value ? { api_url: apiUrl.value } : {}; const body = { name: name.value, source: source.value, positive_tags: parseTagString(posCtl.input.value), negative_tags: parseTagString(negCtl.input.value), logic_query: logicQuery.value.trim(), logic_mode: logicMode.value, logic_max_clauses: Number(logicMax.value || 64), options }; await api('/api/presets', { method: 'POST', body }); toast('Preset saved'); await refreshAll(); render(); } catch (err) { toast(err.message, false); } } }, 'Save Preset')]),
+    card('Create / Update Preset', [name, source, tagProfileSelect(), el('label', { class: 'label' }, ['Positive', posCtl.wrap]), el('label', { class: 'label' }, ['Negative', negCtl.wrap]), apiUrl, el('details', { open: true }, [el('summary', {}, 'Optional e621 / booru logic gates'), el('p', { class: 'muted tiny' }, 'Use either this logic expression OR the positive/negative fields; you do not need to fill both. When logic is filled, the saved preset leaves positive/negative empty and the backend uses logic as the query source. Spaces inside tag names are preserved, so use AND / OR / NOT, commas, or parentheses to separate tags; quote tags that literally contain operator words.'), logicCtl.wrap, el('div', { class: 'row' }, [logicMode, el('label', {}, ['Max clauses', logicMax]), el('button', { class: 'secondary small', onclick: async () => { try { if (!logicQuery.value.trim()) throw new Error('Enter a logic expression first.'); const r = await api(`/api/downloads/logic/preview?query=${encodeURIComponent(logicQuery.value.trim())}&max_clauses=${encodeURIComponent(logicMax.value || 64)}`); toast(`Logic expands to ${r.count} source query clause(s).`); state.downloadValidation = { logic_preview: r }; render(true, true); } catch (err) { toast(err.message, false); } } }, 'Preview')])]), el('button', { class: 'primary', onclick: async () => { try { const options = apiUrl.value ? { api_url: apiUrl.value } : {}; const logicText = logicQuery.value.trim(); const body = { name: name.value, source: source.value, positive_tags: logicText ? [] : parseTagString(posCtl.input.value), negative_tags: logicText ? [] : parseTagString(negCtl.input.value), logic_query: logicText, logic_mode: logicMode.value, logic_max_clauses: Number(logicMax.value || 64), options }; await api('/api/presets', { method: 'POST', body }); toast('Preset saved'); await refreshAll(); render(); } catch (err) { toast(err.message, false); } } }, 'Save Preset')]),
     card('Import Preset Text', [importText, el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/presets/import-text', { method: 'POST', body: { content: importText.value, source: source.value || 'e621' } }); toast(`Created ${r.created.length} presets`); await refreshAll(); render(); } catch (err) { toast(err.message, false); } } }, 'Import')]),
     card('Presets', [presetsTable()])
   ]);
@@ -8115,7 +8269,21 @@ function settingsView() {
   const defaultProfile = tagProfileSelect(); defaultProfile.value = s.default_tag_profile || state.tagProfile;
   const defaultOrder = el('select', {}, ['retain', 'booru', 'custom_profile', 'lora_purpose'].map(x => el('option', { value: x }, x))); defaultOrder.value = s.default_ordering_strategy || state.orderingStrategy;
   const retain = el('input', { type: 'checkbox', checked: Boolean(s.retain_imported_tag_order) });
-  const tagTextMode = el('select', { title: 'Controls whether app-owned tags are stored/displayed as blue_eyes or blue eyes. Applied on startup so dictionaries, aliases, implications, media tags, and sidecars stay consistent.' }, [
+  const tagTextMode = el('select', {
+    title: 'Controls whether app-owned tags are stored/displayed as blue_eyes or blue eyes. Applied on startup so dictionaries, aliases, implications, media tags, and sidecars stay consistent.',
+    onchange: async e => {
+      const selected = e.target.value === 'spaces' ? 'spaces' : 'underscores';
+      state.settings = { ...(state.settings || {}), tag_text_mode: selected, tag_text_mode_restart_required: selected !== ((state.settings || {}).tag_text_mode_active || 'underscores') };
+      render(true, true);
+      try {
+        state.settings = await api('/api/settings', { method: 'PUT', body: { values: { tag_text_mode: selected } } });
+        toast((state.settings.tag_text_mode_restart_required || state.settings.tag_text_mode !== state.settings.tag_text_mode_active) ? 'Tag text format saved; restart required to apply it.' : 'Tag text format saved and active.');
+        render(true, true);
+      } catch (err) {
+        toast(err.message, false);
+      }
+    }
+  }, [
     el('option', { value: 'underscores' }, 'Use underscores: blue_eyes'),
     el('option', { value: 'spaces' }, 'Use spaces: blue eyes')
   ]);
@@ -8275,7 +8443,7 @@ function settingsView() {
       tagModeRestartNeeded ? el('div', { class: 'bad-panel' }, [
         el('strong', {}, 'Tag text format change is pending.'),
         el('p', { class: 'muted tiny' }, 'Press the red restart button to apply it immediately. Otherwise, the migration runs the next time you start the app. The startup migration updates tag dictionaries, aliases, implications, media tag rows, and .txt sidecars.'),
-        el('button', { class: 'danger', onclick: async () => { try { await api('/api/system/restart', { method: 'POST', body: {} }); toast('Restart requested; the app will briefly disconnect.'); } catch (err) { toast(err.message, false); } } }, 'Restart Tool Now + Apply Tag Format')
+        el('button', { class: 'danger', onclick: async () => { try { const selected = tagTextMode.value === 'spaces' ? 'spaces' : 'underscores'; state.settings = await api('/api/settings', { method: 'PUT', body: { values: { tag_text_mode: selected } } }); await api('/api/system/restart', { method: 'POST', body: {} }); toast('Restart requested; the app will briefly disconnect.'); } catch (err) { toast(err.message, false); } } }, 'Restart Tool Now + Apply Tag Format')
       ]) : null,
       el('div', { class: 'row' }, [tagCount, temp, maxTokens, threshold]),
       el('div', { class: 'row' }, [defGpuIds, defShard, defDtype, defQuant]),
@@ -8506,7 +8674,7 @@ function render(shouldSnapshot = true, force = false) {
     snapshotFormState(tab);
     snapshotScrollState(tab);
   }
-  const views = { Dashboard: dashboard, Import: importView, Gallery: galleryView, 'Tag Editor': tagEditorView, 'Detection & Boxes': detectionEditorView, 'Segmentation & Masks': segmentationEditorView, 'Pose & 3D': poseEditorView, '3D Studio': threeDStudioView, '3D Viewport': threeDViewportView, 'ComfyUI Bridge': comfyBridgeView, FlexAvatar: flexAvatarView, 'Annotation Editor': detectionEditorView, Compare: compareView, 'Batch Tags': batchTagsView, 'Prediction Analytics': predictionAnalyticsView, 'Media Tools': mediaToolsView, 'Reference Finder': referenceFinderView, 'Source Browser': sourceBrowserView, Assistant: assistantView, Orchestrate: orchestrationView, Models: modelsView, Augment: augmentView, Downloads: downloadsView, Presets: presetsView, 'Tag Dictionaries': dictionaryView, Database: databaseView, 'Install Migration': migrationView, 'Code Assistant': codeAssistantView, 'Agent Tools': agentToolsView, 'MCP Tools': mcpToolsView, 'Future Modalities': futureModalitiesView, Settings: settingsView, 'Help & Workflows': helpWorkflowsView, Jobs: jobsView };
+  const views = { Dashboard: dashboard, Import: importView, Gallery: galleryView, 'Tag Editor': tagEditorView, 'Detection & Boxes': detectionEditorView, 'Segmentation & Masks': segmentationEditorView, 'Pose & 3D': poseEditorView, '3D Studio': threeDStudioView, '3D Viewport': threeDViewportView, 'ComfyUI Bridge': comfyBridgeView, FlexAvatar: flexAvatarView, 'Annotation Editor': detectionEditorView, Compare: compareView, 'Batch Tags': batchTagsView, 'Prediction Analytics': predictionAnalyticsView, 'Media Tools': mediaToolsView, 'Reference Finder': referenceFinderView, 'Source Browser': sourceBrowserView, Assistant: assistantView, Orchestrate: orchestrationView, Models: modelsView, Augment: augmentView, Downloads: downloadsView, Presets: presetsView, 'Tag Dictionaries': dictionaryView, Database: databaseView, 'Install Migration': migrationView, 'Code Assistant': codeAssistantView, 'Agent Tools': agentToolsView, 'Remote Devices': remoteDevicesView, 'MCP Tools': mcpToolsView, 'Future Modalities': futureModalitiesView, Settings: settingsView, 'Help & Workflows': helpWorkflowsView, Jobs: jobsView };
   try {
     document.getElementById('app').replaceChildren(shell((views[tab] || dashboard)()));
     if (typeof window !== 'undefined') window.__DCT_APP_RENDERED = true;

@@ -54,13 +54,54 @@ from .schemas import ModelLoadRequest
 from .utils import set_tag_text_mode
 
 
+def _clean_tag_text_mode(value: object, fallback: str = "underscores") -> str:
+    mode = str(value or fallback or "underscores").strip().lower()
+    return mode if mode in {"underscores", "spaces"} else fallback
+
+
+def _hydrate_tag_text_mode_from_db(settings: AppSettings, db: Database, settings_path: Path) -> None:
+    """Keep the tag-format setting durable across app launches and package swaps.
+
+    Earlier builds mirrored Settings changes into both runtime/settings.json and
+    the SQLite settings table, but app startup only trusted settings.json.  That
+    made manual file replacement or a stale JSON file appear to "forget" the
+    user's tag-format choice until they selected it again.  Treat the SQLite
+    value as a recovery mirror when present, then immediately re-save JSON so
+    future starts are deterministic.
+    """
+    changed = False
+    desired = db.get_setting("tag_text_mode", None)
+    active = db.get_setting("tag_text_mode_active", None)
+    restart_required = db.get_setting("tag_text_mode_restart_required", None)
+    if desired in {"underscores", "spaces"} and desired != getattr(settings, "tag_text_mode", "underscores"):
+        settings.tag_text_mode = str(desired)
+        changed = True
+    if active in {"underscores", "spaces"} and active != getattr(settings, "tag_text_mode_active", "underscores"):
+        settings.tag_text_mode_active = str(active)
+        changed = True
+    settings.tag_text_mode = _clean_tag_text_mode(getattr(settings, "tag_text_mode", "underscores"))
+    settings.tag_text_mode_active = _clean_tag_text_mode(getattr(settings, "tag_text_mode_active", "underscores"))
+    derived_restart_required = settings.tag_text_mode != settings.tag_text_mode_active
+    if isinstance(restart_required, bool):
+        derived_restart_required = restart_required or derived_restart_required
+    if getattr(settings, "tag_text_mode_restart_required", False) != derived_restart_required:
+        settings.tag_text_mode_restart_required = derived_restart_required
+        changed = True
+    if changed:
+        settings.save(settings_path)
+        db.set_setting("tag_text_mode", settings.tag_text_mode)
+        db.set_setting("tag_text_mode_active", settings.tag_text_mode_active)
+        db.set_setting("tag_text_mode_restart_required", settings.tag_text_mode_restart_required)
+
+
 def build_context(paths: AppPaths) -> AppContext:
     app_settings = AppSettings.load(paths.settings)
+    db = Database(paths.database)
+    _hydrate_tag_text_mode_from_db(app_settings, db, paths.settings)
     set_tag_text_mode(getattr(app_settings, "tag_text_mode", "underscores"))
     if not app_settings.model_cache_dir:
         app_settings.model_cache_dir = str(paths.models / "hf")
         app_settings.save(paths.settings)
-    db = Database(paths.database)
     tag_service = TagService(db, paths, separator=app_settings.tag_separator)
     media_service = MediaService(db, paths)
     metadata_service = MetadataService(db, paths, media_service, tag_service)
@@ -124,7 +165,7 @@ def build_context(paths: AppPaths) -> AppContext:
         exports=ExportService(db, media_service),
         presets=preset_service,
         downloads=DownloaderService(db, preset_service, app_settings.downloader_user_agent, tag_service),
-        distributed=DistributedService(),
+        distributed=DistributedService(paths),
         voice=VoiceService(paths, app_settings, registry),
         video=VideoService(db, media_service, paths.outputs),
         krita=KritaService(db, paths, media_service, tag_service),
@@ -198,6 +239,11 @@ def create_app(paths: AppPaths | None = None) -> FastAPI:
                 c.db.set_setting("tag_text_mode_active", desired_tag_mode)
                 c.db.set_setting("tag_text_mode_restart_required", False)
                 c.settings.save(c.paths.settings)
+                try:
+                    c.tags.invalidate_cache(None)
+                    c.tags.dictionary_status(getattr(c.settings, "default_tag_profile", "e621") or "e621")
+                except Exception as refresh_exc:
+                    print(f"[Data Curation Tool] Tag dictionary status refresh after text-mode migration failed: {refresh_exc}")
                 print(f"[Data Curation Tool] Applied tag text mode migration: {active_tag_mode} -> {desired_tag_mode} ({result})")
         except Exception as exc:
             print(f"[Data Curation Tool] Tag text mode startup migration failed: {exc}")
