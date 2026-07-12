@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import base64
 import csv
+import importlib
 import json
+import importlib.util
 import mimetypes
 import os
 import re
+import shutil
+import site
 import subprocess
 import sys
+import tempfile
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -18,12 +25,483 @@ from PIL import Image
 from .base import Prediction
 
 
+_HYDRA_DLL_DIRECTORY_HANDLES: list[object] = []
+_HYDRA_DLL_DIRECTORY_PATHS: set[str] = set()
+
+
 def _safe_file_uri(path: Path) -> str | None:
     try:
         return path.resolve(strict=False).as_uri()
     except Exception:
         return None
 
+
+def _path_has_libvips(path: Path) -> bool:
+    """Return True when a directory appears to contain libvips or vips tooling."""
+    try:
+        if not path.exists() or not path.is_dir():
+            return False
+        names = {"libvips-42.dll", "vips-42.dll", "vips.dll", "vips.exe"}
+        if any((path / name).exists() for name in names):
+            return True
+        return (
+            any(path.glob("libvips*.dll"))
+            or any(path.glob("libvips*.so*"))
+            or any(path.glob("libvips*.dylib"))
+            or any(path.glob("_libvips*.pyd"))
+        ) or any(path.glob("_libvips*.pyd"))
+    except Exception:
+        return False
+
+
+def _append_candidate_dir(out: list[Path], candidate: Path, *, include_even_without_marker: bool = False) -> None:
+    try:
+        candidate = candidate.expanduser()
+        if candidate.exists() and candidate.is_dir() and candidate not in out:
+            if include_even_without_marker or _path_has_libvips(candidate):
+                out.append(candidate)
+    except Exception:
+        pass
+
+
+def _hydra_libvips_candidate_dirs() -> list[Path]:
+    """Return likely libvips DLL/shared-library directories for Hydra/pyvips.
+
+    pyvips is only the Python binding.  On Windows the libvips DLL directory must
+    also be discoverable.  Conda normally puts it in <env>\\Library\\bin, manual
+    libvips installs are often exposed through VIPSHOME/VIPS_HOME, and pip's
+    pyvips-binary may provide an importable _libvips extension.
+    """
+    raw: list[str | None] = [
+        os.environ.get("VIPS_HOME"),
+        os.environ.get("VIPSHOME"),
+        os.environ.get("LIBVIPS_HOME"),
+        os.environ.get("LIBVIPS_DIR"),
+        os.environ.get("CONDA_PREFIX"),
+        sys.prefix,
+        str(Path(sys.executable).resolve().parent) if sys.executable else None,
+    ]
+    candidates: list[Path] = []
+    for item in raw:
+        if not item:
+            continue
+        base = Path(str(item)).expanduser()
+        for candidate in [base, base / "bin", base / "Library" / "bin", base / "Library" / "usr" / "bin"]:
+            # Environment roots are worth adding even before libvips is present;
+            # the subprocess PATH then remains correct after an installer repair.
+            _append_candidate_dir(candidates, candidate, include_even_without_marker=candidate.name.lower() in {"bin"})
+
+    # Common non-activated Conda location on Windows when the app is launched
+    # from a copied package folder but Python still belongs to a named env.
+    env_name = os.environ.get("CONDA_DEFAULT_ENV") or "data-curation-tool"
+    user_home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+    if user_home:
+        for root in [
+            Path(user_home) / ".conda" / "envs" / env_name,
+            Path(user_home) / "miniconda3" / "envs" / env_name,
+            Path(user_home) / "anaconda3" / "envs" / env_name,
+        ]:
+            for candidate in [root / "Library" / "bin", root / "bin"]:
+                _append_candidate_dir(candidates, candidate, include_even_without_marker=False)
+
+    # PATH entries that already contain libvips are high-value candidates.
+    for item in os.environ.get("PATH", "").split(os.pathsep):
+        if item:
+            _append_candidate_dir(candidates, Path(item), include_even_without_marker=False)
+
+    # pip pyvips-binary can place bundled artifacts under site-packages rather
+    # than a Conda Library/bin directory.  Scan common site roots without
+    # importing pyvips itself, since importing pyvips is what may currently fail.
+    site_roots: list[Path] = []
+    getter = getattr(site, "getsitepackages", None)
+    if callable(getter):
+        try:
+            site_roots.extend(Path(p) for p in getter())
+        except Exception:
+            pass
+    try:
+        user_site = site.getusersitepackages()
+        if user_site:
+            site_roots.append(Path(user_site))
+    except Exception:
+        pass
+    site_roots.extend([Path(sys.prefix) / "Lib" / "site-packages", Path(sys.prefix) / "lib" / "site-packages"])
+    for root in site_roots:
+        if not root.exists():
+            continue
+        for candidate in [root / "pyvips_binary", root / "pyvips_binary" / "bin", root / "pyvips_binary.libs", root / "_libvips.libs"]:
+            _append_candidate_dir(candidates, candidate, include_even_without_marker=True)
+        try:
+            for pattern in ("pyvips_binary*/**/libvips-42.dll", "pyvips_binary*/**/_libvips*.pyd", "_libvips*.pyd"):
+                for artifact in root.glob(pattern):
+                    _append_candidate_dir(candidates, artifact.parent, include_even_without_marker=True)
+        except Exception:
+            pass
+
+    # If pyvips-binary installed _libvips as a package/extension, keep its parent
+    # directory in the search set for diagnostics and subprocess inheritance.
+    try:
+        spec = importlib.util.find_spec("_libvips")
+        origin = getattr(spec, "origin", None)
+        if origin:
+            _append_candidate_dir(candidates, Path(origin).resolve().parent, include_even_without_marker=True)
+    except Exception:
+        pass
+
+    # pyvips-binary wheels may place binary artifacts under site-packages even
+    # before _libvips can be imported in this process.  Search narrowly for those
+    # package-specific locations and do not walk unrelated folders.
+    site_roots: list[Path] = []
+    getter = getattr(site, "getsitepackages", None)
+    if callable(getter):
+        try:
+            site_roots.extend(Path(item) for item in getter())
+        except Exception:
+            pass
+    try:
+        user_site = site.getusersitepackages()
+        if user_site:
+            site_roots.append(Path(user_site))
+    except Exception:
+        pass
+    site_roots.extend([
+        Path(sys.prefix) / "Lib" / "site-packages",
+        Path(sys.prefix) / "lib" / "site-packages",
+    ])
+    for root in site_roots:
+        if not root.exists():
+            continue
+        for candidate in [
+            root / "pyvips_binary",
+            root / "pyvips_binary" / "bin",
+            root / "pyvips_binary.libs",
+            root / "_libvips.libs",
+        ]:
+            _append_candidate_dir(candidates, candidate, include_even_without_marker=True)
+        try:
+            for pattern in ("pyvips_binary*/**/libvips-42.dll", "pyvips_binary*/**/_libvips*.pyd", "_libvips*.pyd"):
+                for artifact in root.glob(pattern):
+                    _append_candidate_dir(candidates, artifact.parent, include_even_without_marker=True)
+        except Exception:
+            pass
+    return candidates
+
+
+def _prepare_hydra_libvips_runtime() -> list[Path]:
+    """Make libvips visible to the current Python process where possible."""
+    candidates = _hydra_libvips_candidate_dirs()
+    if os.name == "nt":
+        add_dll_dir = getattr(os, "add_dll_directory", None)
+        if callable(add_dll_dir):
+            for candidate in candidates:
+                key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+                if key in _HYDRA_DLL_DIRECTORY_PATHS:
+                    continue
+                try:
+                    # The returned handle must stay alive; closing or dropping it
+                    # removes the directory from the DLL search path.
+                    handle = add_dll_dir(str(candidate))
+                    _HYDRA_DLL_DIRECTORY_HANDLES.append(handle)
+                    _HYDRA_DLL_DIRECTORY_PATHS.add(key)
+                except Exception:
+                    pass
+    if candidates:
+        current = os.environ.get("PATH", "")
+        parts = current.split(os.pathsep) if current else []
+        prepend = [str(p) for p in candidates if str(p) not in parts]
+        if prepend:
+            os.environ["PATH"] = os.pathsep.join(prepend + parts)
+    return candidates
+
+
+def _hydra_pyvips_probe_error(exc: BaseException, candidates: list[Path]) -> str:
+    found = [str(path) for path in candidates if _path_has_libvips(path)]
+    pyvips_binary_available = False
+    try:
+        pyvips_binary_available = importlib.util.find_spec("_libvips") is not None
+    except Exception:
+        pyvips_binary_available = False
+    detail = str(exc)
+    if found:
+        detail += "; libvips-like DLL/shared-library files were found in: " + "; ".join(found[:8])
+    else:
+        detail += "; no libvips DLL/shared-library files were found in the active Conda/PATH candidate directories"
+    if pyvips_binary_available:
+        detail += "; pyvips-binary/_libvips fallback was detected"
+    else:
+        detail += "; pyvips-binary/_libvips fallback was not detected"
+    return detail
+
+
+def _hydra_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    candidates = _prepare_hydra_libvips_runtime()
+    if candidates:
+        current = env.get("PATH", "")
+        parts = current.split(os.pathsep) if current else []
+        prepend = [str(p) for p in candidates if str(p) not in parts]
+        if prepend:
+            env["PATH"] = os.pathsep.join(prepend + parts)
+    # Hydra writes a very wide CSV header to stdout containing Unicode tag labels
+    # such as gender symbols.  On Windows, a child Python process can otherwise
+    # default stdout to cp1252 and crash before the adapter can parse anything.
+    env.setdefault("PYTHONUTF8", "1")
+    env["PYTHONIOENCODING"] = "utf-8"
+    env.setdefault("PYTHONLEGACYWINDOWSSTDIO", "0")
+    env.setdefault("LC_ALL", "C.UTF-8")
+    env.setdefault("LANG", "C.UTF-8")
+    return env
+
+
+def _hydra_clear_import_cache() -> None:
+    importlib.invalidate_caches()
+    for module_name in list(sys.modules):
+        if module_name == "pyvips" or module_name.startswith("pyvips.") or module_name == "_libvips":
+            sys.modules.pop(module_name, None)
+
+
+def _hydra_check_runtime_dependencies(include_core: bool = True) -> tuple[list[str], list[str]]:
+    """Return (missing_dependency_labels, diagnostic_notes)."""
+    missing: list[str] = []
+    notes: list[str] = []
+    if include_core:
+        for module_name, package_name in [
+            ("torch", "torch"),
+            ("torchvision", "torchvision"),
+            ("timm", "timm>=1.0.16"),
+            ("einops", "einops"),
+            ("safetensors", "safetensors"),
+            ("PIL", "pillow"),
+            ("numpy", "numpy"),
+        ]:
+            try:
+                __import__(module_name)
+            except Exception as exc:
+                missing.append(f"{package_name} ({exc})")
+    candidate_dirs = _prepare_hydra_libvips_runtime()
+    if candidate_dirs:
+        notes.append("libvips candidate dirs: " + "; ".join(str(p) for p in candidate_dirs[:10]))
+    _hydra_clear_import_cache()
+    try:
+        import pyvips  # type: ignore
+        version = getattr(pyvips, "__version__", "unknown")
+        api_mode = getattr(pyvips, "API_mode", "unknown")
+        notes.append(f"pyvips import OK; version={version}; API_mode={api_mode}")
+    except Exception as exc:
+        missing.append(f"pyvips + libvips ({_hydra_pyvips_probe_error(exc, candidate_dirs)})")
+    return missing, notes
+
+
+def _hydra_run_repair_command(cmd: list[str], timeout: int = 1200) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+            env=os.environ.copy(),
+        )
+    except Exception as exc:
+        return False, f"{cmd!r} -> failed to start: {exc}"
+    tail = ((proc.stdout or "") + "\n" + (proc.stderr or ""))[-6000:]
+    return proc.returncode == 0, f"{cmd!r} -> exit {proc.returncode}\n{tail}"
+
+
+def _hydra_auto_repair_runtime_dependencies() -> list[str]:
+    """Attempt a local, in-environment repair for pyvips/libvips.
+
+    pip's pyvips-binary wheel is tried first because it is self-contained and
+    does not require Conda to be initialized inside the app process. Conda is
+    attempted second when CONDA_EXE or conda is visible.
+    """
+    logs: list[str] = []
+    pip_cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade-strategy",
+        "only-if-needed",
+        "pyvips[binary]>=3.0.0",
+        "pyvips-binary>=8.16.0",
+        "cffi>=1.17.1",
+    ]
+    ok, detail = _hydra_run_repair_command(pip_cmd)
+    logs.append(detail)
+    missing, notes = _hydra_check_runtime_dependencies(include_core=False)
+    logs.extend(notes)
+    if ok and not any("pyvips" in item for item in missing):
+        return logs
+
+    conda = os.environ.get("CONDA_EXE") or shutil.which("conda")
+    conda_env = os.environ.get("CONDA_DEFAULT_ENV") or Path(sys.prefix).name or "data-curation-tool"
+    if conda:
+        conda_cmd = [str(conda), "install", "-n", str(conda_env), "-c", "conda-forge", "-y", "pyvips", "libvips", "cffi"]
+        ok2, detail2 = _hydra_run_repair_command(conda_cmd, timeout=1800)
+        logs.append(detail2)
+        missing2, notes2 = _hydra_check_runtime_dependencies(include_core=False)
+        logs.extend(notes2)
+        if ok2 and not any("pyvips" in item for item in missing2):
+            return logs
+    else:
+        logs.append("No conda executable found through CONDA_EXE or PATH; skipped conda pyvips/libvips repair.")
+    return logs
+
+
+def _hydra_runtime_failure_message(missing_deps: list[str], notes: list[str] | None = None, repair_logs: list[str] | None = None) -> str:
+    body = (
+        "Hydra 3.5 runtime dependencies are missing in the active environment: "
+        + ", ".join(missing_deps)
+        + ". The app prepared libvips DLL/search paths and, when enabled, attempts a local repair using pyvips-binary and conda-forge libvips. "
+        + "Run install_hydra_runtime_deps.bat/update.bat, or manually run: "
+        + f'"{sys.executable}" -m pip install "pyvips[binary]>=3.0.0" pyvips-binary>=8.16.0 cffi>=1.17.1. '
+        + "For Conda installs, use: conda install -n data-curation-tool -c conda-forge pyvips libvips cffi"
+    )
+    details: list[str] = []
+    if notes:
+        details.append("Runtime notes:\n" + "\n".join(str(x) for x in notes[-12:]))
+    if repair_logs:
+        details.append("Repair attempt log tail:\n" + "\n---\n".join(str(x)[-2500:] for x in repair_logs[-4:]))
+    if details:
+        body += "\n\n" + "\n\n".join(details)
+    return body
+
+
+
+def _hydra_patch_repo_source_compat(repo_path: Path) -> list[str]:
+    """Patch downloaded Hydra source files for Python runtime compatibility.
+
+    Hydra 3.5 is intentionally repo-native: the model card publishes an
+    ``inference.py`` and a ``utils/loader.py`` that must match each other.  The
+    first public release has two small Python 3.11/loader drift issues seen in
+    local installs:
+
+    * runtime-evaluated queue annotations such as ``MpQueue[str]``;
+    * ``inference.py`` calling ``Loader.heuristic_max_workers`` and passing
+      ``max_workers=...`` while some downloaded ``loader.py`` snapshots only
+      expose ``heuristic_workers`` and a two-argument constructor.
+
+    This patch is deliberately narrow and only adjusts the downloaded Python
+    source around those compatibility seams.  It never edits model weights or
+    tag metadata, and it keeps a first-write backup next to the patched file.
+    """
+    notes: list[str] = []
+    try:
+        repo_path = Path(repo_path).expanduser()
+    except Exception:
+        return notes
+    if not repo_path.exists():
+        return notes
+
+    loader_path = repo_path / "utils" / "loader.py"
+    inference_path = repo_path / "inference.py"
+    queue_patterns = [
+        (re.compile(r"\b(MpQueue|Queue|TorchQueue)\s*\[[^\]\n]+\]"), r"\1"),
+        (re.compile(r"\b((?:mp|multiprocessing|torch\.multiprocessing)\.Queue)\s*\[[^\]\n]+\]"), r"\1"),
+    ]
+
+    patched_files: list[str] = []
+
+    def write_if_changed(file_path: Path, original: str, updated: str) -> None:
+        if updated == original:
+            return
+        backup = file_path.with_suffix(file_path.suffix + ".dctbak")
+        try:
+            if not backup.exists():
+                backup.write_text(original, encoding="utf-8")
+            file_path.write_text(updated, encoding="utf-8")
+            patched_files.append(str(file_path.relative_to(repo_path)))
+        except Exception as exc:
+            raise RuntimeError(
+                "Hydra 3.5 source compatibility patch failed. "
+                f"The app could not rewrite {file_path}. Underlying error: {exc}"
+            ) from exc
+
+    if loader_path.exists() and loader_path.is_file():
+        try:
+            original = loader_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            original = loader_path.read_text(encoding="utf-8", errors="replace")
+        updated = original
+        for pattern, repl in queue_patterns:
+            updated = pattern.sub(repl, updated)
+
+        # Some public Hydra snapshots have inference.py calling Loader(...,
+        # max_workers=...), while loader.py has not yet accepted that keyword.
+        if "max_workers:" not in updated and "max_workers=" not in updated:
+            updated = updated.replace(
+                "        *,\n        share_memory: bool = True,\n    ) -> None:\n        self._config = config\n",
+                "        *,\n        max_workers: int | None = None,\n        share_memory: bool = True,\n    ) -> None:\n        self._config = config\n        if max_workers is not None:\n            try:\n                _max_workers = max(0, int(max_workers))\n                _requested_workers = int(n_workers)\n                if _requested_workers < 0 or _requested_workers > _max_workers:\n                    n_workers = _max_workers\n            except Exception:\n                pass\n",
+            )
+            updated = updated.replace(
+                "        *,\n        share_memory = True,\n    ) -> None:\n        self._config = config\n",
+                "        *,\n        max_workers = None,\n        share_memory = True,\n    ) -> None:\n        self._config = config\n        if max_workers is not None:\n            try:\n                _max_workers = max(0, int(max_workers))\n                _requested_workers = int(n_workers)\n                if _requested_workers < 0 or _requested_workers > _max_workers:\n                    n_workers = _max_workers\n            except Exception:\n                pass\n",
+            )
+
+        # inference.py may call heuristic_max_workers while loader.py exposes
+        # heuristic_workers.  Add a compatibility alias instead of rewriting the
+        # command-line script, so future upstream fixes remain compatible.
+        if "def heuristic_workers(" in updated and "def heuristic_max_workers(" not in updated:
+            updated = updated.replace(
+                "        return min(workers, max_workers)\n\n    def _worker_fn(",
+                "        return min(workers, max_workers)\n\n    @staticmethod\n    def heuristic_max_workers(workers: int, count: int, batch_size: int) -> int:\n        return Loader.heuristic_workers(workers, count, batch_size)\n\n    def _worker_fn(",
+            )
+            updated = updated.replace(
+                "        return min(workers, max_workers)\n\ndef _worker_fn(",
+                "        return min(workers, max_workers)\n\n    @staticmethod\n    def heuristic_max_workers(workers: int, count: int, batch_size: int) -> int:\n        return Loader.heuristic_workers(workers, count, batch_size)\n\ndef _worker_fn(",
+            )
+
+        # If the alias insertion failed because formatting changed, add a simple
+        # assignment after the class body.  This is valid for staticmethod access.
+        if "heuristic_max_workers" not in updated and "heuristic_workers" in updated and "def _worker_fn(" in updated:
+            updated = updated.replace(
+                "def _worker_fn(",
+                "Loader.heuristic_max_workers = staticmethod(Loader.heuristic_workers)\n\ndef _worker_fn(",
+                1,
+            )
+
+        write_if_changed(loader_path, original, updated)
+
+
+    if inference_path.exists() and inference_path.is_file():
+        try:
+            original = inference_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            original = inference_path.read_text(encoding="utf-8", errors="replace")
+        updated = original
+        if "DCT_HYDRA_UTF8_STDIO_PATCH" not in updated:
+            patch = (
+                "\n# DCT_HYDRA_UTF8_STDIO_PATCH: keep Windows stdout/stderr UTF-8 so wide CSV tag headers do not crash on cp1252.\n"
+                "try:\n"
+                "    import sys as _dct_sys\n"
+                "    for _dct_stream in (_dct_sys.stdout, _dct_sys.stderr):\n"
+                "        if hasattr(_dct_stream, 'reconfigure'):\n"
+                "            _dct_stream.reconfigure(encoding='utf-8', errors='replace')\n"
+                "except Exception:\n"
+                "    pass\n"
+            )
+            if updated.startswith("#!"):
+                first_newline = updated.find("\n")
+                if first_newline >= 0:
+                    updated = updated[:first_newline + 1] + patch + updated[first_newline + 1:]
+                else:
+                    updated = updated + patch
+            else:
+                updated = patch + updated
+        write_if_changed(inference_path, original, updated)
+
+    if patched_files:
+        unique = sorted(set(patched_files))
+        marker_payload = {"patched_files": unique, "patch": "queue_annotations_loader_max_workers_utf8_stdio"}
+        for marker_name in (".dct_hydra_compat_patch_v3.json", ".dct_hydra_compat_patch_v2.json", ".dct_hydra_py311_queue_patch.json"):
+            marker = repo_path / marker_name
+            try:
+                marker.write_text(json.dumps(marker_payload, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+        notes.append("Patched Hydra source compatibility in: " + ", ".join(unique))
+    return notes
 
 def _local_hf_folder_missing_support_files(model_id: Any, family: str) -> list[str]:
     try:
@@ -66,6 +544,12 @@ def _try_repair_local_hf_support_files(model_id: Any, source_repo: str | None, k
     missing = _local_hf_folder_missing_support_files(model_id, family)
     if not missing:
         return
+    if kwargs.get("local_files_only") and not kwargs.get("allow_support_file_repair"):
+        raise RuntimeError(
+            f"Local {family} model folder is incomplete: missing {', '.join(missing)}. "
+            "Load is running in local-files-only mode, so it will not download repair files. "
+            "Use Queue Download/Update or enable an explicit support-file repair step."
+        )
     if not source_repo or str(source_repo) == str(model_id):
         raise RuntimeError(
             f"Local {family} model folder is incomplete: missing {', '.join(missing)}. "
@@ -210,6 +694,8 @@ def _hf_pipeline_extra_kwargs(kwargs: dict[str, Any] | None = None) -> dict[str,
     revision = kwargs.get("revision")
     if revision:
         pipe_kwargs["revision"] = revision
+    if kwargs.get("local_files_only"):
+        pipe_kwargs["local_files_only"] = True
     return pipe_kwargs
 
 
@@ -228,6 +714,8 @@ def _hf_load_runtime_error(task: str, model_id: Any, device: str, placement: dic
         "and the selected GPU/VRAM placement can fit the requested dtype/quantization. "
         f"Primary error: {primary}"
     )
+    if kwargs.get("local_files_only"):
+        detail += " Load is local-files-only, so no Hugging Face download was attempted."
     if secondary is not None:
         detail += f"; fallback/manual-loader error: {secondary}"
     return RuntimeError(detail)
@@ -1505,12 +1993,7 @@ class HFImageClassifierAdapter:
 
         model_id = kwargs.get("model_id") or kwargs.get("repo_id") or self.repo_id
         placement = _hf_pipeline_device_kwargs(device, kwargs)
-        pipe_kwargs = {}
-        token = kwargs.get("huggingface_token") or kwargs.get("token")
-        if token:
-            pipe_kwargs["token"] = token
-        if kwargs.get("trust_remote_code") is not None:
-            pipe_kwargs["trust_remote_code"] = bool(kwargs.get("trust_remote_code"))
+        pipe_kwargs = _hf_pipeline_extra_kwargs(kwargs)
         self.pipeline = pipeline("image-classification", model=model_id, **placement, **pipe_kwargs)
         self.repo_id = str(model_id)
         self.loaded_model_id = str(model_id)
@@ -1540,7 +2023,7 @@ class HFImageMultiLabelTaggerAdapter(HFImageClassifierAdapter):
     tags, applies a threshold, and still stores raw classes for auditability.
     """
 
-    def __init__(self, name: str, label: str, repo_id: str, *, default_threshold: float = 0.25, max_tags: int = 250):
+    def __init__(self, name: str, label: str, repo_id: str, *, default_threshold: float = 0.70, max_tags: int = 250):
         super().__init__(name, label, repo_id)
         self.kind = "tagger"
         self.default_threshold = float(default_threshold)
@@ -1611,6 +2094,1420 @@ class HFImageRatingAdapter(HFImageMultiLabelTaggerAdapter):
         return Prediction(kind="rating", tags=tags, classes=classes, raw={"repo_id": self.repo_id, "model_id": str(model_id), "best_rating": best, "outputs": outputs})
 
 
+class WDOnnxTaggerAdapter:
+    """Isolated dual-runtime adapter for WD v3 and PixAI taggers.
+
+    The five catalog rows that use this adapter may contain either the official
+    ONNX export or the official timm ``model.safetensors`` payload.  ONNX is
+    preferred when its runtime is healthy and can honor the requested device;
+    otherwise the WD rows fall back to the local timm/safetensors weights.
+    PixAI's public export is ONNX-only and therefore reports a focused runtime
+    repair error instead of silently using a different adapter or device.
+
+    Keeping this adapter separate from the verified Thouph/legacy paths is
+    deliberate: fixes here cannot change preprocessing or loading behavior for
+    the taggers the user already confirmed working.
+    """
+
+    kind = "tagger"
+    _ONNX_FILENAMES = ["model.onnx", "model_fp16.onnx", "model-fp16.onnx", "onnx/model.onnx"]
+    _TORCH_FILENAMES = ["model.safetensors", "pytorch_model.safetensors"]
+    _TAG_FILENAMES = ["selected_tags.csv", "tags.csv", "labels.csv", "classes.csv"]
+    _CONFIG_FILENAMES = ["config.json"]
+
+    def __init__(self, name: str, label: str, repo_id: str, *, base_repo_id: str | None = None, default_threshold: float = 0.70):
+        self.name = name
+        self.label = label
+        self.repo_id = repo_id
+        self.base_repo_id = base_repo_id or repo_id
+        self.default_threshold = float(default_threshold)
+        self.session = None
+        self.torch_model = None
+        self.torch_device = None
+        self.model_path: Path | None = None
+        self.tags_path: Path | None = None
+        self.config_path: Path | None = None
+        self.tag_rows: list[dict[str, Any]] = []
+        self.tag_names: list[str] = []
+        self.categories: list[int | None] = []
+        self.device_value = "cpu"
+        self.device_warning: str | None = None
+        self.runtime_warning: str | None = None
+        self.runtime = "unloaded"
+        self.model_target_size = 448
+        self.pretrained_cfg: dict[str, Any] = {
+            "mean": [0.5, 0.5, 0.5],
+            "std": [0.5, 0.5, 0.5],
+            "interpolation": "bicubic",
+            "input_size": [3, 448, 448],
+        }
+        self.onnx_input_layout = "nhwc"
+        self.onnx_input_range = "0_255"
+
+    def is_available(self) -> bool:
+        return True
+
+    @staticmethod
+    def _cuda_index_from_device(device: Any) -> int | None:
+        text = str(device or "").strip().lower()
+        if text in {"cuda", "auto_cuda"}:
+            return 0
+        if text.startswith("cuda:"):
+            try:
+                return int(text.split(":", 1)[1])
+            except Exception:
+                return None
+        return None
+
+    @staticmethod
+    def _is_explicit_cuda(device: Any) -> bool:
+        return str(device or "").strip().lower().startswith("cuda") or str(device or "").strip().lower() == "auto_cuda"
+
+    @staticmethod
+    def _onnxruntime_module():
+        try:
+            import onnxruntime as ort
+        except Exception as exc:
+            raise RuntimeError(
+                "WD/PixAI ONNX runtime import failed. Run update.bat/update.sh, or run "
+                "`python scripts/repair_onnxruntime_runtime.py --ensure-gpu`. "
+                f"Import error: {exc}"
+            ) from exc
+        missing = [name for name in ("InferenceSession", "get_available_providers") if not callable(getattr(ort, name, None))]
+        if missing:
+            module_file = getattr(ort, "__file__", None)
+            raise RuntimeError(
+                "The installed onnxruntime namespace is incomplete/corrupted: missing "
+                + ", ".join(missing)
+                + f" (module={module_file!r}). The CPU and GPU wheels share one import namespace; "
+                  "run update.bat/update.sh or `python scripts/repair_onnxruntime_runtime.py --ensure-gpu` "
+                  "to remove both distributions and reinstall a clean onnxruntime-gpu wheel."
+            )
+        return ort
+
+    def _local_root(self, model_id: Any) -> Path | None:
+        if not model_id:
+            return None
+        try:
+            raw = Path(str(model_id)).expanduser()
+        except Exception:
+            return None
+        if raw.exists():
+            return raw.parent if raw.is_file() else raw
+        return None
+
+    def _find_local_file(self, model_id: Any, filenames: list[str]) -> Path | None:
+        root = self._local_root(model_id)
+        if root is None:
+            return None
+        if Path(str(model_id)).expanduser().is_file():
+            candidate = Path(str(model_id)).expanduser()
+            if candidate.name.lower() in {Path(x).name.lower() for x in filenames}:
+                return candidate
+        for name in filenames:
+            fp = root / name
+            if fp.exists() and fp.is_file() and fp.stat().st_size > 0:
+                return fp
+        exact_names = {Path(x).name.lower() for x in filenames}
+        try:
+            candidates = [fp for fp in root.rglob("*") if fp.is_file() and fp.name.lower() in exact_names and fp.stat().st_size > 0]
+        except Exception:
+            candidates = []
+        if candidates:
+            candidates.sort(key=lambda x: (len(x.relative_to(root).parts), len(str(x)), str(x).lower()))
+            return candidates[0]
+        return None
+
+    def _resolve_file(self, model_id: Any, filenames: list[str], *, token: str | None = None, local_files_only: bool = False) -> Path:
+        local = self._find_local_file(model_id, filenames)
+        if local is not None:
+            return local
+        if local_files_only:
+            raise RuntimeError(
+                f"Local WD/PixAI tagger file not found. Searched {str(model_id or '')!r} for any of {filenames}. "
+                "Load is running in local-files-only mode after migration, so it will not download files. Use Models > Rescan, "
+                "add the previous install/models folder as an external root, or run explicit Queue Download/Update."
+            )
+        repo = str(model_id or self.repo_id)
+        if not repo or Path(repo).exists() or ":\\" in repo or repo.startswith("/"):
+            repo = self.repo_id
+        try:
+            from huggingface_hub import hf_hub_download
+        except Exception as exc:
+            raise RuntimeError("Install optional model dependencies first: pip install huggingface_hub") from exc
+        last_exc: Exception | None = None
+        for filename in filenames:
+            try:
+                return Path(hf_hub_download(repo_id=repo, filename=filename, token=token or os.environ.get("HF_TOKEN") or None))
+            except Exception as exc:
+                last_exc = exc
+        raise RuntimeError(f"Could not locate/download any of {filenames} for {repo}: {last_exc}")
+
+    def _load_tags(self, path: Path) -> None:
+        rows: list[dict[str, Any]] = []
+        with path.open("r", encoding="utf-8", errors="ignore", newline="") as fh:
+            sample = fh.read(4096)
+            fh.seek(0)
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=",\t;") if sample.strip() else csv.excel
+            except Exception:
+                dialect = csv.excel
+            reader = csv.DictReader(fh, dialect=dialect)
+            if reader.fieldnames and any(str(x).lower() == "name" for x in reader.fieldnames):
+                for row in reader:
+                    rows.append({str(k or "").strip(): v for k, v in (row or {}).items()})
+            else:
+                fh.seek(0)
+                plain = csv.reader(fh, dialect)
+                for raw in plain:
+                    if not raw:
+                        continue
+                    name = str(raw[0] if len(raw) == 1 else raw[1] if str(raw[0]).isdigit() else raw[0]).strip()
+                    if not name or name.lower() in {"name", "tag"}:
+                        continue
+                    rows.append({"name": name, "category": raw[2] if len(raw) > 2 else None})
+        names: list[str] = []
+        cats: list[int | None] = []
+        clean_rows: list[dict[str, Any]] = []
+        for row in rows:
+            raw_name = row.get("name") or row.get("tag") or row.get("label") or ""
+            name = self._normalize_tag(raw_name)
+            if not name:
+                continue
+            cat_raw = row.get("category") or row.get("cat") or row.get("group")
+            try:
+                cat = int(float(cat_raw)) if cat_raw not in (None, "") else None
+            except Exception:
+                text = str(cat_raw or "").lower()
+                cat = 9 if "rating" in text else 4 if "char" in text else 3 if "copy" in text else 0 if "general" in text else None
+            clean_rows.append({**row, "name": name, "category": cat})
+            names.append(name)
+            cats.append(cat)
+        if not names:
+            raise RuntimeError(f"No usable tags found in {path}")
+        self.tag_rows = clean_rows
+        self.tag_names = names
+        self.categories = cats
+
+    @staticmethod
+    def _normalize_tag(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        text = text.replace(" ", "_")
+        return re.sub(r"[^0-9A-Za-z_:.+\-/()]+", "_", text).strip("_., ").lower()
+
+    @staticmethod
+    def _mcut_threshold(scores: list[float]) -> float:
+        if len(scores) < 2:
+            return 0.0
+        ordered = sorted([float(x) for x in scores], reverse=True)
+        gaps = [ordered[i] - ordered[i + 1] for i in range(len(ordered) - 1)]
+        idx = max(range(len(gaps)), key=lambda i: gaps[i]) if gaps else 0
+        return float((ordered[idx] + ordered[idx + 1]) / 2.0)
+
+    def _load_onnx(self, model_path: Path, device: str) -> None:
+        ort = self._onnxruntime_module()
+        # ONNX Runtime CUDA sessions on Windows depend on CUDA/cuDNN/MSVC DLLs
+        # being visible before the session is constructed.  Importing torch and
+        # calling preload_dlls mirrors the official ORT guidance and prevents a
+        # CUDA wheel from falling back to CPU merely because DLLs were not
+        # preloaded into the process.
+        preload_errors: list[str] = []
+        try:
+            import torch  # noqa: F401
+        except Exception as exc:
+            preload_errors.append(f"torch preload skipped: {exc}")
+        if callable(getattr(ort, "preload_dlls", None)):
+            try:
+                ort.preload_dlls(cuda=True, cudnn=True, msvc=True)
+            except Exception as exc:
+                preload_errors.append(f"onnxruntime.preload_dlls failed: {exc}")
+        try:
+            available = set(ort.get_available_providers() or [])
+        except Exception as exc:
+            raise RuntimeError(f"Could not query ONNX Runtime execution providers: {exc}") from exc
+        cuda_idx = self._cuda_index_from_device(device)
+        providers: list[Any]
+        if cuda_idx is not None:
+            if "CUDAExecutionProvider" not in available:
+                detail = (" Preload diagnostics: " + "; ".join(preload_errors)) if preload_errors else ""
+                raise RuntimeError(
+                    f"CUDA was explicitly selected for {self.label} ({device}), but this ONNX Runtime build does not expose "
+                    "CUDAExecutionProvider. Run update.bat/update.sh or `python scripts/repair_onnxruntime_runtime.py --ensure-gpu --force`; "
+                    "the app pins the CUDA-12 onnxruntime-gpu wheel and preloads CUDA/cuDNN DLLs. CPU fallback is disabled "
+                    "for an explicitly assigned GPU." + detail
+                )
+            # Provider tuples keep the requested physical device id attached to
+            # the provider and avoid positional provider_options mismatches.
+            providers = [("CUDAExecutionProvider", {"device_id": int(cuda_idx)}), "CPUExecutionProvider"]
+        else:
+            providers = ["CPUExecutionProvider"]
+        try:
+            session = ort.InferenceSession(str(model_path), providers=providers)
+        except Exception as exc:
+            raise RuntimeError(f"ONNX Runtime could not create a session for {model_path}: {exc}") from exc
+        active = set(session.get_providers() or []) if callable(getattr(session, "get_providers", None)) else set()
+        if cuda_idx is not None and "CUDAExecutionProvider" not in active:
+            detail = (" Preload diagnostics: " + "; ".join(preload_errors)) if preload_errors else ""
+            raise RuntimeError(
+                f"ONNX session for {self.label} did not activate CUDAExecutionProvider on cuda:{cuda_idx}; active providers: {sorted(active)}. "
+                "The model was not accepted as loaded because the selected GPU placement was not honored. "
+                "Run update.bat/update.sh or `python scripts/repair_onnxruntime_runtime.py --ensure-gpu --force` to reinstall the CUDA-12 ONNX Runtime GPU stack."
+                + detail
+            )
+        self.session = session
+        self.torch_model = None
+        self.torch_device = None
+        self.runtime = "onnxruntime"
+        self.model_path = model_path
+        self.device_value = f"cuda:{cuda_idx}" if cuda_idx is not None else "cpu"
+        try:
+            input_meta = session.get_inputs()[0]
+            shape = list(input_meta.shape or [])
+            if len(shape) == 4:
+                def _dim(idx: int) -> int:
+                    try:
+                        value = shape[idx]
+                        return int(value) if isinstance(value, int) or str(value).isdigit() else 0
+                    except Exception:
+                        return 0
+                d1, d2, d3 = _dim(1), _dim(2), _dim(3)
+                # SmilingWolf WD ONNX exports use NHWC float32 BGR tensors.
+                # DeepGHS PixAI ONNX exports expose a PyTorch-style NCHW input.
+                # Record the actual session contract instead of hard-coding one
+                # layout for both families. This fixes PixAI's INVALID_ARGUMENT
+                # error where [1,448,448,3] was fed to a [1,3,448,448] model.
+                if d1 == 3 and max(d2, d3) > 0:
+                    self.onnx_input_layout = "nchw"
+                    self.model_target_size = max(d2, d3)
+                    self.onnx_input_range = "0_1_normalized" if self.name == "pixai-tagger-v09" else "0_255"
+                elif d3 == 3 and max(d1, d2) > 0:
+                    self.onnx_input_layout = "nhwc"
+                    self.model_target_size = max(d1, d2)
+                    self.onnx_input_range = "0_255"
+                elif max(d1, d2, d3) > 0:
+                    self.model_target_size = max(d1, d2, d3)
+            elif len(shape) >= 3:
+                h = int(shape[1]) if isinstance(shape[1], int) or str(shape[1]).isdigit() else 0
+                w = int(shape[2]) if isinstance(shape[2], int) or str(shape[2]).isdigit() else 0
+                if h > 0 and w > 0:
+                    self.model_target_size = max(h, w)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _strip_state_prefix(state: dict[str, Any]) -> dict[str, Any]:
+        for prefix in ("module.", "model.", "_orig_mod."):
+            if state and all(str(k).startswith(prefix) for k in state):
+                return {str(k)[len(prefix):]: v for k, v in state.items()}
+        return state
+
+    def _load_timm_safetensors(self, model_path: Path, config_path: Path, device: str) -> None:
+        try:
+            import torch
+            import timm
+            from safetensors.torch import load_file as load_safetensors
+        except Exception as exc:
+            raise RuntimeError(
+                "The WD safetensors fallback requires torch, timm, and safetensors. Run update.bat/update.sh or install requirements-models.txt. "
+                f"Import error: {exc}"
+            ) from exc
+        requested_cuda = self._cuda_index_from_device(device)
+        if requested_cuda is not None:
+            if not torch.cuda.is_available() or requested_cuda >= torch.cuda.device_count():
+                raise RuntimeError(
+                    f"{self.label} was assigned to cuda:{requested_cuda}, but PyTorch cannot use that device. "
+                    f"torch.cuda.is_available()={torch.cuda.is_available()}, device_count={torch.cuda.device_count()}."
+                )
+            torch_device = torch.device(f"cuda:{requested_cuda}")
+        else:
+            torch_device = torch.device("cpu")
+        try:
+            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise RuntimeError(f"Could not read WD timm config {config_path}: {exc}") from exc
+        architecture = str(cfg.get("architecture") or "").strip()
+        num_classes = int(cfg.get("num_classes") or 0)
+        if not architecture or num_classes <= 0:
+            raise RuntimeError(f"WD config {config_path} is missing architecture/num_classes required for local timm loading.")
+        model_args = dict(cfg.get("model_args") or {})
+        if cfg.get("global_pool") and "global_pool" not in model_args:
+            model_args["global_pool"] = cfg.get("global_pool")
+        try:
+            model = timm.create_model(architecture, pretrained=False, num_classes=num_classes, **model_args)
+        except Exception as exc:
+            raise RuntimeError(f"timm could not construct architecture {architecture!r} from {config_path}: {exc}") from exc
+        try:
+            state = self._strip_state_prefix(dict(load_safetensors(str(model_path), device="cpu")))
+            incompatible = model.load_state_dict(state, strict=True)
+            if getattr(incompatible, "missing_keys", None) or getattr(incompatible, "unexpected_keys", None):
+                raise RuntimeError(
+                    f"state dict mismatch: missing={getattr(incompatible, 'missing_keys', [])[:12]}, "
+                    f"unexpected={getattr(incompatible, 'unexpected_keys', [])[:12]}"
+                )
+        except Exception as exc:
+            raise RuntimeError(f"Could not load local WD safetensors weights from {model_path}: {exc}") from exc
+        self.pretrained_cfg = {**self.pretrained_cfg, **dict(cfg.get("pretrained_cfg") or {})}
+        input_size = list(self.pretrained_cfg.get("input_size") or [3, 448, 448])
+        if len(input_size) >= 3:
+            try:
+                self.model_target_size = int(max(input_size[-2:]))
+            except Exception:
+                self.model_target_size = 448
+        model.eval()
+        model.to(torch_device)
+        try:
+            actual = next(model.parameters()).device
+            if actual.type != torch_device.type or (torch_device.type == "cuda" and actual.index != torch_device.index):
+                raise RuntimeError(f"model parameters landed on {actual}, expected {torch_device}")
+        except StopIteration:
+            pass
+        self.torch_model = model
+        self.torch_device = torch_device
+        self.session = None
+        self.runtime = "timm_safetensors"
+        self.model_path = model_path
+        self.config_path = config_path
+        self.device_value = str(torch_device)
+
+    def load(self, device: str = "auto", **kwargs: Any) -> None:
+        model_id = kwargs.get("model_id") or kwargs.get("repo_id") or self.repo_id
+        token = kwargs.get("huggingface_token") or kwargs.get("token")
+        if device == "auto":
+            try:
+                import torch
+                device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            except Exception:
+                device = "cpu"
+        elif device == "auto_cuda":
+            device = "cuda:0"
+        device = str(device or "cpu")
+        self.device_warning = None
+        self.runtime_warning = None
+        self.runtime = "loading"
+        local_only = bool(kwargs.get("local_files_only"))
+
+        self.tags_path = self._resolve_file(model_id, self._TAG_FILENAMES, token=token, local_files_only=local_only)
+        self._load_tags(self.tags_path)
+        onnx_path = self._find_local_file(model_id, self._ONNX_FILENAMES)
+        torch_path = self._find_local_file(model_id, self._TORCH_FILENAMES)
+        config_path = self._find_local_file(model_id, self._CONFIG_FILENAMES)
+        if not local_only and onnx_path is None and torch_path is None:
+            # Explicit network-capable adapter calls are allowed to obtain the
+            # preferred ONNX payload. Normal GUI Load never reaches this branch.
+            onnx_path = self._resolve_file(model_id, self._ONNX_FILENAMES, token=token, local_files_only=False)
+
+        onnx_error: Exception | None = None
+        if onnx_path is not None:
+            try:
+                self._load_onnx(onnx_path, device)
+                return
+            except Exception as exc:
+                onnx_error = exc
+                self.runtime_warning = f"ONNX load was unavailable; attempting local safetensors fallback: {exc}"
+        if torch_path is not None and config_path is not None:
+            self._load_timm_safetensors(torch_path, config_path, device)
+            if onnx_error:
+                self.runtime_warning = f"Loaded local timm/safetensors fallback because ONNX was unavailable: {onnx_error}"
+            return
+        if onnx_error is not None:
+            raise RuntimeError(str(onnx_error)) from onnx_error
+        root = self._local_root(model_id)
+        present = []
+        if root and root.exists():
+            try:
+                present = sorted(p.name for p in root.iterdir() if p.is_file())[:40]
+            except Exception:
+                present = []
+        expected = self._ONNX_FILENAMES + self._TORCH_FILENAMES
+        raise RuntimeError(
+            f"No runnable WD/PixAI weight payload was found for {self.label} in {root or model_id!s}. "
+            f"Expected one of {expected}; timm fallback also needs config.json. Present files: {present}. "
+            "Use Queue Update to fetch the missing payload or migrate the complete model folder."
+        )
+
+    def _prepare_pil(self, image_path: Path) -> Image.Image:
+        target = int(self.model_target_size or 448)
+        with Image.open(image_path) as im:
+            image = im.convert("RGBA")
+            canvas = Image.new("RGBA", image.size, (255, 255, 255, 255))
+            canvas.alpha_composite(image)
+            image = canvas.convert("RGB")
+            resampling = getattr(Image, "Resampling", Image)
+            if self.name == "pixai-tagger-v09" or str(getattr(self, "onnx_input_layout", "")).lower() == "nchw":
+                # DeepGHS PixAI's documented pipeline is: white background RGB,
+                # bilinear resize to 448x448, ToTensor, Normalize(mean=std=0.5).
+                # It does not use the WD square-padding + BGR NHWC contract.
+                if image.size != (target, target):
+                    image = image.resize((target, target), getattr(resampling, "BILINEAR"))
+                return image.copy()
+            max_dim = max(image.size)
+            pad_left = (max_dim - image.width) // 2
+            pad_top = (max_dim - image.height) // 2
+            padded = Image.new("RGB", (max_dim, max_dim), (255, 255, 255))
+            padded.paste(image, (pad_left, pad_top))
+            if max_dim != target:
+                padded = padded.resize((target, target), getattr(resampling, "BICUBIC"))
+            return padded.copy()
+
+    def _prepare_onnx_image(self, image_path: Path):
+        import numpy as np
+        arr = np.asarray(self._prepare_pil(image_path), dtype=np.float32)
+        layout = str(getattr(self, "onnx_input_layout", "nhwc") or "nhwc").lower()
+        if layout == "nchw":
+            # PixAI's DeepGHS ONNX export exposes a channel-first input
+            # ([N,3,448,448]). Use the same square white-padded PIL input, then
+            # feed normalized RGB channel-first data. WD ONNX models remain on
+            # the NHWC/BGR path below, so this is isolated to models whose ONNX
+            # session actually advertises NCHW.
+            if str(getattr(self, "onnx_input_range", "0_255")) == "0_1_normalized":
+                arr = arr / 255.0
+                mean = np.asarray(self.pretrained_cfg.get("mean") or [0.5, 0.5, 0.5], dtype=np.float32).reshape(1, 1, 3)
+                std = np.asarray(self.pretrained_cfg.get("std") or [0.5, 0.5, 0.5], dtype=np.float32).reshape(1, 1, 3)
+                arr = (arr - mean) / std
+            arr = np.ascontiguousarray(arr.transpose(2, 0, 1))
+            return np.expand_dims(arr, axis=0).astype("float32")
+        arr = arr[:, :, ::-1]  # RGB -> BGR, matching the WD ONNX contract.
+        return np.expand_dims(arr, axis=0).astype("float32")
+
+    def _prepare_torch_image(self, image_path: Path):
+        import numpy as np
+        import torch
+        arr = np.asarray(self._prepare_pil(image_path), dtype=np.float32) / 255.0
+        arr = np.ascontiguousarray(arr.transpose(2, 0, 1))
+        tensor = torch.from_numpy(arr).unsqueeze(0)
+        mean = list(self.pretrained_cfg.get("mean") or [0.5, 0.5, 0.5])
+        std = list(self.pretrained_cfg.get("std") or [0.5, 0.5, 0.5])
+        mean_t = torch.tensor(mean, dtype=tensor.dtype).view(1, 3, 1, 1)
+        std_t = torch.tensor(std, dtype=tensor.dtype).view(1, 3, 1, 1)
+        return (tensor - mean_t) / std_t
+
+    def _scores(self, raw: Any) -> list[float]:
+        import numpy as np
+        arr = np.asarray(raw).astype("float32").reshape(-1)
+        if arr.size == 0:
+            return []
+        if float(arr.min()) < 0.0 or float(arr.max()) > 1.0:
+            arr = 1.0 / (1.0 + np.exp(-arr))
+        return [float(x) for x in arr.tolist()]
+
+    def predict(self, image_path: Path, **kwargs: Any) -> Prediction:
+        requested_device = kwargs.get("device")
+        model_id = kwargs.get("model_id") or kwargs.get("repo_id") or self.repo_id
+        if self.runtime in {"unloaded", "loading"} or (self.session is None and self.torch_model is None):
+            load_kwargs = dict(kwargs)
+            device_arg = load_kwargs.pop("device", "auto")
+            self.load(device=device_arg, **load_kwargs)
+        elif requested_device and str(requested_device).lower() not in {"auto", str(self.device_value).lower()}:
+            self.unload()
+            self.load(device=str(requested_device), model_id=model_id, **{k: v for k, v in kwargs.items() if k not in {"device", "model_id", "repo_id"}})
+        threshold = float(kwargs.get("threshold", kwargs.get("tag_threshold", self.default_threshold)) or 0.0)
+        top_k = int(kwargs.get("top_k", kwargs.get("max_tags", 250)) or 250)
+        general_threshold = float(kwargs.get("threshold_general", kwargs.get("general_threshold", threshold)) or threshold)
+        character_threshold = float(kwargs.get("threshold_character", kwargs.get("character_threshold", threshold)) or threshold)
+        use_mcut = bool(kwargs.get("mcut") or kwargs.get("general_mcut_enabled") or kwargs.get("character_mcut_enabled"))
+
+        if self.runtime == "onnxruntime":
+            if self.session is None:
+                raise RuntimeError("ONNX session is not loaded")
+            tensor = self._prepare_onnx_image(Path(image_path))
+            input_name = self.session.get_inputs()[0].name
+            outputs = self.session.run(None, {input_name: tensor})
+            scores = self._scores(outputs[0])
+        elif self.runtime == "timm_safetensors":
+            if self.torch_model is None or self.torch_device is None:
+                raise RuntimeError("timm/safetensors model is not loaded")
+            import torch
+            tensor = self._prepare_torch_image(Path(image_path)).to(self.torch_device, non_blocking=True)
+            with torch.inference_mode():
+                logits = self.torch_model(tensor)
+            if isinstance(logits, (tuple, list)):
+                logits = logits[0]
+            scores = self._scores(logits.detach().float().cpu().numpy())
+        else:
+            raise RuntimeError(f"Unsupported WD/PixAI adapter runtime state: {self.runtime}")
+
+        scored: list[tuple[str, float, int | None]] = []
+        for idx, score in enumerate(scores):
+            if idx >= len(self.tag_names):
+                break
+            tag = self.tag_names[idx]
+            if tag:
+                scored.append((tag, float(score), self.categories[idx] if idx < len(self.categories) else None))
+        general_scores = [s for _, s, c in scored if c in (None, 0, 3)]
+        char_scores = [s for _, s, c in scored if c == 4]
+        if use_mcut:
+            if general_scores:
+                general_threshold = max(float(kwargs.get("mcut_floor", 0.0) or 0.0), self._mcut_threshold(general_scores))
+            if char_scores:
+                character_threshold = max(float(kwargs.get("character_mcut_floor", 0.15) or 0.15), self._mcut_threshold(char_scores))
+        selected: list[tuple[str, float]] = []
+        classes: list[tuple[str, float]] = []
+        ratings: list[tuple[str, float]] = []
+        groups = {"rating": {}, "general": {}, "character": {}, "copyright": {}, "other": {}}
+        for tag, score, cat in sorted(scored, key=lambda x: x[1], reverse=True):
+            classes.append((tag, score))
+            if cat == 9:
+                ratings.append((tag, score)); groups["rating"][tag] = score; continue
+            if cat == 4:
+                groups["character"][tag] = score
+                if score >= character_threshold:
+                    selected.append((tag, score))
+            elif cat == 3:
+                groups["copyright"][tag] = score
+                if score >= general_threshold:
+                    selected.append((tag, score))
+            else:
+                groups["general"][tag] = score
+                if score >= general_threshold:
+                    selected.append((tag, score))
+        selected = selected[:max(1, top_k)]
+        if not selected:
+            selected = [(tag, score) for tag, score, cat in sorted(scored, key=lambda x: x[1], reverse=True) if cat != 9][:max(1, min(top_k, 25))]
+        best_rating = max(ratings, key=lambda x: x[1]) if ratings else None
+        rating_classes = [(f"rating_{best_rating[0]}", best_rating[1])] if best_rating else []
+        return Prediction(kind="tag", tags=selected, classes=rating_classes + classes[:max(top_k, 25)], raw={
+            "adapter": "wd_dual_runtime_tagger",
+            "runtime": self.runtime,
+            "repo_id": self.repo_id,
+            "base_repo_id": self.base_repo_id,
+            "model_path": str(self.model_path) if self.model_path else None,
+            "tags_path": str(self.tags_path) if self.tags_path else None,
+            "config_path": str(self.config_path) if self.config_path else None,
+            "device": self.device_value,
+            "threshold": threshold,
+            "threshold_general": general_threshold,
+            "threshold_character": character_threshold,
+            "top_k": top_k,
+            "tag_count": len(self.tag_names),
+            "groups": groups,
+        })
+
+    def unload(self) -> None:
+        model = self.torch_model
+        self.session = None
+        self.torch_model = None
+        self.torch_device = None
+        self.model_path = None
+        self.tags_path = None
+        self.config_path = None
+        self.tag_rows = []
+        self.tag_names = []
+        self.categories = []
+        self.runtime = "unloaded"
+        try:
+            del model
+            import gc
+            gc.collect()
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+
+class LegacyVisionTaggerAdapter:
+    """Adapter for the legacy taggers from the original data-curation tool.
+
+    The uploaded ``model_configs.py`` described models that differ in image
+    preprocessing, tag metadata layout, output padding, ONNX/PyTorch runtime,
+    and confidence thresholds.  This adapter keeps those per-model contracts in
+    catalog metadata while exposing one normal ModelAdapter surface to the rest
+    of the application.
+    """
+
+    kind = "tagger"
+
+    def __init__(self, name: str, label: str, config: dict[str, Any]):
+        self.name = name
+        self.label = label
+        self.config = dict(config or {})
+        self.repo_id = self.config.get("repo_id")
+        self.model_path: Path | None = None
+        self.tags_path: Path | None = None
+        self.tag_names: list[str] = []
+        self.device_value = "cpu"
+        self.device_warning: str | None = None
+        self.runtime_warning: str | None = None
+        self.session = None
+        self.torch_model = None
+        self.runtime = "unloaded"
+
+    def is_available(self) -> bool:
+        # Availability means the adapter can be listed. Runtime-specific deps are
+        # validated at load/predict so CPU-only users can still see/download rows.
+        return True
+
+    def _option(self, kwargs: dict[str, Any], key: str, default: Any = None) -> Any:
+        if key in kwargs:
+            return kwargs.get(key)
+        opts = kwargs.get("options") if isinstance(kwargs.get("options"), dict) else {}
+        return opts.get(key, self.config.get(key, default))
+
+    def _candidate_roots(self, model_id: Any | None) -> list[Path]:
+        candidates: list[Path] = []
+        for raw in [model_id, self.config.get("local_path"), self.config.get("source_local_path")]:
+            if raw:
+                candidates.append(Path(str(raw)).expanduser())
+        seen: set[str] = set(); out: list[Path] = []
+        for path in candidates:
+            key = str(path.resolve(strict=False)).lower()
+            if key not in seen:
+                seen.add(key); out.append(path)
+        return out
+
+    def _find_file(self, root: Path, names: list[str], suffixes: set[str] | None = None) -> Path | None:
+        if root.is_file():
+            if root.name in names or (suffixes and root.suffix.lower() in suffixes):
+                return root
+            return None
+        for name in names:
+            candidate = root / name
+            if candidate.exists() and candidate.is_file():
+                return candidate
+        try:
+            files = [p for p in root.rglob("*") if p.is_file()]
+        except Exception:
+            files = []
+        lower_names = {str(n).lower() for n in names}
+        for file in files:
+            rel = file.relative_to(root).as_posix().lower() if root in file.parents or file.parent == root else file.name.lower()
+            if file.name.lower() in lower_names or rel in lower_names:
+                return file
+        if suffixes:
+            for file in files:
+                if file.suffix.lower() in suffixes:
+                    return file
+        return None
+
+    def _onnx_expected_hw(self) -> tuple[int, int] | None:
+        """Return (width, height) expected by the loaded ONNX input, if static.
+
+        Some legacy rows were created from old per-model scripts where the
+        preprocessing contract is as important as the weights.  ONNXRuntime
+        rejects even a single-pixel shape mismatch, so the adapter treats the
+        loaded ONNX graph as the final authority when it exposes a static
+        NCHW input shape.
+        """
+        if self.session is None:
+            return None
+        try:
+            shape = list(self.session.get_inputs()[0].shape or [])
+        except Exception:
+            return None
+        if len(shape) < 4:
+            return None
+        try:
+            height = int(shape[2])
+            width = int(shape[3])
+        except Exception:
+            return None
+        if width > 0 and height > 0:
+            return width, height
+        return None
+
+    def _patch_loaded_torch_model(self, model: Any) -> Any:
+        """Patch known legacy pickled model/timm compatibility gaps.
+
+        The old EVA02 pickle was serialized against a timm version whose Eva
+        object did not store ``reg_token``.  Newer timm forward code reads the
+        attribute unconditionally.  Setting it to None restores the intended
+        no-register-token behavior without changing model weights.
+        """
+        try:
+            cls_name = model.__class__.__name__.lower()
+        except Exception:
+            cls_name = ""
+        if cls_name == "eva" or "eva" in str(self.config.get("source_name") or "").lower():
+            for attr, value in self._eva_compat_defaults().items():
+                try:
+                    if not hasattr(model, attr):
+                        setattr(model, attr, value)
+                except Exception:
+                    pass
+        return model
+
+    def _load_tags(self, path: Path) -> list[str]:
+        if not path.exists():
+            raise RuntimeError(f"Tag metadata file does not exist: {path}")
+        tags: list[str] = []
+        if path.suffix.lower() == ".json":
+            payload = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+            if isinstance(payload, dict):
+                # The original inference examples used sorted(tags) after loading
+                # JSON, which sorts dictionary keys. Preserve that behavior.
+                tags = [str(k) for k in sorted(payload.keys())]
+            elif isinstance(payload, list):
+                tags = [str(x.get("name") if isinstance(x, dict) else x) for x in payload]
+                tags = [t for t in tags if t]
+                tags = sorted(tags)
+        else:
+            column = int(self.config.get("use_column_number", 0) or 0)
+            with path.open("r", encoding="utf-8", errors="ignore", newline="") as fh:
+                sample = fh.read(4096)
+                fh.seek(0)
+                if sample.strip():
+                    try:
+                        dialect = csv.Sniffer().sniff(sample, delimiters=",\t;")
+                    except Exception:
+                        dialect = csv.excel
+                else:
+                    dialect = csv.excel
+                reader = csv.reader(fh, dialect)
+                for row in reader:
+                    if not row:
+                        continue
+                    idx = min(max(0, column), len(row) - 1)
+                    value = str(row[idx] or "").strip()
+                    if not value or value.lower() in {"name", "tag", "tags"}:
+                        continue
+                    tags.append(value)
+        tags = [self._normalize_tag_name(t) for t in tags if self._normalize_tag_name(t)]
+        if bool(self.config.get("use_extend_output_dims")):
+            tags = self._extend_tags(tags)
+        expected = int(self.config.get("output_layer_size") or 0)
+        if expected and len(tags) < expected:
+            # Preserve index alignment without inventing real semantic tags.
+            for idx in range(len(tags), expected):
+                tags.append(f"placeholder{idx}")
+        return tags
+
+    def _extend_tags(self, tags: list[str]) -> list[str]:
+        out = list(tags)
+        labels = list(self.config.get("extend_output_dims") or [])
+        positions = list(self.config.get("extend_output_dims_pos") or [])
+        for i, label in enumerate(labels):
+            clean = self._normalize_tag_name(label)
+            if not clean:
+                continue
+            pos = positions[i] if i < len(positions) else -1
+            try:
+                pos_i = int(pos)
+            except Exception:
+                pos_i = -1
+            if pos_i < 0 or pos_i >= len(out):
+                out.append(clean)
+            else:
+                out.insert(pos_i, clean)
+        return out
+
+    def _normalize_tag_name(self, value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        text = text.replace(" ", "_")
+        text = re.sub(r"[^0-9A-Za-z_:.+\-/]+", "_", text).strip("_., ").lower()
+        return text
+
+    def _resolve_paths(self, model_id: Any | None) -> tuple[Path, Path, Path]:
+        roots = self._candidate_roots(model_id)
+        if not roots:
+            raise RuntimeError(f"{self.label} requires a downloaded/local model directory.")
+        model_candidates = list(self.config.get("model_candidates") or ["model.onnx", "model.pth"])
+        tag_candidates = list(self.config.get("tag_candidates") or ["tags.json", "tags.csv"])
+        searched: list[str] = []
+        for root in roots:
+            searched.append(str(root))
+            if not root.exists():
+                continue
+            model_path = self._find_file(root, model_candidates, {".onnx", ".pth", ".pt"})
+            tags_path = self._find_file(root, tag_candidates, {".json", ".csv"})
+            if model_path and tags_path:
+                return root, model_path, tags_path
+        raise RuntimeError(
+            f"{self.label} is missing model/tag files. Searched: {searched}. "
+            f"Expected model file like {model_candidates} and tag file like {tag_candidates}."
+        )
+
+    def _find_pytorch_fallback(self, root: Path, exclude: Path | None = None) -> Path | None:
+        """Find a PyTorch fallback for a legacy tagger when ONNX GPU EP is absent."""
+        names = [str(x) for x in (self.config.get("model_candidates") or []) if str(x).lower().endswith((".pth", ".pt"))]
+        if not names:
+            names = ["model.pth", "model_balanced.pth", "model.pt"]
+        candidate = self._find_file(root, names, {".pth", ".pt"})
+        if candidate is None:
+            return None
+        if exclude is not None:
+            try:
+                if candidate.resolve(strict=False) == exclude.resolve(strict=False):
+                    return None
+            except Exception:
+                pass
+        return candidate
+
+    @staticmethod
+    def _cuda_index_from_device(device: Any) -> int | None:
+        text = str(device or "").strip().lower()
+        if text in {"cuda", "auto_cuda"}:
+            return 0
+        if text.startswith("cuda:"):
+            try:
+                return int(text.split(":", 1)[1])
+            except Exception:
+                return None
+        return None
+
+    def _needs_reload_for_device(self, requested_device: Any) -> bool:
+        requested = str(requested_device or "").strip().lower()
+        if not requested or requested == "auto":
+            return False
+        current = str(self.device_value or "").strip().lower()
+        return bool(current and current != requested)
+
+    def _assert_cuda_ready(self, device: str) -> None:
+        idx = self._cuda_index_from_device(device)
+        if idx is None:
+            return
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                raise RuntimeError("torch.cuda.is_available() is false")
+            count = int(torch.cuda.device_count())
+            if idx < 0 or idx >= count:
+                raise RuntimeError(f"requested cuda:{idx}, but torch sees {count} CUDA device(s)")
+        except Exception as exc:
+            raise RuntimeError(f"{self.label} was explicitly assigned to {device}, but CUDA is not usable: {exc}") from exc
+
+    def load(self, device: str = "auto", **kwargs: Any) -> None:
+        model_id = kwargs.get("model_id") or kwargs.get("repo_id") or self.repo_id
+        root, model_path, tags_path = self._resolve_paths(model_id)
+        self.model_path = model_path
+        self.tags_path = tags_path
+        self.tag_names = self._load_tags(tags_path)
+        if device == "auto":
+            try:
+                import torch
+                device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            except Exception:
+                device = "cpu"
+        elif device == "auto_cuda":
+            device = "cuda:0"
+        self.device_value = str(device or "cpu")
+        suffix = model_path.suffix.lower()
+        cuda_idx_for_onnx = self._cuda_index_from_device(self.device_value)
+        if suffix == ".onnx" and cuda_idx_for_onnx is not None:
+            try:
+                import onnxruntime as _ort_probe
+                _available_probe = set(_ort_probe.get_available_providers())
+            except Exception:
+                _available_probe = set()
+            if "CUDAExecutionProvider" not in _available_probe:
+                fallback = self._find_pytorch_fallback(root, exclude=model_path)
+                if fallback is not None:
+                    self.runtime_warning = (
+                        f"ONNXRuntime CUDAExecutionProvider is not available for {self.label}; "
+                        f"using PyTorch fallback {fallback.name} on {self.device_value}."
+                    )
+                    self.model_path = model_path = fallback
+                    suffix = model_path.suffix.lower()
+                elif bool(self.config.get("allow_cpu_fallback_when_onnx_cuda_missing", True)):
+                    self.device_warning = (
+                        f"ONNXRuntime CUDAExecutionProvider is not available for {self.label}; "
+                        "loaded the ONNX model on CPU so the model remains usable. "
+                        "Run update.bat/update.sh or install onnxruntime-gpu to enable GPU ONNX inference."
+                    )
+                    self.device_value = "cpu"
+                    cuda_idx_for_onnx = None
+                else:
+                    raise RuntimeError(
+                        f"{self.label} was explicitly assigned to cuda:{cuda_idx_for_onnx}, but ONNXRuntime CUDAExecutionProvider is not available. "
+                        f"Available providers: {sorted(_available_probe)}. Install onnxruntime-gpu in the active environment or select CPU."
+                    )
+        if suffix == ".onnx":
+            try:
+                import onnxruntime as ort
+            except Exception as exc:
+                raise RuntimeError(
+                    f"{self.label} requires onnxruntime for ONNX inference. "
+                    "Install requirements-models.txt or add onnxruntime-gpu>=1.18 to the environment."
+                ) from exc
+            providers = []
+            provider_options = []
+            try:
+                available = set(ort.get_available_providers())
+            except Exception:
+                available = set()
+            cuda_idx = self._cuda_index_from_device(self.device_value)
+            if cuda_idx is not None:
+                if "CUDAExecutionProvider" not in available:
+                    raise RuntimeError(
+                        f"{self.label} was explicitly assigned to cuda:{cuda_idx}, but ONNXRuntime CUDAExecutionProvider is not available. "
+                        f"Available providers: {sorted(available)}. Install onnxruntime-gpu in the active environment or select CPU."
+                    )
+                self._assert_cuda_ready(f"cuda:{cuda_idx}")
+                providers.append("CUDAExecutionProvider")
+                provider_options.append({"device_id": cuda_idx})
+            providers.append("CPUExecutionProvider")
+            provider_options.append({})
+            self.session = ort.InferenceSession(str(model_path), providers=providers, provider_options=provider_options)
+            self.torch_model = None
+            self.runtime = "onnxruntime"
+            self._loaded_root = root
+            return
+        try:
+            import torch
+        except Exception as exc:
+            raise RuntimeError(f"{self.label} requires torch for PyTorch legacy model inference.") from exc
+        try:
+            model = torch.load(str(model_path), map_location="cpu", weights_only=False)
+        except TypeError:
+            model = torch.load(str(model_path), map_location="cpu")
+        if isinstance(model, dict) and "model" in model:
+            model = model["model"]
+        if not hasattr(model, "eval"):
+            raise RuntimeError(
+                f"{self.label} loaded {model_path.name}, but it was not a complete torch model object. "
+                "Use the ONNX file for this model if available, or provide the original project-native architecture code."
+            )
+        self._patch_torch_model_compat(model)
+        try:
+            if self._cuda_index_from_device(self.device_value) is not None:
+                self._assert_cuda_ready(self.device_value)
+            model.to(self.device_value)
+        except Exception as exc:
+            if self._cuda_index_from_device(self.device_value) is not None:
+                raise RuntimeError(f"{self.label} was assigned to {self.device_value}, but the PyTorch model could not be moved there: {exc}") from exc
+            self.device_value = "cpu"
+            model.to("cpu")
+        model.eval()
+        self.torch_model = model
+        self.session = None
+        self.runtime = "torch_pickle"
+        self._loaded_root = root
+
+
+    def _eva_identity_module(self) -> Any:
+        """Return a neutral identity module for missing newer-timm EVA hooks."""
+        try:
+            import torch
+            return torch.nn.Identity()
+        except Exception:
+            class _Identity:
+                def __call__(self, x, *args: Any, **kwargs: Any) -> Any:
+                    return x
+            return _Identity()
+
+    def _eva_dropout_module(self) -> Any:
+        """Return a neutral dropout module with a .p attribute for newer timm attention paths."""
+        try:
+            import torch
+            return torch.nn.Dropout(0.0)
+        except Exception:
+            class _Dropout:
+                p = 0.0
+                def __call__(self, x, *args: Any, **kwargs: Any) -> Any:
+                    return x
+            return _Dropout()
+
+    def _eva_compat_value(self, value: Any) -> Any:
+        if value == "__identity__":
+            return self._eva_identity_module()
+        if value == "__dropout__":
+            return self._eva_dropout_module()
+        return value
+
+    def _eva_compat_defaults(self) -> dict[str, Any]:
+        """Neutral defaults for legacy pickled EVA classifiers under newer timm.
+
+        The Thouph EVA02 checkpoints are complete pickled classifiers, but they
+        were serialized against older timm EVA classes. Newer timm forward/head
+        paths read optional attributes that older pickle files do not carry.
+        These defaults are deliberately no-op/null values; they restore the old
+        classifier behavior without changing learned weights.
+        """
+        return {
+            # token / positional-embedding behavior
+            "reg_token": None,
+            "mask_token": None,
+            "no_embed_class": False,
+            "dynamic_img_size": False,
+            "dynamic_img_pad": False,
+            "strict_img_size": True,
+            "num_prefix_tokens": 1,
+            "num_reg_tokens": 0,
+            "rope": None,
+            "rope_mixed": None,
+            "rope_freqs": None,
+            "ref_feat_shape": None,
+            "patch_drop": None,
+            "pos_drop": "__identity__",
+            "attn_mask": None,
+            "grad_checkpointing": False,
+            # feature / head behavior
+            "norm_pre": "__identity__",
+            "norm_post": "__identity__",
+            "fc_norm": "__identity__",
+            "norm": "__identity__",
+            "global_pool": "token",
+            "attn_pool": None,
+            "head_drop": "__identity__",
+            "head_init_scale": 0.0,
+            "pre_logits": False,
+            "final_norm": True,
+            "use_rot_pos_emb": False,
+            # attention module additions
+            "q_norm": "__identity__",
+            "k_norm": "__identity__",
+            "qk_norm": False,
+            "attn_drop": "__dropout__",
+            "proj_drop": "__dropout__",
+            "norm_layer": None,
+            "gate": None,
+            "fused_attn": False,
+            "rotate_half": False,
+            "qkv_bias_separate": False,
+        }
+
+    def _legacy_eva_optional_defaults(self) -> dict[str, Any]:
+        """Alias for the EVA compatibility defaults used by retry patching."""
+        return dict(self._eva_compat_defaults())
+
+    def _patch_missing_eva_attr_from_error(self, exc: AttributeError) -> bool:
+        """Patch a missing optional EVA attribute reported during forward()."""
+        message = str(exc or "")
+        match = re.search(r"object has no attribute ['\"]([^'\"]+)['\"]", message)
+        if not match or self.torch_model is None:
+            return False
+        attr = match.group(1)
+        defaults = self._legacy_eva_optional_defaults()
+        if attr not in defaults:
+            # Newer timm EVA releases may add additional optional head/pool/
+            # attention helpers after these old pickled Thouph classifiers were
+            # created.  Keep a small, neutral fallback allowlist so we do not
+            # fail one attribute at a time for no-op/default components.
+            if attr in {"attn_pool"}:
+                defaults[attr] = None
+            elif attr in {"head_drop", "pos_drop", "norm_pre", "norm_post", "fc_norm", "q_norm", "k_norm", "norm"}:
+                defaults[attr] = "__identity__"
+            elif attr in {"attn_drop", "proj_drop"}:
+                defaults[attr] = "__dropout__"
+            elif attr in {"no_embed_class", "dynamic_img_size", "dynamic_img_pad", "qk_norm", "use_rot_pos_emb", "pre_logits", "fused_attn", "qkv_bias_separate", "rotate_half"}:
+                defaults[attr] = False
+            elif attr in {"strict_img_size", "final_norm"}:
+                defaults[attr] = True
+            elif attr in {"num_prefix_tokens"}:
+                defaults[attr] = 1
+            elif attr in {"head_init_scale"}:
+                defaults[attr] = 0.0
+            elif attr in {"global_pool"}:
+                defaults[attr] = "token"
+            elif attr in {"gate"}:
+                defaults[attr] = None
+            else:
+                return False
+        try:
+            modules = list(self.torch_model.modules()) if hasattr(self.torch_model, "modules") else [self.torch_model]
+        except Exception:
+            modules = [self.torch_model]
+        for module in modules:
+            try:
+                cls = module.__class__
+                marker = f"{getattr(cls, '__module__', '')}.{getattr(cls, '__name__', '')}".lower()
+                if "timm.models.eva" in marker or marker.endswith(".eva") or ".eva" in marker or module is self.torch_model:
+                    if not hasattr(module, attr):
+                        value = self._eva_compat_value(defaults[attr])
+                        setattr(module, attr, value)
+            except Exception:
+                continue
+        return True
+
+
+    def _efficientnet_compat_defaults(self) -> dict[str, Any]:
+        """Neutral defaults for older pickled EfficientNet/timm blocks.
+
+        Some Thouph EfficientNetV2 checkpoints are complete pickled timm
+        classifiers.  Newer timm EfficientNet block forward paths read optional
+        anti-alias/drop-path helper attributes that older pickle files may not
+        contain.  These defaults restore the historical no-op behavior without
+        changing learned weights.
+        """
+        return {
+            "aa": "__identity__",
+            "drop_path": "__identity__",
+            "conv_s2d": None,
+            "bn_s2d": None,
+            "se": "__identity__",
+        }
+
+    def _efficientnet_compat_value(self, value: Any) -> Any:
+        if value == "__identity__":
+            return self._eva_identity_module()
+        return value
+
+    @staticmethod
+    def _is_timm_efficientnet_module(module: Any) -> bool:
+        try:
+            cls = module.__class__
+            cls_name = getattr(cls, "__name__", "").lower()
+            marker = f"{getattr(cls, '__module__', '')}.{getattr(cls, '__name__', '')}".lower()
+        except Exception:
+            return False
+        if "timm.models._efficientnet_blocks" in marker or "timm.models.efficientnet" in marker:
+            return True
+        return cls_name in {
+            "convbnact",
+            "depthwiseseparableconv",
+            "invertedresidual",
+            "edgeresidual",
+            "condconvresidual",
+            "universalinvertedresidual",
+        }
+
+    def _patch_missing_efficientnet_attr_from_error(self, exc: AttributeError) -> bool:
+        """Patch a missing optional EfficientNet/timm block attribute reported during forward()."""
+        message = str(exc or "")
+        match = re.search(r"object has no attribute [\'\"]([^\'\"]+)[\'\"]", message)
+        if not match or self.torch_model is None:
+            return False
+        attr = match.group(1)
+        defaults = self._efficientnet_compat_defaults()
+        if attr not in defaults:
+            return False
+        try:
+            modules = list(self.torch_model.modules()) if hasattr(self.torch_model, "modules") else [self.torch_model]
+        except Exception:
+            modules = [self.torch_model]
+        patched_any = False
+        for module in modules:
+            try:
+                if self._is_timm_efficientnet_module(module) and not hasattr(module, attr):
+                    setattr(module, attr, self._efficientnet_compat_value(defaults[attr]))
+                    patched_any = True
+            except Exception:
+                continue
+        return patched_any
+
+
+    def _patch_torch_model_compat(self, model: Any) -> None:
+        """Patch small compatibility gaps in older pickled legacy taggers.
+
+        Some legacy PyTorch taggers were pickled against older timm releases.
+        Newer timm forward paths can reference optional attributes that are not
+        serialized in those older model objects.  The original model config file
+        establishes these Thouph models as fixed-size legacy classifiers; adding
+        missing optional no-op attributes preserves the old runtime contract
+        without changing learned weights.
+        """
+        try:
+            modules = list(model.modules()) if hasattr(model, "modules") else [model]
+        except Exception:
+            modules = [model]
+        eva_defaults = self._eva_compat_defaults()
+        eff_defaults = self._efficientnet_compat_defaults()
+        for module in modules:
+            try:
+                cls = module.__class__
+                marker = f"{getattr(cls, '__module__', '')}.{getattr(cls, '__name__', '')}".lower()
+                if "timm.models.eva" in marker or marker.endswith(".eva") or ".eva" in marker:
+                    for attr, value in eva_defaults.items():
+                        if not hasattr(module, attr):
+                            setattr(module, attr, self._eva_compat_value(value))
+                if self._is_timm_efficientnet_module(module):
+                    for attr, value in eff_defaults.items():
+                        if not hasattr(module, attr):
+                            setattr(module, attr, self._efficientnet_compat_value(value))
+            except Exception:
+                continue
+
+    def _pil_resample(self, name: str | None = None):
+        token = str(name or self.config.get("interpolation") or "lanczos").strip().lower()
+        resampling = getattr(Image, "Resampling", Image)
+        if token in {"bicubic", "cubic"}:
+            return getattr(resampling, "BICUBIC")
+        if token in {"bilinear", "linear"}:
+            return getattr(resampling, "BILINEAR")
+        if token in {"nearest", "nearest_neighbor"}:
+            return getattr(resampling, "NEAREST")
+        return getattr(resampling, "LANCZOS")
+
+    @staticmethod
+    def _center_crop_pil(img: Image.Image, width: int, height: int) -> Image.Image:
+        left = max(0, int(round((img.width - width) / 2)))
+        top = max(0, int(round((img.height - height) / 2)))
+        right = min(img.width, left + width)
+        bottom = min(img.height, top + height)
+        cropped = img.crop((left, top, right, bottom))
+        if cropped.size != (width, height):
+            canvas = Image.new("RGB", (width, height), (0, 0, 0))
+            canvas.paste(cropped, ((width - cropped.width) // 2, (height - cropped.height) // 2))
+            return canvas
+        return cropped
+
+    def _resize_short_edge_center_crop(self, img: Image.Image, width: int, height: int, resample: Any) -> Image.Image:
+        # torchvision.transforms.Resize(int) keeps aspect ratio and makes the
+        # shorter edge equal to the requested size. Thouph's batched EVA02-CLIP
+        # helper then CenterCrop(224) for very tall/wide images.
+        target_short = max(1, min(width, height))
+        short = max(1, min(img.width, img.height))
+        scale = target_short / float(short)
+        new_w = max(width, int(round(img.width * scale)))
+        new_h = max(height, int(round(img.height * scale)))
+        resized = img.resize((new_w, new_h), resample)
+        return self._center_crop_pil(resized, width, height)
+
+    def _efficientnet_thouph_thumbnail(self, img: Image.Image) -> Image.Image:
+        # Thouph's EfficientNetV2-M inference.py does not use a fixed 448x448
+        # crop for the PyTorch path. It computes a max thumbnail box from a
+        # nominal 512-pixel area and preserves aspect ratio before ToTensor().
+        # Keep this dynamic shape for PyTorch; ONNX exports still go through the
+        # static expected-size branch in _preprocess_pil().
+        area_edge = float(self.config.get("thumbnail_area") or 512.0)
+        aspect_ratio = max(1e-6, float(img.width) / max(1.0, float(img.height)))
+        new_height = (area_edge ** 2 / aspect_ratio) ** 0.5
+        new_width = aspect_ratio * new_height
+        box = (max(1, int(new_width)), max(1, int(new_height)))
+        out = img.copy()
+        out.thumbnail(box, self._pil_resample("lanczos"))
+        return out
+
+    def _preprocess_pil(self, image_path: Path):
+        import numpy as np
+        with Image.open(image_path) as im:
+            img = im.convert("RGB")
+            mode = str(self.config.get("resize_mode") or "resize_exact")
+            dims = list(self.config.get("input_dims") or [448, 448])
+            width, height = int(dims[0]), int(dims[1])
+            expected = self._onnx_expected_hw()
+            if expected:
+                width, height = expected
+                mode = str(self.config.get("onnx_resize_mode") or "resize_exact")
+            resample = self._pil_resample(self.config.get("interpolation"))
+            if mode == "thouph_clip_aspect_bicubic":
+                ratio = float(img.height) / max(1.0, float(img.width))
+                if ratio > 2.0 or ratio < 0.5:
+                    img = self._resize_short_edge_center_crop(img, width, height, self._pil_resample("bicubic"))
+                else:
+                    img = img.resize((width, height), self._pil_resample("bicubic"))
+            elif mode == "thouph_effnet_area_512" and not expected:
+                img = self._efficientnet_thouph_thumbnail(img)
+            elif mode == "thumbnail_area_512":
+                # Older helper code used an area-based thumbnail as a staging
+                # operation, but the released ONNX/PyTorch classifiers still
+                # require a fixed tensor size.  Keep aspect ratio through a
+                # letterbox pass, then guarantee the final H/W match input_dims.
+                try:
+                    from PIL import ImageOps
+                    staged = ImageOps.contain(img, (width, height), self._pil_resample("lanczos"))
+                    canvas = Image.new("RGB", (width, height), (0, 0, 0))
+                    canvas.paste(staged, ((width - staged.width) // 2, (height - staged.height) // 2))
+                    img = canvas
+                except Exception:
+                    img = img.resize((width, height), self._pil_resample("lanczos"))
+            else:
+                img = img.resize((width, height), resample)
+            if mode != "thouph_effnet_area_512" and img.size != (width, height):
+                img = img.resize((width, height), resample)
+            arr = np.asarray(img).astype("float32") / 255.0
+        if bool(self.config.get("use_mean_norm")):
+            mean = np.asarray(self.config.get("mean_norm") or [0.0, 0.0, 0.0], dtype="float32")
+            std = np.asarray(self.config.get("mean_std") or [1.0, 1.0, 1.0], dtype="float32")
+            arr = (arr - mean.reshape(1, 1, 3)) / std.reshape(1, 1, 3)
+        arr = arr.transpose(2, 0, 1)[None, ...].astype("float32")
+        return arr
+
+    def _sigmoid_scores(self, values: Any) -> list[float]:
+        import numpy as np
+        arr = np.asarray(values).astype("float32").reshape(-1)
+        if arr.size == 0:
+            return []
+        if float(arr.min()) < 0.0 or float(arr.max()) > 1.0:
+            arr = 1.0 / (1.0 + np.exp(-arr))
+        return [float(x) for x in arr.tolist()]
+
+    def _run_onnx(self, tensor: Any) -> list[float]:
+        if self.session is None:
+            raise RuntimeError(f"{self.label} ONNX session is not loaded.")
+        input_name = self.session.get_inputs()[0].name
+        output = self.session.run(None, {input_name: tensor})
+        return self._sigmoid_scores(output[0])
+
+    def _run_torch(self, tensor: Any) -> list[float]:
+        if self.torch_model is None:
+            raise RuntimeError(f"{self.label} PyTorch model is not loaded.")
+        import torch
+        x = torch.from_numpy(tensor).to(self.device_value)
+        with torch.no_grad():
+            attempts = 0
+            while True:
+                try:
+                    out = self.torch_model(x)
+                    break
+                except AttributeError as exc:
+                    # Older pickled timm models may surface optional missing
+                    # attributes one at a time during forward. Patch neutral
+                    # EVA defaults and retry a few times instead of failing on
+                    # the next missing nullable/bool field.
+                    attempts += 1
+                    message = str(exc or "")
+                    known_missing = (
+                        any(name in message for name in self._eva_compat_defaults().keys())
+                        or any(name in message for name in self._efficientnet_compat_defaults().keys())
+                    )
+                    patched = (
+                        self._patch_missing_eva_attr_from_error(exc)
+                        or self._patch_missing_efficientnet_attr_from_error(exc)
+                        or known_missing
+                    )
+                    if attempts <= 32 and patched:
+                        self._patch_torch_model_compat(self.torch_model)
+                        continue
+                    raise
+            if isinstance(out, (list, tuple)):
+                out = out[0]
+            if isinstance(out, dict):
+                if "logits" in out:
+                    out = out["logits"]
+                elif "output" in out:
+                    out = out["output"]
+                else:
+                    out = next(iter(out.values()))
+            out = torch.sigmoid(out[0].float()).detach().cpu().numpy()
+        return self._sigmoid_scores(out)
+
+    def predict(self, image_path: Path, **kwargs: Any) -> Prediction:
+        requested_device = kwargs.get("device", None)
+        if self.session is None and self.torch_model is None:
+            load_kwargs = dict(kwargs)
+            device_arg = load_kwargs.pop("device", "auto")
+            self.load(device=device_arg, **load_kwargs)
+        elif requested_device and self._needs_reload_for_device(requested_device):
+            # ONNX Runtime sessions are bound to a CUDA provider/device at
+            # creation time, and legacy torch pickles keep their own tensor
+            # placement.  If the user assigns a different GPU, rebuild this
+            # adapter on that exact device instead of silently using the old one.
+            root = getattr(self, "_loaded_root", None) or (self.model_path.parent if self.model_path else None)
+            self.session = None
+            self.torch_model = None
+            self.load(device=requested_device, model_id=root or self.repo_id)
+        threshold = float(self._option(kwargs, "threshold", self.config.get("confidence_threshold", 0.70)) or 0.0)
+        top_k = int(self._option(kwargs, "top_k", self._option(kwargs, "max_tags", 250)) or 250)
+        tensor = self._preprocess_pil(Path(image_path))
+        scores = self._run_onnx(tensor) if self.session is not None else self._run_torch(tensor)
+        scored: list[tuple[str, float]] = []
+        for idx, score in enumerate(scores):
+            tag = self.tag_names[idx] if idx < len(self.tag_names) else f"placeholder{idx}"
+            if not tag or tag.startswith("placeholder"):
+                continue
+            scored.append((tag, float(score)))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        selected = [(tag, score) for tag, score in scored if score >= threshold][:max(1, top_k)]
+        if not selected:
+            selected = scored[:max(1, min(top_k, 25))]
+        rating_tags = {"safe", "questionable", "explicit", "rating_safe", "rating_questionable", "rating_explicit"}
+        classes = [(tag, score) for tag, score in scored[:max(top_k, 25)]]
+        ratings = [(tag if tag.startswith("rating") else f"rating_{tag}", score) for tag, score in selected if tag in rating_tags]
+        return Prediction(kind="tag", tags=selected, classes=ratings or classes, raw={
+            "adapter": "legacy_vision_tagger",
+            "model_path": str(self.model_path) if self.model_path else None,
+            "tags_path": str(self.tags_path) if self.tags_path else None,
+            "runtime": self.runtime,
+            "threshold": threshold,
+            "tag_count": len(self.tag_names),
+            "config_source": self.config.get("source_name") or self.name,
+        })
+
+
 class HFImageMultiLabelAdapter:
     """Robust Hugging Face image tagger/rater adapter.
 
@@ -1646,13 +3543,22 @@ class HFImageMultiLabelAdapter:
         model_id = kwargs.get("model_id") or kwargs.get("repo_id") or self.repo_id
         if not model_id:
             raise RuntimeError(f"{self.label} requires a Hugging Face repo id or local model path.")
-        self.processor = AutoImageProcessor.from_pretrained(model_id, token=kwargs.get("huggingface_token") or kwargs.get("token"), trust_remote_code=bool(kwargs.get("trust_remote_code", True)))
+        processor_kwargs = {
+            "token": kwargs.get("huggingface_token") or kwargs.get("token"),
+            "trust_remote_code": bool(kwargs.get("trust_remote_code", True)),
+        }
+        if kwargs.get("local_files_only"):
+            processor_kwargs["local_files_only"] = True
+        processor_kwargs = {k: v for k, v in processor_kwargs.items() if v is not None}
+        self.processor = AutoImageProcessor.from_pretrained(model_id, **processor_kwargs)
         dtype = _torch_dtype_from_name(kwargs.get("torch_dtype"))
         model_kwargs: dict[str, Any] = {"trust_remote_code": bool(kwargs.get("trust_remote_code", True))}
         if dtype != "auto":
             model_kwargs["torch_dtype"] = dtype
         if kwargs.get("huggingface_token") or kwargs.get("token"):
             model_kwargs["token"] = kwargs.get("huggingface_token") or kwargs.get("token")
+        if kwargs.get("local_files_only"):
+            model_kwargs["local_files_only"] = True
         self.model = AutoModelForImageClassification.from_pretrained(model_id, **model_kwargs)
         if device == "auto":
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -1673,7 +3579,7 @@ class HFImageMultiLabelAdapter:
             load_kwargs = dict(kwargs)
             device_arg = load_kwargs.pop("device", "auto")
             self.load(device=device_arg, **load_kwargs)
-        threshold = float(kwargs.get("threshold", 0.35 if not self.rating_mode else 0.0))
+        threshold = float(kwargs.get("threshold", 0.70 if not self.rating_mode else 0.0))
         top_k = int(kwargs.get("top_k", 75 if not self.rating_mode else 10))
         with Image.open(image_path) as im:
             image = im.convert("RGB")
@@ -1749,12 +3655,7 @@ class HFMultiLabelImageTaggerAdapter:
         from transformers import pipeline
         model_id = kwargs.get("model_id") or kwargs.get("repo_id") or self.repo_id
         placement = _hf_pipeline_device_kwargs(device, kwargs)
-        pipe_kwargs = {}
-        token = kwargs.get("huggingface_token") or kwargs.get("token")
-        if token:
-            pipe_kwargs["token"] = token
-        if kwargs.get("trust_remote_code") is not None:
-            pipe_kwargs["trust_remote_code"] = bool(kwargs.get("trust_remote_code"))
+        pipe_kwargs = _hf_pipeline_extra_kwargs(kwargs)
         self.pipeline = pipeline("image-classification", model=model_id, **placement, **pipe_kwargs)
         self.repo_id = str(model_id)
         self.loaded_model_id = str(model_id)
@@ -1775,7 +3676,7 @@ class HFMultiLabelImageTaggerAdapter:
             device_arg = load_kwargs.pop("device", "auto")
             self.load(device_arg, **load_kwargs)
         top_k = kwargs.get("top_k") or kwargs.get("max_tags") or (8 if self.rating_prefix else 200)
-        threshold = float(kwargs.get("threshold", 0.35 if self.rating_prefix else 0.2))
+        threshold = float(kwargs.get("threshold", 0.70 if self.rating_prefix else 0.70))
         outputs = self.pipeline(str(image_path), top_k=int(top_k))
         if isinstance(outputs, dict):
             outputs = [outputs]
@@ -1815,12 +3716,7 @@ class HFImageCaptionAdapter:
 
         model_id = kwargs.get("model_id") or kwargs.get("repo_id") or self.repo_id
         placement = _hf_pipeline_device_kwargs(device, kwargs)
-        pipe_kwargs = {}
-        token = kwargs.get("huggingface_token") or kwargs.get("token")
-        if token:
-            pipe_kwargs["token"] = token
-        if kwargs.get("trust_remote_code") is not None:
-            pipe_kwargs["trust_remote_code"] = bool(kwargs.get("trust_remote_code"))
+        pipe_kwargs = _hf_pipeline_extra_kwargs(kwargs)
         self.pipeline = pipeline("image-to-text", model=model_id, **placement, **pipe_kwargs)
         self.repo_id = str(model_id)
         self.loaded_model_id = str(model_id)
@@ -1834,6 +3730,264 @@ class HFImageCaptionAdapter:
         outputs = self.pipeline(str(image_path), max_new_tokens=kwargs.get("max_new_tokens", 80))
         caption = outputs[0].get("generated_text") if outputs else ""
         return Prediction(kind="caption", caption=caption, raw={"repo_id": self.repo_id, "outputs": outputs})
+
+
+class RedRocketHydra35Adapter:
+    """Native adapter for RedRocket Hydra 3.5.
+
+    Hydra 3.5 ships its own repo-native inference.py/service.py stack and
+    calibration logic.  This adapter supports both local repo execution and a
+    remote Hydra HTTP service so heavy tagger inference can be hosted on another
+    configured worker device.
+    """
+
+    name = "redrocket-hydra-3-5"
+    label = "RedRocket Hydra 3.5"
+    kind = "tagger"
+
+    def __init__(self, repo_id: str = "RedRocket/Hydra"):
+        self.repo_id = repo_id
+        self.repo_path: Path | None = None
+        self.device = "auto"
+        self.service_url: str = ""
+
+    def is_available(self) -> bool:
+        return True
+
+    @staticmethod
+    def _option(kwargs: dict[str, Any], key: str, default: Any = None) -> Any:
+        opts = kwargs.get("options") if isinstance(kwargs.get("options"), dict) else {}
+        return kwargs.get(key, opts.get(key, default))
+
+    def load(self, device: str = "auto", **kwargs: Any) -> None:
+        self.device = device or "auto"
+        self.service_url = str(self._option(kwargs, "hydra_service_url", "") or self._option(kwargs, "service_url", "") or "").strip().rstrip("/")
+        if self.service_url:
+            # Remote service mode intentionally does not require local model files.
+            return
+        model_id = kwargs.get("model_id") or kwargs.get("repo_id") or self.repo_id
+        path = Path(str(model_id)).expanduser()
+        if not path.exists() or not path.is_dir():
+            raise RuntimeError(
+                "Hydra 3.5 is not downloaded locally yet. Use Models to download RedRocket/Hydra, "
+                "or set options.hydra_service_url to a running remote Hydra HTTP service."
+            )
+        inference = path / "inference.py"
+        model_file = path / "models" / "hydra-3.5.safetensors"
+        data_dir = path / "data"
+        missing = [str(x.relative_to(path)) for x in [inference, model_file, data_dir] if not x.exists()]
+        if missing:
+            raise RuntimeError(f"Hydra 3.5 download is incomplete. Missing: {', '.join(missing)}")
+        patch_notes = _hydra_patch_repo_source_compat(path)
+        missing_deps, runtime_notes = _hydra_check_runtime_dependencies(include_core=True)
+        runtime_notes = list(runtime_notes or []) + list(patch_notes or [])
+        repair_logs: list[str] = []
+        auto_repair = bool(self._option(kwargs, "hydra_auto_repair_runtime", True))
+        # Keep a global opt-out for locked-down/offline environments where the app
+        # must never try package-manager operations during model load.
+        if str(os.environ.get("DCT_HYDRA_AUTO_REPAIR", "1")).strip().lower() in {"0", "false", "no", "off"}:
+            auto_repair = False
+        if missing_deps and auto_repair and any("pyvips" in item for item in missing_deps):
+            repair_logs = _hydra_auto_repair_runtime_dependencies()
+            missing_deps, runtime_notes = _hydra_check_runtime_dependencies(include_core=True)
+        if missing_deps:
+            raise RuntimeError(_hydra_runtime_failure_message(missing_deps, runtime_notes, repair_logs))
+        self.repo_path = path
+
+    def unload(self) -> None:
+        self.repo_path = None
+        self.service_url = ""
+
+    def _resolve_device(self, kwargs: dict[str, Any]) -> str:
+        device = str(self._option(kwargs, "device", self.device or "cuda") or "cuda")
+        if device == "auto":
+            try:
+                import torch
+                return "cuda" if torch.cuda.is_available() else "cpu"
+            except Exception:
+                return "cpu"
+        return device
+
+    def _command(self, image_path: Path, output_path: Path | None = None, **kwargs: Any) -> list[str]:
+        assert self.repo_path is not None
+        device = self._resolve_device(kwargs)
+        metric = str(self._option(kwargs, "hydra_metric", self._option(kwargs, "metric", "f1.0@0.1")) or "f1.0@0.1")
+        implications = str(self._option(kwargs, "hydra_implications", self._option(kwargs, "implications", "inherit")) or "inherit")
+        model_path = str(self._option(kwargs, "hydra_model_path", self.repo_path / "models" / "hydra-3.5.safetensors"))
+        metadata_path = str(self._option(kwargs, "hydra_metadata_path", self.repo_path / "data"))
+        csv_output = str(output_path) if output_path else "-"
+        cmd = [
+            sys.executable,
+            str(self.repo_path / "inference.py"),
+            "-o", csv_output,
+            "-M", model_path,
+            "-D", metadata_path,
+            "-d", device,
+            "-m", metric,
+            "-i", implications,
+        ]
+        if bool(self._option(kwargs, "hydra_underscores", self._option(kwargs, "underscores", True))):
+            cmd.append("-u")
+        if bool(self._option(kwargs, "hydra_prompt_escape", self._option(kwargs, "prompt_escape", False))):
+            cmd.append("-P")
+        if bool(self._option(kwargs, "hydra_shuffle", self._option(kwargs, "shuffle", False))):
+            cmd.append("-s")
+        prefix = self._option(kwargs, "hydra_prefix", self._option(kwargs, "prefix", ""))
+        if prefix:
+            cmd += ["-p", str(prefix)]
+        for alias_path in self._option(kwargs, "hydra_alias_files", self._option(kwargs, "alias_files", [])) or []:
+            cmd += ["-A", str(alias_path)]
+        for pair in self._option(kwargs, "hydra_aliases", self._option(kwargs, "aliases", [])) or []:
+            if isinstance(pair, (list, tuple)) and len(pair) >= 2:
+                cmd += ["-a", str(pair[0]), str(pair[1])]
+        for category in self._option(kwargs, "hydra_exclude_categories", self._option(kwargs, "exclude_categories", [])) or []:
+            cmd += ["-C", str(category)]
+        for tag in self._option(kwargs, "hydra_exclude_tags", self._option(kwargs, "exclude_tags", [])) or []:
+            cmd += ["-x", str(tag)]
+        for group in self._option(kwargs, "hydra_exclusive_groups", self._option(kwargs, "exclusive_groups", [])) or []:
+            cmd += ["-g", str(group)]
+        if self._option(kwargs, "batch_size", None):
+            cmd += ["-b", str(self._option(kwargs, "batch_size"))]
+        workers = self._option(kwargs, "workers", None)
+        if workers is not None:
+            cmd += ["-w", str(workers)]
+        elif os.name == "nt":
+            cmd += ["-w", "0", "--no-shm"]
+        if bool(self._option(kwargs, "hydra_no_shm", False)):
+            cmd.append("--no-shm")
+        if bool(self._option(kwargs, "hydra_varlen", self._option(kwargs, "varlen", False))):
+            cmd.append("-V")
+        seqlen = self._option(kwargs, "hydra_seqlen", self._option(kwargs, "seqlen", None))
+        if seqlen:
+            cmd += ["-S", str(seqlen)]
+        if bool(self._option(kwargs, "hydra_compile", self._option(kwargs, "compile", False))):
+            cmd.append("-c")
+        cmd.append(str(image_path))
+        return cmd
+
+    def _service_predict(self, image_path: Path, **kwargs: Any) -> Prediction:
+        service_url = str(self._option(kwargs, "hydra_service_url", self._option(kwargs, "service_url", self.service_url)) or "").strip().rstrip("/")
+        if not service_url:
+            raise RuntimeError("Hydra service URL is not configured.")
+        metric = str(self._option(kwargs, "hydra_metric", self._option(kwargs, "metric", "f1.0@0.1")) or "f1.0@0.1")
+        implications = str(self._option(kwargs, "hydra_implications", self._option(kwargs, "implications", "inherit")) or "inherit")
+        query = urllib.parse.urlencode({"calibration": metric, "implications": implications})
+        url = f"{service_url}/classify?{query}"
+        suffix = image_path.suffix.lower().lstrip(".") or "jpeg"
+        content_type = "image/jpeg" if suffix in {"jpg", "jpeg"} else f"image/{suffix}"
+        data = image_path.read_bytes()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": content_type}, method="POST")
+        with urllib.request.urlopen(req, timeout=int(self._option(kwargs, "timeout", 600) or 600)) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="replace") or "{}")
+        parsed = self._parse_service_response(payload)
+        return self._prediction_from_scores(parsed, raw={"repo_id": self.repo_id, "service_url": service_url, "service_response_keys": list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__}, **kwargs)
+
+    @staticmethod
+    def _parse_service_response(payload: Any) -> list[tuple[str, float]]:
+        rows: list[tuple[str, float]] = []
+        def add(tag: Any, score: Any = 1.0):
+            t = str(tag or "").strip().lower().replace(" ", "_")
+            if not t:
+                return
+            try:
+                s = float(score)
+            except Exception:
+                s = 1.0
+            rows.append((t, s))
+        if isinstance(payload, dict):
+            for key in ("tags", "classes", "predictions", "labels", "scores"):
+                value = payload.get(key)
+                if value:
+                    rows.extend(RedRocketHydra35Adapter._parse_service_response(value))
+            # Some services return {"tag": score, ...}.
+            if not rows:
+                for key, value in payload.items():
+                    if isinstance(value, (int, float, str)) and key not in {"ok", "model", "version"}:
+                        add(key, value)
+        elif isinstance(payload, list):
+            for item in payload:
+                if isinstance(item, dict):
+                    tag = item.get("tag") or item.get("name") or item.get("label") or item.get("class")
+                    score = item.get("score") or item.get("probability") or item.get("prob") or item.get("confidence") or item.get("value") or 1.0
+                    add(tag, score)
+                elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                    add(item[0], item[1])
+        seen: set[str] = set(); out: list[tuple[str, float]] = []
+        for tag, score in rows:
+            if tag not in seen:
+                out.append((tag, score)); seen.add(tag)
+        return out
+
+    def _prediction_from_scores(self, parsed: list[tuple[str, float]], raw: dict[str, Any] | None = None, **kwargs: Any) -> Prediction:
+        try:
+            threshold_f = float(self._option(kwargs, "threshold", 0.70))
+        except Exception:
+            threshold_f = 0.70
+        try:
+            max_tags = int(self._option(kwargs, "max_tags", self._option(kwargs, "top_k", 250)) or 250)
+        except Exception:
+            max_tags = 250
+        selected = sorted([(tag, float(score)) for tag, score in parsed if float(score) >= threshold_f], key=lambda item: item[1], reverse=True)[:max(1, max_tags)]
+        if not selected:
+            selected = sorted([(tag, float(score)) for tag, score in parsed], key=lambda item: item[1], reverse=True)[:max(1, min(max_tags, 20))]
+        rating_names = {"safe", "questionable", "explicit", "rating_safe", "rating_questionable", "rating_explicit"}
+        ratings = [(tag, score) for tag, score in selected if tag in rating_names]
+        return Prediction(kind="tag", tags=selected, classes=ratings or selected, raw=raw or {})
+
+    def predict(self, image_path: Path, **kwargs: Any) -> Prediction:
+        service_url = str(self._option(kwargs, "hydra_service_url", self._option(kwargs, "service_url", self.service_url)) or "").strip()
+        if service_url:
+            return self._service_predict(image_path, **kwargs)
+        if self.repo_path is None:
+            load_kwargs = dict(kwargs)
+            device_arg = load_kwargs.pop("device", "auto")
+            self.load(device=device_arg, **load_kwargs)
+        if self.repo_path is not None:
+            _hydra_patch_repo_source_compat(self.repo_path)
+        temp_path: Path | None = None
+        csv_text = ""
+        try:
+            with tempfile.NamedTemporaryFile(prefix="dct_hydra_", suffix=".csv", delete=False) as handle:
+                temp_path = Path(handle.name)
+            cmd = self._command(image_path, output_path=temp_path, **kwargs)
+            proc = subprocess.run(
+                cmd,
+                cwd=str(self.repo_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_hydra_subprocess_env(),
+                timeout=int(self._option(kwargs, "timeout", 900) or 900),
+            )
+            if proc.returncode != 0:
+                detail = "\n".join(x for x in [proc.stderr or "", proc.stdout or ""] if x)
+                raise RuntimeError(
+                    "Hydra 3.5 inference failed with code "
+                    f"{proc.returncode}.\nCommand: {cmd}\nWorking directory: {self.repo_path}\n"
+                    f"Stderr/stdout tail:\n{detail[-12000:]}"
+                )
+            try:
+                csv_text = temp_path.read_text(encoding="utf-8", errors="replace") if temp_path and temp_path.exists() else ""
+            except Exception as exc:
+                raise RuntimeError(f"Hydra 3.5 completed but the UTF-8 CSV output could not be read: {exc}") from exc
+            if not csv_text.strip() and proc.stdout:
+                csv_text = proc.stdout
+            parsed = _parse_prediction_table(csv_text)
+            if not parsed:
+                raise RuntimeError(
+                    "Hydra 3.5 ran but no tag scores could be parsed from its UTF-8 CSV output. "
+                    f"Command: {cmd}\nCSV tail:\n{(csv_text or '')[-12000:]}\nStdout tail:\n{(proc.stdout or '')[-4000:]}\nStderr tail:\n{(proc.stderr or '')[-4000:]}"
+                )
+            return self._prediction_from_scores(parsed, raw={"repo_id": self.repo_id, "csv_tail": csv_text[-8000:], "stderr_tail": (proc.stderr or "")[-4000:], "adapter": "native_hydra_3_5", "output_mode": "utf8_csv_file"}, **kwargs)
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
 
 
 class RedRocketJTP3Adapter:
@@ -1963,10 +4117,10 @@ class RedRocketJTP3Adapter:
 
     def _command(self, image_path: Path, **kwargs: Any) -> list[str]:
         assert self.repo_path is not None
-        threshold = kwargs.get("threshold", 0.5)
+        threshold = kwargs.get("threshold", 0.70)
         # DCT UI thresholds are normal probabilities in [0, 1].  JTP-3 CLI
         # thresholds are symmetric values in [-1, 1] that it maps internally to
-        # probabilities.  Convert by default so a DCT threshold of 0.35 really
+        # probabilities.  Convert by default so a DCT threshold of 0.70 really
         # means p>=0.35 instead of JTP's p>=0.675.
         try:
             threshold_value = float(threshold)
@@ -2037,11 +4191,11 @@ class RedRocketJTP3Adapter:
                 f"Loaded metadata tags: {len(tag_names)}.\n"
                 f"Command: {cmd}\nStdout tail:\n{(proc.stdout or '')[-12000:]}\nStderr tail:\n{(proc.stderr or '')[-4000:]}"
             )
-        threshold = kwargs.get("threshold", 0.35)
+        threshold = kwargs.get("threshold", 0.70)
         try:
             threshold_f = float(threshold)
         except Exception:
-            threshold_f = 0.35
+            threshold_f = 0.70
         opts = kwargs.get("options") if isinstance(kwargs.get("options"), dict) else {}
         top_k = kwargs.get("max_tags") or kwargs.get("top_k") or opts.get("max_tags") or opts.get("top_k")
         try:
@@ -2223,11 +4377,15 @@ class HFImageTaggerAdapter:
         placement = _hf_pipeline_device_kwargs(device, kwargs)
         model_kwargs = dict(placement.pop("model_kwargs", {}) or {})
         model_kwargs.setdefault("trust_remote_code", bool(kwargs.get("trust_remote_code", True)))
+        if kwargs.get("local_files_only"):
+            model_kwargs["local_files_only"] = True
         token = kwargs.get("huggingface_token") or kwargs.get("hf_token") or kwargs.get("token") or os.environ.get("HF_TOKEN")
         pipe_kwargs = dict(placement)
         pipe_kwargs["model_kwargs"] = model_kwargs
         if token:
             pipe_kwargs["token"] = token
+        if kwargs.get("local_files_only"):
+            pipe_kwargs["local_files_only"] = True
         self.pipeline = pipeline("image-classification", model=model_id, **pipe_kwargs)
         self.model_id = model_id
 
@@ -2591,6 +4749,106 @@ class HFInstructBLIPAdapter:
         )
         text = response.get("suggested_caption") or response.get("response") or ""
         return Prediction(kind="caption", caption=str(text), raw={"response": response, "adapter": "instructblip"})
+
+
+class LingBotVideoAdapter:
+    name = "lingbot-video-runtime"
+    label = "LingBot-Video Runtime"
+    kind = "video_world_model"
+
+    def __init__(self, variant: str = "dense"):
+        self.variant = variant
+        self.model_id: str | None = None
+        self.device_value = "cpu"
+        self.runtime_warning: str | None = None
+        self.loaded_metadata: dict[str, Any] = {}
+
+    def is_available(self) -> bool:
+        # The adapter itself is a local command/runtime bridge. The heavy
+        # dependencies are validated at load/launch time so the catalog can list
+        # the models without importing nightly PyTorch, diffusers, or SGLang.
+        return True
+
+    @staticmethod
+    def _has_payload(path: Path) -> bool:
+        try:
+            if path.is_file():
+                return path.stat().st_size > 0
+            for pattern in ("*.safetensors", "*.bin", "*.pt", "*.pth", "*.json", "*.py"):
+                if any(path.rglob(pattern)):
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def load(self, device: str = "auto", **kwargs: Any) -> None:
+        model_id = kwargs.get("model_id") or kwargs.get("repo_id") or kwargs.get("api_model_id")
+        if not model_id:
+            raise RuntimeError("LingBot-Video requires a local model snapshot path or repository id.")
+        local = Path(str(model_id)).expanduser()
+        if local.exists() and not self._has_payload(local):
+            raise RuntimeError(f"LingBot-Video local path exists but no model/runtime payload was found: {local}")
+        if not local.exists() and any(sep in str(model_id) for sep in (os.sep, "/", "\\")):
+            raise RuntimeError(f"LingBot-Video local path was not found: {local}")
+        self.model_id = str(model_id)
+        self.device_value = str(device or "auto")
+        # Keep this explicit: LingBot public docs use command-line runners and a
+        # prompt-rewriter/auto-negative stage. The Data Curation Tool should not
+        # pretend a still-image tagger predict() path can run the video DiT.
+        self.runtime_warning = (
+            "LingBot-Video is loaded as a command/runtime bridge. Use its generated "
+            "scripts/inference.py workflow with prompt_json, optional auto-negative, "
+            "and FSDP/CP8 for multi-GPU MoE/refiner inference."
+        )
+        self.loaded_metadata = {
+            "variant": self.variant,
+            "model_id": self.model_id,
+            "device": self.device_value,
+            "backend_choices": ["diffusers", "sglang"],
+            "requires_prompt_json": True,
+            "supports_modes": ["t2i", "t2v", "ti2v"],
+            "supports_refiner": self.variant in {"moe", "moe_refiner"},
+        }
+
+    def build_command(self, *, mode: str = "t2v", prompt_json: str = "prompt.json", negative_prompt_json: str | None = "negative.json", output: str = "outputs/base.mp4", refiner_output: str | None = "outputs/refined.mp4", backend: str = "diffusers", height: int = 480, width: int = 832, fps: int = 24, steps: int = 40, run_refiner: bool | None = None, extra: dict[str, Any] | None = None) -> list[str]:
+        if not self.model_id:
+            raise RuntimeError("Load the LingBot-Video row before generating an inference command.")
+        cmd = [
+            sys.executable, "scripts/inference.py",
+            "--backend", str(backend or "diffusers"),
+            "--model_dir", str(self.model_id),
+            "--mode", str(mode or "t2v"),
+            "--prompt_json", str(prompt_json),
+            "--output", str(output),
+            "--height", str(int(height)),
+            "--width", str(int(width)),
+            "--fps", str(int(fps)),
+            "--steps", str(int(steps)),
+        ]
+        if negative_prompt_json:
+            cmd.extend(["--negative_prompt_json", str(negative_prompt_json)])
+        use_refiner = bool(run_refiner if run_refiner is not None else self.variant in {"moe", "moe_refiner"})
+        if use_refiner:
+            cmd.append("--run_refiner")
+            if refiner_output:
+                cmd.extend(["--refiner_output", str(refiner_output)])
+        for key, value in (extra or {}).items():
+            if value is None or value is False:
+                continue
+            flag = "--" + str(key).replace("_", "-")
+            if value is True:
+                cmd.append(flag)
+            else:
+                cmd.extend([flag, str(value)])
+        return cmd
+
+    def predict(self, image_path: Path, **kwargs: Any) -> Prediction:
+        raise RuntimeError(
+            "LingBot-Video is a video/world-model generation runtime, not an image tagger. "
+            "Use the LingBot command workflow with prompt_json / scripts/inference.py rather than the image prediction button."
+        )
+
+
 
 
 class OptionalAdapterPlaceholder:

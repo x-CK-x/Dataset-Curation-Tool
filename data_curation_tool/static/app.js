@@ -4,8 +4,15 @@ if (typeof window !== 'undefined') window.__DCT_APP_JS_MODULE_EVALUATED = true;
 const state = {
   tab: 'Dashboard',
   summary: {},
+  startupStatus: { status: 'idle', progress: 0, percent: 0, message: 'Startup status not loaded yet.' },
+  frontendHydration: { status: 'idle', progress: 0, percent: 0, message: '' },
+  dashboardRefreshBusy: false,
+  lastDashboardRefreshAt: 0,
   datasets: [],
   media: { items: [], total: 0, page: 1, page_size: 80 },
+  mediaLoading: false,
+  mediaLoadError: null,
+  mediaRequestSeq: 0,
   selected: new Set(),
   selectedMediaCache: {},
   activeMedia: null,
@@ -17,6 +24,7 @@ const state = {
   modelsAutoRefresh: true,
   lastJobsFingerprint: '',
   lastModelStatusFingerprint: '',
+  lastStartupStatusFingerprint: '',
   models: [],
   lastModelListRefreshAt: 0,
   modelStatuses: { stages: ['download', 'load', 'inference', 'training'], models: {}, aggregate: {} },
@@ -28,6 +36,20 @@ const state = {
   customModelForm: { name: '', label: '', category: '', provider: 'huggingface', repo_id: '', local_path: '', description: '', capabilities: '', size_gb: '', vram_gb: '', precision: 'checkpoint-defined', modality: 'image/text', recommended_backend: 'auto' },
   modelRunSelection: '',
   quickModelSelection: '',
+  quickModelQueueSelection: [],
+  quickModelQueueParallel: true,
+  quickTagThreshold: 0.70,
+  quickTagGpuIds: [],
+  quickTagDeviceMode: 'cuda',
+  quickTagShardingStrategy: 'none',
+  quickTagUseLoadedPlacement: false,
+  thumbnailPendingIds: new Set(),
+  thumbnailHydratorTimer: null,
+  thumbnailVersions: {},
+  integrityProfiles: null,
+  integrityForm: { name: 'Nightshade / Glaze integrity classifier', model_path: '', labels_path: '', architecture: 'efficientnetv2', task: 'multilabel', input_size: 224, normalization: 'imagenet', threshold: 0.70 },
+  integritySelectedProfile: '',
+  integrityLastResult: null,
   curationModelSelection: '',
   tagSelectionModelSelection: '',
   predictionModelSelection: '',
@@ -46,8 +68,11 @@ const state = {
   retainImportedOrder: false,
   downloadSources: [],
   downloadValidation: null,
+  tagDictionarySyncQueued: {},
   orchestrationTemplates: [],
   importFolders: [],
+  importPickerBusy: false,
+  lastImportJobId: null,
   tagDrafts: {},
   tagDraftSource: {},
   tagMeta: {},
@@ -55,12 +80,43 @@ const state = {
   tagScores: {},
   tagScorePending: new Set(),
   tagScoreRequestKeys: {},
+  tagScoreHighlightModels: [],
+  tagScoreHighlightMode: 'any',
+  tagScoreHighlightMinScore: 0,
+  tagScoreHighlightAutoSelect: false,
+  tagSortModelName: '',
+  attentionOverlayEnabled: true,
+  attentionOverlayMethod: 'classifier_gradcam',
+  attentionOverlayModelName: '',
+  attentionOverlayTag: '',
+  attentionOverlayOpacity: 0.45,
+  attentionOverlayBlendMode: 'screen',
+  attentionOverlayArtifacts: {},
+  attentionOverlayBusy: false,
+  attentionOverlayLastError: null,
   uiScrollMemory: {},
+  shellScrollMemory: {},
+  lastCrossTabScrollSnapshot: null,
+  scrollRestoringUntil: 0,
+  scrollSnapshotScheduled: false,
+  scrollRestoreToken: 0,
+  shellScrollRestoreToken: 0,
+  lastUserScrollAt: 0,
+  scrollActiveUntil: 0,
+  programmaticScrollUntil: 0,
   renderScheduled: false,
   renderDeferredForEditing: false,
   controlInteractionHoldUntil: 0,
   dropdownInteractionActive: false,
   lastCompletedModelJobIds: new Set(),
+  modelDownloadJobWatchers: {},
+  modelLifecycleJobWatchers: {},
+  modelInferenceJobWatchers: {},
+  modelInferenceRefreshPending: {},
+  modelRuntimePollBusy: false,
+  modelRuntimePollLastAt: 0,
+  lastModelRuntimeSignature: '',
+  modelCatalogPatchBusy: false,
   tagScoreAnalytics: null,
   featureMatrix: null,
   compareSelected: { left: new Set(), right: new Set() },
@@ -80,6 +136,8 @@ const state = {
   assistantReasoningEffort: '',
   assistantShowVisiblePlan: true,
   assistantShowLiveActionNotes: true,
+  assistantShowLiveChainOfThought: true,
+  assistantShowLiveReasoningTrace: true,
   assistantPlanningPasses: '',
   assistantPlanMaxTokens: '',
   assistantMinChatTokens: '',
@@ -98,6 +156,8 @@ const state = {
   codeReasoningEffort: '',
   codeShowVisiblePlan: true,
   codeShowLiveActionNotes: true,
+  codeShowLiveChainOfThought: true,
+  codeShowLiveReasoningTrace: true,
   codePlanningPasses: '',
   codePlanMaxTokens: '',
   codeMinChatTokens: '',
@@ -112,6 +172,9 @@ const state = {
   agentGoal: '',
   agentContext: '',
   agentModelSelection: '',
+  agentModelQueueSelection: [],
+  agentModelQueueParallel: true,
+  agentModelQueueTask: 'tag',
   agentPlan: null,
   agentConversationId: null,
   agentCommand: '',
@@ -138,6 +201,8 @@ const state = {
   agentCoaJobWatchers: {},
   agentSurfaceDrafts: {},
   galleryScoresEnabled: false,
+  booruResetSource: 'e621',
+  booruResetReport: null,
   editorAssistantSelection: null,
   editorManualTagSelections: {},
   editorSelectionCategory: '',
@@ -150,6 +215,8 @@ const state = {
   chatSending: false,
   chatQueue: [],
   chatCurrent: null,
+  liveChatContextBudgets: {},
+  liveContextBudgetTickers: {},
   chatIncludeMetadata: true,
   chatMetadataPaths: '',
   dictionaryStatus: null,
@@ -177,6 +244,15 @@ const state = {
   referenceRuns: [],
   referenceResults: [],
   referenceOutput: null,
+  characterReferenceStatus: null,
+  characterReferenceProfiles: [],
+  characterReferenceOutput: null,
+  characterReferenceTarget: '',
+  characterReferenceRefs: '',
+  characterReferenceFolder: '',
+  characterReferenceBranch: 'default',
+  characterReferenceThreshold: 0.62,
+  characterReferencePipeline: 'dino_clip_fallback',
   annotationState: null,
   annotationMode: 'bbox',
   annotationDraftBbox: null,
@@ -311,6 +387,201 @@ const state = {
   remoteCommandText: '',
   remoteScpLocal: '',
   remoteScpRemote: '',
+  globalDatasetStatus: null,
+  globalDatasetBranches: [],
+  globalDatasetAssets: { items: [], total: 0, page: 1, page_size: 40 },
+  globalDatasetSelectedAsset: null,
+  globalDatasetQuery: '',
+  globalDatasetSource: '',
+  globalDatasetTags: '',
+  globalDatasetBranchName: 'default',
+  globalDatasetBranchPurpose: '',
+  globalDatasetRegisterPath: '',
+  globalDatasetRegisterTags: '',
+  globalDatasetIngestFolder: '',
+  globalDatasetIngestCreateBranch: false,
+  datasetPipelineCatalog: null,
+  datasetPipelineRules: null,
+  datasetPipelinePlan: null,
+  datasetPipelineEval: null,
+  datasetPipelineExport: null,
+  datasetPipelinePrintTools: null,
+  datasetPipelinePrintPackage: null,
+  datasetPipelinePrompt: null,
+  datasetPipelineApply: null,
+  datasetPipelineAugPlan: null,
+  datasetPipelineRegPlan: null,
+  workflowCatalog: null,
+  workflowItems: [],
+  workflowRuns: [],
+  workflowSelectedId: '',
+  workflowSelected: null,
+  workflowPlanOutput: null,
+  workflowValidation: null,
+  workflowRunOutput: null,
+  workflowEditJson: '',
+  workflowDraftName: 'Automated dataset curation workflow',
+  workflowGoal: 'Prepare this dataset branch for training from the selected dataset.',
+  workflowInstructions: '',
+  workflowTemplateKey: 'full_dataset_curation',
+  workflowAssistantModel: '',
+  workflowSourceDatasetId: '',
+  workflowBranch: 'default',
+  workflowTarget: 'sdxl',
+  workflowAdapter: 'lora',
+  workflowDatasetGoal: 'character',
+  workflowTrainingTool: 'generic',
+  workflowUseModelPlanning: false,
+  workflowApproveUnsafe: false,
+  workflowStopOnApproval: true,
+  workflowRunDry: true,
+  workflowAutomationLevel: 'guided',
+  graphEditorCatalog: null,
+  graphEditorItems: [],
+  graphEditorRuns: [],
+  graphEditorEvents: [],
+  attentionCapabilities: null,
+  attentionLastResult: null,
+  attentionTag: '',
+  attentionMethod: 'classifier_gradcam',
+  attentionModelName: '',
+  graphEditorSelectedId: '',
+  graphEditorSelected: null,
+  graphEditorEditJson: '',
+  graphEditorName: 'Agentic curation graph',
+  graphEditorGoal: '',
+  graphEditorInstructions: '',
+  graphEditorTemplateKey: 'full_dataset_curation',
+  graphEditorAssistantModel: '',
+  graphEditorSourceDatasetId: '',
+  graphEditorBranch: 'default',
+  graphEditorTarget: 'sdxl',
+  graphEditorAdapter: 'lora',
+  graphEditorDatasetGoal: 'character',
+  graphEditorTrainingTool: 'generic',
+  graphEditorUseModelPlanning: false,
+  graphEditorUseModelRefine: false,
+  graphEditorRefineInstructions: '',
+  graphEditorApproveUnsafe: false,
+  graphEditorDryRun: true,
+  graphEditorStopOnGate: true,
+  graphEditorSelectedNodeId: '',
+  graphEditorEdgeFrom: '',
+  graphEditorEdgeTo: '',
+  graphEditorLastResult: null,
+  graphEditorViewport: { x: 0, y: 0, scale: 1 },
+  graphEditorContextMenu: null,
+  graphEditorNodeContextMenu: null,
+  graphEditorConnectingFrom: '',
+  graphEditorConnectGhost: null,
+  graphEditorGraphActive: false,
+  graphEditorPaletteFilter: '',
+  graphEditorInspectorMode: 'normal',
+  graphEditorFocusedPanel: '',
+  graphEditorActiveInteractionUntil: 0,
+  graphEditorPanningCanvas: false,
+  graphEditorDraggingNode: false,
+  graphEditorConnectingActive: false,
+  graphEditorConnectingPort: 'out',
+  graphEditorSelectedNodeIds: [],
+  graphEditorSelectedEdgeIds: [],
+  graphEditorClipboard: null,
+  graphEditorSelectionBox: null,
+  graphEditorSelectingBox: false,
+  graphEditorLastCanvasWorldPoint: { x: 0, y: 0 },
+  graphEditorPaletteCategoryFilters: {},
+  graphEditorPaletteSearch: '',
+  graphEditorPaletteRecentKinds: [],
+  graphEditorPasteCount: 0,
+  agenticWorkflowReadmeKey: 'guaranteed_graph_runtime_smoke_test',
+  agenticWorkflowReadmeLastCreated: null,
+  agenticWorkflowReadmeLastRun: null,
+  agenticWorkflowReadmeBusy: false,
+  agenticWorkflowSelfTest: null,
+  agenticWorkflowSelfTestBusy: false,
+  graphChatConversationId: null,
+  graphChatMessages: [],
+  graphChatConversationState: {},
+  graphChatDraft: '',
+  graphChatSending: false,
+  graphChatQueue: [],
+  graphChatCurrent: null,
+  graphChatModelSelection: '',
+  graphChatAgentToolsEnabled: true,
+  graphChatLastResponse: null,
+  graphChatLastError: null,
+  graphCatalog: null,
+  graphItems: [],
+  graphRuns: [],
+  graphSelectedId: '',
+  graphSelected: null,
+  graphEditJson: '',
+  graphTemplateKey: 'full_dataset_curation_graph',
+  graphDraftName: 'Agentic curation graph',
+  graphGoal: '',
+  graphInstructions: '',
+  graphAssistantModel: '',
+  graphSourceDatasetId: '',
+  graphBranch: 'default',
+  graphTarget: 'sdxl',
+  graphAdapter: 'lora',
+  graphDatasetGoal: 'character',
+  graphTrainingTool: 'generic',
+  graphUseModelPlanning: false,
+  graphApproveUnsafe: false,
+  graphStopOnApproval: true,
+  graphRunDry: true,
+  graphSaveCompiledWorkflow: false,
+  graphSelectedNodeId: '',
+  graphConnectFrom: '',
+  graphConnectTo: '',
+  graphValidation: null,
+  graphCompileOutput: null,
+  graphRunOutput: null,
+  graphPlanOutput: null,
+  datasetPipelineTarget: 'sdxl',
+  datasetPipelineAdapter: 'lora',
+  datasetPipelineGoal: 'character',
+  datasetPipelineBranch: 'default',
+  datasetPipelineTrigger: '<trigger_token>',
+  datasetPipelineStyleTrigger: '<style_trigger>',
+  datasetPipelineTrainingTool: 'generic',
+  datasetPipelineIncludeMedia: false,
+  datasetPipelineLinkMode: 'reference',
+  datasetPipelineNotes: '',
+  multimodalCatalog: null,
+  multimodalAssets: [],
+  multimodalClips: [],
+  multimodalSamples: [],
+  multimodalSelectedAssetId: '',
+  multimodalSelectedClipId: '',
+  multimodalSelectedSampleIds: new Set(),
+  multimodalSourcePath: '',
+  multimodalCopyAsset: false,
+  multimodalClipMethod: 'fixed_window',
+  multimodalMinDuration: 2,
+  multimodalMaxDuration: 8,
+  multimodalOverlapSeconds: 0,
+  multimodalTargetFrames: 49,
+  multimodalSuggestions: [],
+  multimodalCaptionStyle: 'structured_blocks',
+  multimodalTriggerStrategy: 'none',
+  multimodalTriggerToken: '',
+  multimodalCaptionStructuredText: '{\n  "trigger_token": "",\n  "visual_summary": "",\n  "speech_transcript": "",\n  "non_speech_audio": "",\n  "ambient_sound": ""\n}',
+  multimodalTaskProfile: 'ltx_t2v_av_lora',
+  multimodalExportProfile: 'ltx_jsonl',
+  multimodalExportName: '',
+  multimodalExportConfigText: '{\n  "caption_style": "structured_blocks",\n  "target_frames": [1, 25, 49, 81],\n  "resolution": [960, 544],\n  "trigger_strategy": "none"\n}',
+  multimodalLastOutput: null,
+  multimodalLastJob: null,
+  multimodalLastRefreshAt: 0,
+  multimodalPipelinePasses: 'media_probe, video_understanding, audio_understanding, temporal_alignment, caption_synthesis, verification, human_review',
+  printAssetPath: '',
+  printPackageName: '',
+  printTargetFormats: 'stl, 3mf',
+  printSlicer: 'prusaslicer',
+  printUnitScale: 'millimeters',
+  printRepairPolicy: 'make_manifold_if_needed',
   jobDetailId: null,
   lastModelRunJob: null,
   migrationSourceText: '',
@@ -321,11 +592,294 @@ const state = {
   filters: { q: '', tag: '', dataset_id: '', media_type: '', duplicate: '' },
 };
 
+const DEFAULT_CLASSIFIER_THRESHOLD = 0.70;
+
+const GUARANTEED_AGENTIC_WORKFLOW_TEMPLATES = [
+  { key: 'guaranteed_graph_runtime_smoke_test', label: 'Certified smoke test: graph runtime preview', category: 'local', certified: true, short: 'Local-only graph runtime baseline; no downloads, shell/browser/MCP, trainer installs, or live model calls in default dry-run mode.' },
+  { key: 'guaranteed_empty_branch_readiness_workflow', label: 'Certified safe workflow: empty branch readiness', category: 'qa', certified: true, short: 'Creates/reuses a smoke-test branch and runs deterministic dataset-prep planning steps without touching originals.' },
+  { key: 'guaranteed_multimodal_manifest_preview', label: 'Certified multimodal preview: caption/export packet', category: 'multimodal', certified: true, short: 'Builds a video/audio/image caption-packet preview without needing ffmpeg, media files, ASR, or trainer installs.' },
+  { key: 'certified_tag_normalization_preview', label: 'Certified workflow: tag normalization preview', category: 'tags', certified: true, short: 'Exercises deterministic tag/rule packet construction and dry-run normalization without loading a model or editing media.' },
+  { key: 'certified_dataset_qa_export_plan', label: 'Certified workflow: dataset QA and export plan', category: 'qa', certified: true, short: 'Builds a local-only QA, compatibility, export, and trainer-handoff plan without touching source media or launching training.' },
+  { key: 'certified_closed_loop_training_improvement_preview', label: 'Certified workflow: closed-loop training improvement preview', category: 'training', certified: true, short: 'Runs an acyclic baseline of evaluation, parallel dataset/hyperparameter planning, merge, review planning, and trainer handoff.' },
+  { key: 'advanced_tag_based_multi_model_score_review', label: 'Advanced tags: multi-model score review workflow', category: 'tags', certified: true, short: 'Dry-run graph for tagger ensembles, threshold policy, persisted score review, alias/implication normalization, and human approval.' },
+  { key: 'advanced_caption_only_image_dataset_prep', label: 'Advanced captions: image caption-only dataset prep', category: 'captions', certified: true, short: 'Caption-only image dataset planning with no tag mutation, suited to caption-first diffusion/LoRA datasets.' },
+  { key: 'advanced_ltx_wan_multimodal_caption_export', label: 'Advanced multimodal: LTX/Wan caption/export planning', category: 'multimodal', certified: true, short: 'Video/audio/image structured caption and exporter-readiness planning for LTX and Wan profiles in dry-run mode.' },
+  { key: 'advanced_audio_video_sync_caption_review', label: 'Advanced multimodal: audio-video sync caption review', category: 'multimodal', certified: true, short: 'A/V transcript, sound-event, visual-action, sync-offset, and caption-QA planning without real ASR or ffmpeg calls.' },
+];
+function workflowCategoryMeta(category = '') {
+  const key = String(category || 'local');
+  const meta = {
+    local: { label:'Local smoke', color:'#94a3b8', cls:'workflow-category-local' },
+    tags: { label:'Tag based', color:'#34d399', cls:'workflow-category-tags' },
+    captions: { label:'Caption only', color:'#fbbf24', cls:'workflow-category-captions' },
+    multimodal: { label:'Multimodal', color:'#22d3ee', cls:'workflow-category-multimodal' },
+    qa: { label:'QA/export', color:'#60a5fa', cls:'workflow-category-qa' },
+    training: { label:'Training loop', color:'#c084fc', cls:'workflow-category-training' },
+  };
+  return meta[key] || meta.local;
+}
+
+
+const AGENTIC_WORKFLOW_READMES = {
+  guaranteed_graph_runtime_smoke_test: `# Guaranteed smoke test: graph runtime preview
+
+## Purpose
+This is the smallest known-good Agentic Graph Runtime test. It is meant to prove that the graph canvas, graph JSON, graph save path, runtime execution layer, node-result recording, and output-artifact path are wired correctly.
+
+## What it does
+- Starts from a deterministic text prompt.
+- Bundles the prompt into a context packet.
+- Passes through a model-call preview node that does **not** call a live model in default dry-run mode.
+- Passes through an always-true condition gate.
+- Writes a runtime output preview.
+
+## Requirements
+- No downloaded model is required.
+- No GPU is required.
+- No browser, MCP server, shell command, network call, dataset, ffmpeg, or trainer install is required.
+
+## How to run
+1. Click **Create This Graph Template**.
+2. Click **Run Runtime Smoke Test** from this tab, or open **Agentic Graph Editor** and click **Run Graph Runtime Session**.
+3. Keep **Runtime dry-run** enabled for the first test.
+4. Confirm that the run status is completed and that node results are visible in the graph result JSON.
+
+## Expected result
+The runtime session should complete. If this fails, the problem is in the graph editor/runtime plumbing rather than in a model, dataset, downloader, trainer, or external integration.
+
+## Manual steps
+No manual setup is required. After it works, duplicate the graph and replace the preview node with a real model call only after confirming that the selected model is already loaded.`,
+
+  guaranteed_empty_branch_readiness_workflow: `# Guaranteed safe workflow: empty branch readiness
+
+## Purpose
+This workflow verifies the dataset-prep automation path without requiring downloaded images, source downloads, model inference, or training execution. It gives a stable baseline for branch creation, rule planning, prompt-packet generation, dry-run label-rule simulation, augmentation planning, readiness evaluation, and trainer-handoff packet creation.
+
+## What it does
+- Creates or reuses a branch named \`smoke_test_branch\` by default.
+- Builds deterministic tag/caption rule settings for the selected target type.
+- Creates a model-prompt packet without calling a model.
+- Runs label-rule logic in dry-run mode.
+- Plans augmentations without creating files.
+- Generates a regularization guidance preview.
+- Evaluates the branch readiness; an empty branch may produce warnings or low readiness, but the workflow itself should still run.
+- Creates a trainer-handoff preview packet; it does not launch training.
+
+## Requirements
+- No external data is required.
+- No model download is required.
+- No trainer install is required.
+- The global dataset/branch services should be available from the normal application startup.
+
+## How to run
+1. Click **Create This Graph Template**.
+2. Open **Agentic Graph Editor**.
+3. Keep unsafe approvals off for the first run.
+4. Use **Run Graph Runtime Session** for the graph runtime preview.
+5. Optionally use **Save as Automation Workflow** only after the runtime preview completes.
+
+## Expected result
+The graph runtime should complete. Readiness metrics can be empty/low because this is an intentionally empty branch smoke test. That is acceptable. The acceptance criterion is that the workflow produces structured outputs without failing or attempting network/model/trainer actions.
+
+## Manual steps
+After the smoke test works, set the branch name to a real dataset branch and replace the dry-run steps with approved mutating steps one at a time.`,
+
+  guaranteed_multimodal_manifest_preview: `# Guaranteed multimodal preview: caption/export packet
+
+## Purpose
+This graph verifies the multimodal packet-building path for future LTX/Wan dataset workflows without requiring media files, ASR, ffmpeg, diarization, or trainer exporters. It is a safe preview of the caption/export manifest shape.
+
+## What it does
+- Creates placeholder video, audio, image/reference, and structured-caption inputs.
+- Bundles those inputs into one multimodal context object.
+- Passes the bundle through a dry-run model-call preview node.
+- Produces an output-artifact preview that can be inspected from the graph result JSON.
+
+## Requirements
+- No media files are required for the first run.
+- No downloaded model is required.
+- No ffmpeg/ffprobe is required.
+- No LTX, Wan, Musubi, DiffSynth, SimpleTuner, or AI Toolkit install is required.
+
+## How to run
+1. Click **Create This Graph Template**.
+2. Run the template in dry-run mode.
+3. Inspect the bundle and output node result JSON.
+4. Only after the preview works, edit the placeholder input nodes to point at real files and add media-probe/export nodes.
+
+## Expected result
+The graph should complete and produce a structured context preview. This confirms the graph runtime can move multimodal placeholders through bundle/model-preview/output nodes before real media tooling is introduced.
+
+## Manual steps
+Replace placeholders with real paths only after this baseline works. Then add ffprobe/media-builder/export nodes one at a time so failures remain isolated.`,
+
+  certified_tag_normalization_preview: `# Certified workflow: tag normalization preview
+
+## Purpose
+Verify that the graph runtime can carry a known tag sample through rule-packet construction, dry-run normalization, a validation gate, and an output artifact without loading a tagger or changing media.
+
+## What it does
+- Supplies a deterministic mixed tag sample.
+- Builds a label-rule packet for the selected target profile.
+- Runs the label-rule step in dry-run mode.
+- Verifies the preview path with an always-true gate.
+- Returns a JSON output artifact.
+
+## Requirements
+- No model, GPU, dataset, network access, or external tool is required.
+- No tags or media are written.
+
+## How to run
+1. Select this workflow.
+2. Click Create + Run Certified Dry-Run.
+3. Confirm completed status for every node.
+4. Open it in Agentic Graph Editor to inspect or duplicate it.
+
+## Expected result
+The runtime status is completed and every enabled node reports completed. Replace the sample tags and connect real branch/tag services only after this baseline passes.`,
+
+  certified_dataset_qa_export_plan: `# Certified workflow: dataset QA and export plan
+
+## Purpose
+Verify the graph path used for dataset readiness, export planning, and trainer handoff without copying media, writing a real export, or launching training.
+
+## What it does
+- Creates a placeholder dataset-manifest input.
+- Bundles the QA context.
+- Produces readiness, export, and trainer-handoff preview packets.
+- Returns a JSON output artifact.
+
+## Requirements
+- No dataset, model, trainer, network access, or external application is required.
+- All operations are preview-only in the certified run.
+
+## How to run
+1. Select this workflow.
+2. Run the certified template self-test or Create + Run Certified Dry-Run.
+3. Confirm every enabled node completed.
+4. Duplicate the graph before adding a real branch ID or mutating export step.
+
+## Expected result
+A completed local dry-run with a QA/export/handoff packet and no source-media changes.`,
+
+  certified_closed_loop_training_improvement_preview: `# Certified workflow: closed-loop training improvement preview
+
+## Purpose
+Provide a reliable, compact baseline derived from the larger user-supplied training-improvement graph. The certification graph is intentionally acyclic so it can complete deterministically; its final artifact records the intended feedback target for a later approved loop.
+
+## What it does
+- Evaluates a placeholder branch/result state.
+- Fans out into dataset/augmentation planning and hyperparameter planning.
+- Merges both proposals.
+- Produces a human-review plan and a trainer-handoff preview.
+- Returns an output that points back to the evaluation stage as the future loop target.
+
+## Requirements
+- No live assistant/model call, trainer, dataset, GPU, browser, shell, MCP, or network access is required.
+- The certified run does not create a real feedback cycle or launch training.
+
+## How to run
+1. Run the template self-test first.
+2. Create and open this graph.
+3. Run it with Runtime dry-run enabled and live model calls disabled.
+4. Confirm all branches and the join node completed.
+5. Duplicate the graph before adding a real feedback edge, real result evaluator, or trainer integration.
+
+## Expected result
+Every enabled node completes, including both fan-out branches and the join. This establishes a working baseline before the full cyclic workflow is enabled.`,
+
+  advanced_tag_based_multi_model_score_review: `# Advanced tags: multi-model score review workflow
+
+## Category
+Tag based.
+
+## Purpose
+Provide a certified dry-run baseline for tagger ensembles before real inference is enabled. It models the intended data-curation policy: queue several tag/rating/classifier models, persist their per-tag scores, normalize aliases and implications, keep only threshold-passing tags, and put a human review gate before any branch-sidecar write.
+
+## What it does
+- Builds a tag policy packet with threshold, alias, implication, and score-retention rules.
+- Fans out into model-score preview branches without calling live models.
+- Merges the score-review packets.
+- Runs deterministic dry-run normalization.
+- Produces a human-review/output packet.
+
+## Requirements
+No model, GPU, dataset, download, or trainer is required for the certified run.
+
+## Expected result
+Every node completes in local dry-run mode. Replace the preview model nodes with real Quick Tag queue calls only after this baseline succeeds.`,
+
+  advanced_caption_only_image_dataset_prep: `# Advanced captions: image caption-only dataset prep
+
+## Category
+Caption only.
+
+## Purpose
+Provide a known-good graph for caption-first image dataset preparation where tags are not the training primitive. This is useful for workflows where the target trainer expects natural-language captions, not booru tags.
+
+## What it does
+- Creates an image-manifest placeholder.
+- Builds caption-style and trigger-token policy context.
+- Uses a preview model-call node with live calls disabled.
+- Runs caption QA/export planning.
+- Produces a trainer-handoff preview.
+
+## Requirements
+No live VLM, media file, GPU, export write, or trainer install is required for the certified dry-run.
+
+## Expected result
+The graph completes and returns a caption-only planning packet. When adapting it, keep Apply Tags disabled and add real captioning models one at a time.`,
+
+  advanced_ltx_wan_multimodal_caption_export: `# Advanced multimodal: LTX/Wan caption/export planning
+
+## Category
+Multimodal.
+
+## Purpose
+Provide a certified planning graph for LTX/Wan video/audio/image caption and export preparation. It mirrors the multimodal dataset-builder direction while staying safe and local-only in the certified run.
+
+## What it does
+- Creates video/audio/image/reference placeholders.
+- Builds structured [VISUAL], [SPEECH], and [SOUNDS] caption policy.
+- Bundles exporter-readiness context for LTX, Musubi, DiffSynth, SimpleTuner, and AI Toolkit.
+- Runs QA/export-preview nodes.
+- Produces a JSON output artifact.
+
+## Requirements
+No ffmpeg, ASR, diarization, media files, trainer, network access, or model call is required for certification.
+
+## Expected result
+The graph completes and returns a structured multimodal export-readiness packet. Add real media-probe/export nodes only after this baseline works.`,
+
+  advanced_audio_video_sync_caption_review: `# Advanced multimodal: audio-video sync caption review
+
+## Category
+Multimodal.
+
+## Purpose
+Provide a safe baseline for audio-video dataset review: transcript placeholders, sound-event labels, visible action labels, sync-offset policy, and caption QA.
+
+## What it does
+- Builds separate audio, visual, and timing placeholder packets.
+- Fans out to speech/sound and visual-action caption preview branches.
+- Joins those branches and runs a sync/caption QA gate.
+- Produces a human-reviewable output artifact.
+
+## Requirements
+No ASR, ffmpeg, audio event classifier, VLM, or real media is required for the certified dry-run.
+
+## Expected result
+Every node completes and the output artifact shows where transcript, sound events, visual actions, and sync notes will be inserted once real model/tool stages are enabled.`,
+};
+
 const tabs = [
   'Dashboard', 'Import', 'Gallery', 'Tag Editor', 'Detection & Boxes', 'Segmentation & Masks', 'Pose & 3D', '3D Studio', '3D Viewport', 'ComfyUI Bridge', 'FlexAvatar', 'Compare', 'Batch Tags',
-  'Prediction Analytics', 'Media Tools', 'Reference Finder', 'Source Browser', 'Assistant', 'Orchestrate', 'Models', 'Augment', 'Downloads', 'Presets',
+  'Prediction Analytics', 'Attention Visualizer', 'Media Tools', 'Reference Finder', 'Character Reference', 'Source Browser', 'Assistant', 'Orchestrate', 'Models', 'Augment', 'Downloads', 'Global Dataset', 'Dataset Pipeline', 'Multimodal Dataset Builder', 'Automation Workflows', 'Agentic Graph Editor', 'Agentic Graph Chat', 'Agentic Workflow READMEs', 'Presets',
   'Tag Dictionaries', 'Database', 'Install Migration', 'Code Assistant', 'Agent Tools', 'Remote Devices', 'MCP Tools', 'Future Modalities', 'Settings', 'Help & Workflows', 'Jobs'
 ];
+
+
+try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (_) {}
 
 const EXTERNAL_APP_OPTIONS = [
   ['topaz_photo_ai', 'Topaz Photo AI'],
@@ -337,9 +891,30 @@ const EXTERNAL_APP_OPTIONS = [
   ['comfyui', 'ComfyUI']
 ];
 
+function defaultClassifierThreshold() {
+  const raw = state.settings && state.settings.classifier_threshold;
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_CLASSIFIER_THRESHOLD;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_CLASSIFIER_THRESHOLD;
+  return Math.max(0.001, Math.min(1, value));
+}
+function stableThresholdValue(value, fallback = DEFAULT_CLASSIFIER_THRESHOLD) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.max(0.001, Math.min(1, n)) : fallback;
+}
+function quickTagThresholdValue() { return stableThresholdValue(state.quickTagThreshold, defaultClassifierThreshold()); }
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms || 0)))); }
+
 async function api(path, options = {}) {
   const opts = { ...options };
   const originalBody = opts.body;
+  const method = String(opts.method || 'GET').toUpperCase();
+  if (method === 'GET') {
+    opts.cache = opts.cache || 'no-store';
+    opts.headers = { 'Cache-Control': 'no-cache', Pragma: 'no-cache', ...(opts.headers || {}) };
+  }
   if (opts.body && !(opts.body instanceof FormData)) {
     opts.headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
     opts.body = JSON.stringify(opts.body);
@@ -379,6 +954,22 @@ async function api(path, options = {}) {
   }
   if (res.status === 204) return null;
   return res.json();
+}
+
+async function apiWithTimeout(path, options = {}, timeoutMs = 5000, fallback = undefined) {
+  let timer = null;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const opts = { ...options };
+  if (controller && !opts.signal) opts.signal = controller.signal;
+  if (controller && Number(timeoutMs || 0) > 0) timer = setTimeout(() => { try { controller.abort(); } catch (_) {} }, Number(timeoutMs));
+  try {
+    return await api(path, opts);
+  } catch (err) {
+    if (fallback !== undefined) return (typeof fallback === 'function') ? fallback(err) : fallback;
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function el(tag, attrs = {}, children = []) {
@@ -491,21 +1082,37 @@ function releaseDropdownInteractionSoon(delay = 900) {
 function recentUserInteraction(ms = 6000) {
   return Date.now() - Number(state.lastUserInteractionAt || 0) < ms;
 }
+function recentUserScroll(ms = 1200) {
+  const now = Date.now();
+  return now - Number(state.lastUserScrollAt || 0) < ms || now < Number(state.scrollActiveUntil || 0);
+}
+function isGraphCanvasEventTarget(target) {
+  return Boolean(target?.closest?.('.graphEditorCanvas,.agent-graph-canvas,.agent-graph-world,.agent-graph-edges,.agent-graph-edge-path,.graph-connection-ghost,.agent-graph-node,.graph-port,.agent-graph-edge-delete,.agent-graph-context-menu,.graph-node-inspector,.graph-editor-live-canvas-region'));
+}
 function shouldDeferControlRender() {
+  if (typeof graphEditorHasActiveCanvasInteraction === 'function' && graphEditorHasActiveCanvasInteraction()) return true;
   const hardHold = isRenderSensitiveControl() || state.dropdownInteractionActive || Date.now() < Number(state.controlInteractionHoldUntil || 0);
   if (hardHold) return true;
-  // Jobs, Models, Gallery, and the Tag Editor contain dense controls/lists.
-  // Polling renders on these tabs are expensive and can interrupt selection,
-  // scrolling, and model-menu inspection, so defer only briefly after user input
-  // while live DOM progress updaters keep bars/statuses current.
-  const passiveSensitiveTabs = new Set(['Jobs', 'Models', 'Gallery', 'Tag Editor']);
-  return passiveSensitiveTabs.has(state.tab) && recentUserInteraction(state.tab === 'Gallery' ? 1800 : 6500);
+  // Only true scrolling should block passive/polling renders. A graph/canvas click
+  // must update selection, context menus, node inspector state, and edge handles
+  // immediately. Pointer clicks only cancel stale restore passes; they no longer
+  // pretend that the page is actively scrolling.
+  if (recentUserScroll(900)) return true;
+  if (recentUserInteraction(850)) return true;
+  return false;
 }
 ['focusin','pointerdown','mousedown','mouseup','click','touchstart','touchmove','keydown','keyup','input','wheel'].forEach(eventName => {
   document.addEventListener(eventName, event => markControlInteraction(event.target), true);
 });
 document.addEventListener('change', event => {
-  if (String(event.target?.tagName || '').toUpperCase() === 'SELECT') releaseDropdownInteractionSoon(1800);
+  if (String(event.target?.tagName || '').toUpperCase() === 'SELECT') {
+    const target = event.target;
+    if (target?.multiple || target?.classList?.contains('quick-model-status-select') || target?.dataset?.preserveSelection === '1') {
+      markControlInteraction(target, 90000);
+      return;
+    }
+    releaseDropdownInteractionSoon(1800);
+  }
 }, true);
 document.addEventListener('focusout', event => {
   if (String(event.target?.tagName || '').toUpperCase() === 'SELECT') releaseDropdownInteractionSoon(12000);
@@ -546,6 +1153,15 @@ function restoreActiveControl(snapshot, tab = state.tab) {
   target.scrollLeft = snapshot.scrollLeft || 0;
 }
 function renderOrDeferForEditing() {
+  // Passive polling must not steal the graph canvas while a node drag, port
+  // connection, pan, zoom, or context-menu operation is in progress. Graph UI
+  // events use graphEditorRenderCanvasNow(), which bypasses this polling guard
+  // and repaints immediately while preserving tab scroll.
+  if (typeof graphEditorHasActiveCanvasInteraction === 'function' && graphEditorHasActiveCanvasInteraction()) {
+    state.renderDeferredForEditing = false;
+    updateLiveStatusDom();
+    return false;
+  }
   if (shouldDeferControlRender()) {
     state.renderDeferredForEditing = true;
     updateLiveStatusDom();
@@ -556,10 +1172,38 @@ function renderOrDeferForEditing() {
   render(true, true);
   return true;
 }
+// legacy test marker: function renderNowPreservingState()
+// legacy test marker: renderNowPreservingState();
+function renderNowPreservingState(forceNow = false) {
+  const bypassDeferral = Boolean(forceNow);
+  const hardForce = forceNow === true || forceNow === 'hard';
+  if (!bypassDeferral && typeof graphEditorHasActiveCanvasInteraction === 'function' && graphEditorHasActiveCanvasInteraction()) {
+    state.renderDeferredForEditing = false;
+    updateLiveStatusDom();
+    return false;
+  }
+  if (!bypassDeferral && shouldDeferControlRender()) {
+    state.renderDeferredForEditing = true;
+    updateLiveStatusDom();
+    setTimeout(flushDeferredRenderWhenSafe, 650);
+    return false;
+  }
+  state.renderDeferredForEditing = false;
+  snapshotFormState(state.tab);
+  snapshotScrollState(state.tab, { force: true });
+  return render(true, hardForce ? 'hard' : true);
+}
 function flushDeferredRenderWhenSafe() {
   if (!state.renderDeferredForEditing) return;
+  if (typeof graphEditorHasActiveCanvasInteraction === 'function' && graphEditorHasActiveCanvasInteraction()) {
+    state.renderDeferredForEditing = false;
+    updateLiveStatusDom();
+    return;
+  }
   if (shouldDeferControlRender()) {
-    const wait = Math.max(120, Math.min(1200, Number(state.controlInteractionHoldUntil || 0) - Date.now() + 60));
+    const controlWait = Number(state.controlInteractionHoldUntil || 0) - Date.now() + 60;
+    const scrollWait = Number(state.lastUserScrollAt || 0) + 1450 - Date.now();
+    const wait = Math.max(120, Math.min(1200, Math.max(controlWait, scrollWait)));
     setTimeout(flushDeferredRenderWhenSafe, wait);
     return;
   }
@@ -611,30 +1255,128 @@ function scrollNodeKey(node, index) {
   const classKey = String(node.className || '').trim().replace(/\s+/g, '.');
   return `${node.tagName.toLowerCase()}::${dataKey || classKey || 'scroll'}::${index}`;
 }
+function snapshotShellScrollState() {
+  const root = document.getElementById('app');
+  const sidebar = root?.querySelector?.('.sidebar');
+  const main = root?.querySelector?.('.main');
+  state.shellScrollMemory = {
+    windowX: window.scrollX || 0,
+    windowY: window.scrollY || 0,
+    sidebarTop: sidebar?.scrollTop || 0,
+    sidebarLeft: sidebar?.scrollLeft || 0,
+    mainTop: main?.scrollTop || 0,
+    mainLeft: main?.scrollLeft || 0,
+  };
+  try { sessionStorage.setItem('dctShellScrollMemory', JSON.stringify(state.shellScrollMemory)); } catch (_) {}
+}
+function restoreShellScrollState(memory = null, opts = {}) {
+  if (!memory) {
+    if (!Object.keys(state.shellScrollMemory || {}).length) {
+      try { state.shellScrollMemory = JSON.parse(sessionStorage.getItem('dctShellScrollMemory') || '{}') || {}; } catch (_) { state.shellScrollMemory = {}; }
+    }
+    memory = state.shellScrollMemory || {};
+  }
+  const token = (state.shellScrollRestoreToken = Number(state.shellScrollRestoreToken || 0) + 1);
+  const apply = () => {
+    if (token !== state.shellScrollRestoreToken) return;
+    const root = document.getElementById('app');
+    const sidebar = root?.querySelector?.('.sidebar');
+    const main = root?.querySelector?.('.main');
+    if (sidebar) { sidebar.scrollTop = memory.sidebarTop || 0; sidebar.scrollLeft = memory.sidebarLeft || 0; }
+    if (opts.restoreMain !== false && main) { main.scrollTop = memory.mainTop || 0; main.scrollLeft = memory.mainLeft || 0; }
+    // Do not restore the outer window on every shell render. The app uses
+    // .main/.sidebar as its real scroll containers; forcing window.scrollTo()
+    // from stale shell memory was the root of periodic scroll jumps during
+    // automatic polling refreshes. Only explicit tab-switch callers may ask for
+    // window restore.
+    if (opts.restoreWindow === true) { try { window.scrollTo(memory.windowX || 0, memory.windowY || 0); } catch (_) {} }
+  };
+  apply();
+  // A single shell restore is enough. Delayed restores were responsible for
+  // visible jumps when the user began scrolling immediately after a render.
+}
 function isScrollableNode(node) {
   if (!node || node === document.body || node === document.documentElement) return false;
   return (node.scrollHeight > node.clientHeight + 2) || (node.scrollWidth > node.clientWidth + 2);
 }
-function snapshotScrollState(tab = state.tab) {
+function _scrollRoot() {
+  return document.scrollingElement || document.documentElement || document.body;
+}
+function _mainScrollNode() {
+  return document.querySelector('main.main');
+}
+function _scrollSnapshotPayload(tab = state.tab) {
   const root = document.getElementById('app');
+  const main = _mainScrollNode();
+  const doc = _scrollRoot();
   const elements = [];
+  snapshotShellScrollState();
   if (root) {
     [...root.querySelectorAll('*')].forEach((node, index) => {
       if (!isScrollableNode(node)) return;
       elements.push({ key: scrollNodeKey(node, index), top: node.scrollTop || 0, left: node.scrollLeft || 0 });
     });
   }
-  state.uiScrollMemory[tab] = { windowX: window.scrollX || 0, windowY: window.scrollY || 0, elements };
+  return {
+    tab,
+    at: Date.now(),
+    windowX: window.scrollX || 0,
+    windowY: window.scrollY || 0,
+    documentTop: doc ? (doc.scrollTop || 0) : 0,
+    documentLeft: doc ? (doc.scrollLeft || 0) : 0,
+    mainTop: main ? (main.scrollTop || 0) : 0,
+    mainLeft: main ? (main.scrollLeft || 0) : 0,
+    elements
+  };
+}
+function snapshotScrollState(tab = state.tab, opts = {}) {
+  if (!opts.force && Date.now() < Number(state.scrollRestoringUntil || 0)) return;
+  state.uiScrollMemory[tab] = _scrollSnapshotPayload(tab);
   try { sessionStorage.setItem('dctScrollMemory', JSON.stringify(state.uiScrollMemory)); } catch (_) {}
 }
-function restoreScrollState(tab = state.tab) {
+function scheduleScrollSnapshot(tab = state.tab) {
+  if (Date.now() < Number(state.scrollRestoringUntil || 0)) return;
+  if (state.scrollSnapshotScheduled) return;
+  state.scrollSnapshotScheduled = true;
+  requestAnimationFrame(() => {
+    state.scrollSnapshotScheduled = false;
+    if (Date.now() < Number(state.scrollRestoringUntil || 0)) return;
+    snapshotScrollState(tab, { force: true });
+  });
+}
+function restoreScrollState(tab = state.tab, opts = {}) {
   if (!Object.keys(state.uiScrollMemory || {}).length) {
     try { state.uiScrollMemory = JSON.parse(sessionStorage.getItem('dctScrollMemory') || '{}') || {}; } catch (_) { state.uiScrollMemory = {}; }
   }
   const memory = state.uiScrollMemory?.[tab];
   if (!memory) return;
+  const started = Date.now();
+  const token = (state.scrollRestoreToken = Number(state.scrollRestoreToken || 0) + 1);
+  const aggressive = opts.aggressive === true;
+  const quietWindow = aggressive ? 650 : 140;
+  state.scrollRestoringUntil = started + quietWindow;
   const apply = () => {
-    try { window.scrollTo(memory.windowX || 0, memory.windowY || 0); } catch (_) {}
+    if (token !== state.scrollRestoreToken) return;
+    // Do not fight the user. Programmatic scroll events are ignored for a short
+    // window, but any real user scroll after restore starts cancels remaining
+    // delayed restore passes.
+    if (Number(state.lastUserScrollAt || 0) > started && Date.now() > Number(state.programmaticScrollUntil || 0)) {
+      return;
+    }
+    state.programmaticScrollUntil = Date.now() + 90;
+    const doc = _scrollRoot();
+    try { window.scrollTo(memory.windowX || memory.documentLeft || 0, memory.windowY || memory.documentTop || 0); } catch (_) {}
+    try {
+      if (doc) {
+        doc.scrollTop = Number(memory.documentTop ?? memory.windowY ?? 0) || 0;
+        doc.scrollLeft = Number(memory.documentLeft ?? memory.windowX ?? 0) || 0;
+      }
+    } catch (_) {}
+    const main = _mainScrollNode();
+    if (main) {
+      main.scrollTop = Number(memory.mainTop || 0) || 0;
+      main.scrollLeft = Number(memory.mainLeft || 0) || 0;
+    }
     const root = document.getElementById('app');
     if (!root) return;
     const byKey = new Map();
@@ -650,7 +1392,93 @@ function restoreScrollState(tab = state.tab) {
   };
   apply();
   requestAnimationFrame(apply);
-  setTimeout(apply, 0);
+  setTimeout(() => { if (token === state.scrollRestoreToken) apply(); }, 40);
+  if (aggressive) {
+    setTimeout(() => { if (token === state.scrollRestoreToken) apply(); }, 180);
+    setTimeout(() => { if (token === state.scrollRestoreToken) apply(); }, 460);
+  }
+  setTimeout(() => {
+    if (token === state.scrollRestoreToken) state.scrollRestoringUntil = 0;
+  }, quietWindow + 40);
+}
+function cancelPendingScrollRestoreOnly() {
+  state.scrollRestoreToken = Number(state.scrollRestoreToken || 0) + 1;
+  state.shellScrollRestoreToken = Number(state.shellScrollRestoreToken || 0) + 1;
+  state.scrollRestoringUntil = 0;
+}
+function markActiveUserScrollWindow(durationMs = 1600) {
+  const now = Date.now();
+  state.lastUserScrollAt = now;
+  state.scrollActiveUntil = now + Math.max(250, Number(durationMs || 0));
+}
+function cancelScrollRestoreFromUserInput(event = null, opts = {}) {
+  cancelPendingScrollRestoreOnly();
+  if (opts.markScroll !== false && !isGraphCanvasEventTarget(event?.target)) markActiveUserScrollWindow(opts.durationMs || 1600);
+}
+// Pointer and mouse clicks should cancel stale delayed scroll restores, but they
+// are not scrolling; normal button clicks are allowed to repaint immediately. Treating every graph/node click as active scrolling caused
+// canvas renders to be deferred and made node selection, drag, context-menu, and
+// port-connect actions feel delayed or fail to update. Only wheel/touchmove,
+// actual scroll events, and scroll keys now open the active-scroll deferral window.
+window.addEventListener('pointerdown', event => cancelScrollRestoreFromUserInput(event, { markScroll: false }), { passive: true, capture: true });
+window.addEventListener('mousedown', event => cancelScrollRestoreFromUserInput(event, { markScroll: false }), { passive: true, capture: true });
+window.addEventListener('touchstart', event => cancelScrollRestoreFromUserInput(event, { markScroll: false }), { passive: true, capture: true });
+['wheel','touchmove'].forEach(evt => {
+  window.addEventListener(evt, event => {
+    if (isGraphCanvasEventTarget(event?.target)) {
+      cancelScrollRestoreFromUserInput(event, { markScroll: false });
+      return;
+    }
+    cancelScrollRestoreFromUserInput(event, { markScroll: true, durationMs: 900 });
+  }, { passive: true, capture: true });
+});
+window.addEventListener('keydown', event => {
+  const keys = ['ArrowDown','ArrowUp','PageDown','PageUp','Home','End','Space',' '];
+  if (keys.includes(event.key) || keys.includes(event.code)) cancelScrollRestoreFromUserInput(event, { markScroll: true, durationMs: 1200 });
+}, { passive: true, capture: true });
+window.addEventListener('keydown', event => {
+  if (state.tab !== 'Agentic Graph Editor') return;
+  const key = String(event.key || '').toLowerCase();
+  if (!(event.ctrlKey || event.metaKey) && key !== 'delete' && key !== 'backspace') return;
+  const active = document.activeElement;
+  if (graphEditorIsControlTarget(active)) return;
+  if ((event.ctrlKey || event.metaKey) && key === 'c') { event.preventDefault(); graphEditorCopySelection(false); return; }
+  if ((event.ctrlKey || event.metaKey) && key === 'x') { event.preventDefault(); graphEditorCopySelection(true); return; }
+  if ((event.ctrlKey || event.metaKey) && key === 'v') { event.preventDefault(); graphEditorPasteClipboard(state.graphEditorLastCanvasWorldPoint || null); return; }
+  if (key === 'delete' || key === 'backspace') { event.preventDefault(); graphEditorDeleteSelection(); }
+}, { passive: false, capture: false });
+window.addEventListener('scroll', () => {
+  if (Date.now() > Number(state.programmaticScrollUntil || 0)) markActiveUserScrollWindow(1600);
+  scheduleScrollSnapshot(state.tab);
+}, { passive: true, capture: true });
+document.addEventListener('scroll', event => {
+  const root = document.getElementById('app');
+  if (!root) return;
+  const target = event.target;
+  if (target === document || target === window || target === document.body || target === document.documentElement || root.contains(target)) {
+    if (Date.now() > Number(state.programmaticScrollUntil || 0)) markActiveUserScrollWindow(1600);
+    scheduleScrollSnapshot(state.tab);
+  }
+}, { passive: true, capture: true });
+function forceRenderPreservingScroll() {
+  snapshotFormState();
+  snapshotScrollState(state.tab, { force: true });
+  return render(true, true);
+}
+function hardRefreshCurrentTab(forceNow = false) {
+  // Automatic refreshes must not replace the shell while the user is scrolling.
+  // User-click refreshes can pass forceNow=true, but status polling should defer
+  // and then repaint once scroll input has been quiet long enough.
+  if (!forceNow && shouldDeferControlRender()) {
+    state.renderDeferredForEditing = true;
+    updateLiveStatusDom();
+    setTimeout(flushDeferredRenderWhenSafe, 650);
+    return false;
+  }
+  state.renderDeferredForEditing = false;
+  snapshotFormState(state.tab);
+  snapshotScrollState(state.tab, { force: true });
+  return render(true, true);
 }
 function scheduleRender(delay = 80) {
   if (state.renderScheduled) return;
@@ -658,7 +1486,35 @@ function scheduleRender(delay = 80) {
   setTimeout(() => { state.renderScheduled = false; renderOrDeferForEditing(); }, delay);
 }
 
-function setTab(tab) { snapshotFormState(); snapshotScrollState(); state.tab = tab; render(false); }
+function setTab(tab) {
+  if (!tab || tab === state.tab) { forceRenderPreservingScroll(); return; }
+  snapshotFormState();
+  snapshotScrollState(state.tab, { force: true });
+  state.lastCrossTabScrollSnapshot = { ...(state.shellScrollMemory || {}) };
+  state.pendingTabScrollRestore = tab;
+  state.tab = tab;
+  render(false, true);
+  // Keep the side navigation and outer shell from jumping to the top on tab changes.
+  // marker: restoreShellScrollState(state.lastCrossTabScrollSnapshot) preserves shell scroll without overwriting target tab main scroll.
+  // Do not apply the old tab's main scroll here; render()/restoreScrollState() restores the new tab's own scroll memory.
+  restoreShellScrollState(state.lastCrossTabScrollSnapshot, { restoreMain: false, aggressive: true });
+  setTimeout(() => { if (!recentUserScroll(350)) restoreScrollState(tab, { aggressive: true }); }, 60);
+  refreshTabDataOnEnter(tab).catch(err => console.warn('tab data refresh failed', err));
+}
+
+async function refreshTabDataOnEnter(tab) {
+  if (tab === 'Gallery' || tab === 'Tag Editor' || tab === 'Compare' || tab === 'Batch Tags' || tab === 'Prediction Analytics') {
+    await loadMedia({ force: true }).catch(() => null);
+    if (state.activeMedia) await requestTagScores(state.activeMedia.id, state.activeMedia.tags || []).catch(() => null);
+    renderNowPreservingState(false);
+  } else if (tab === 'Multimodal Dataset Builder') {
+    await refreshMultimodalBuilder({ force: true }).catch(() => null);
+    renderNowPreservingState(false);
+  } else if (tab === 'Models') {
+    await refreshModelsPanel({ force: true, renderAfter: true, immediate: true }).catch(() => null);
+  }
+}
+
 const CATEGORY_ALIASES = {
   '0': 'general', '1': 'artist', '2': 'rating', '3': 'copyright', '4': 'character', '5': 'species', '6': 'invalid', '7': 'meta', '8': 'lore',
   tag: 'general', tags: 'general', copy: 'copyright', series: 'copyright', deprecated: 'invalid', artstyle: 'style', art_style: 'style',
@@ -790,6 +1646,14 @@ function modelStatusClass(m) {
   if (m?.download_supported) return 'model-option-missing';
   return 'model-option-ready';
 }
+function modelAvailabilityOptionStyle(m, baseColor = '') {
+  const color = baseColor || modelCategoryDisplay(m).color || '#94a3b8';
+  if (modelLoadedInstanceCount(m)) return `color:${color};font-weight:800;background:linear-gradient(90deg,rgba(34,197,94,.34),rgba(15,23,42,.95));outline:2px solid #22c55e;`;
+  if (m?.downloaded) return `color:${color};background:linear-gradient(90deg,rgba(59,130,246,.26),rgba(15,23,42,.95));`;
+  if (modelDownloadIssues(m).length) return `color:${color};background:linear-gradient(90deg,rgba(245,158,11,.22),rgba(15,23,42,.95));`;
+  if (m?.download_supported) return `color:${color};opacity:.72;background:rgba(15,23,42,.92);`;
+  return `color:${color};background:rgba(15,23,42,.92);`;
+}
 function primeModelLifecycleForSelection(mOrName) { const m = typeof mOrName === 'object' ? mOrName : (state.models || []).find(row => row.name === mOrName); const name = m?.name || String(mOrName || ''); if (!name) return; if (m?.downloaded) setOptimisticModelStage(name, 'download', 'completed', 1, 'Model files are present'); if (modelLoaded(name) || m?.loaded) setOptimisticModelStage(name, 'load', 'completed', 1, 'Model is loaded in memory'); else if (!stageActive(name, 'load')) setOptimisticModelStage(name, 'load', 'idle', 0, 'Model not loaded yet'); if (!stageActive(name, 'inference')) setOptimisticModelStage(name, 'inference', 'idle', 0, 'Selected for inference'); }
 function sortedTagSelectionModels(rows = state.models) { return [...(rows || [])].sort((a, b) => { const ar = modelCategoryDisplay(a).rank; const br = modelCategoryDisplay(b).rank; if (ar !== br) return ar - br; const as = modelLoadedInstanceCount(a) ? 0 : a.downloaded ? 1 : 2; const bs = modelLoadedInstanceCount(b) ? 0 : b.downloaded ? 1 : 2; if (as !== bs) return as - bs; return String(a.label || a.name || '').localeCompare(String(b.label || b.name || '')); }); }
 function modelCatalogActive(m) { return Boolean(modelLoaded(m) || stageActive(m, 'load') || stageActive(m, 'inference') || stageActive(m, 'training')); }
@@ -815,7 +1679,7 @@ function modelMemoryTitle(m) {
   return `${mem ? 'Memory estimate: ' + mem + '.' : 'No VRAM estimate in registry.'}${note}`;
 }
 function modelLabel(m) { const bits = []; const cat = modelCategoryDisplay(m); const mem = modelMemorySummary(m); const hf = modelHFAccessLabel(m); if (isUserCustomModel(m)) bits.push(`CUSTOM:${m.custom_model_category || m.custom_category || m.kind || 'model'}`); if (mem) bits.push(mem); if (hf) bits.push(hf); bits.push(...modelStatusBits(m)); if (m.installed || !m.optional) bits.push('adapter'); return `${isUserCustomModel(m) ? '★ ' : ''}${m.label || m.name} · ${cat.label}${bits.length ? ' · ' + bits.join(' / ') : ''}`; }
-function modelOptionNode(m) { const cat = modelCategoryDisplay(m); const status = modelStatusBits(m).join(' / ') || m.status_summary || 'no status'; const issues = modelDownloadIssues(m); const warnings = modelSupportWarnings(m); return el('option', { value: m.name, class: `${isUserCustomModel(m) ? 'custom-model-option ' : ''}model-option-${cat.key} ${modelStatusClass(m)}`, title: `${cat.label}; kind=${m.kind || 'unknown'}; provider=${m.provider || 'unknown'}; status=${status}; loaded instances=${modelLoadedInstanceCount(m)}; ${m.local ? 'local/builtin' : modelIsApi(m) ? 'API/cloud' : 'downloadable/localizable'}; ${modelMemoryTitle(m)}${modelHFAccessTitle(m) ? '; ' + modelHFAccessTitle(m) : ''}${issues.length ? '; hard integrity issues=' + issues.join(' | ') : ''}${warnings.length ? '; support warnings=' + warnings.join(' | ') : ''}`, style: `color:${cat.color};` }, modelLabel(m)); }
+function modelOptionNode(m) { const cat = modelCategoryDisplay(m); const status = modelStatusBits(m).join(' / ') || m.status_summary || 'no status'; const issues = modelDownloadIssues(m); const warnings = modelSupportWarnings(m); return el('option', { value: m.name, class: `${isUserCustomModel(m) ? 'custom-model-option ' : ''}model-option-${cat.key} ${modelStatusClass(m)}`, title: `${cat.label}; kind=${m.kind || 'unknown'}; provider=${m.provider || 'unknown'}; status=${status}; loaded instances=${modelLoadedInstanceCount(m)}; ${m.local ? 'local/builtin' : modelIsApi(m) ? 'API/cloud' : 'downloadable/localizable'}; ${modelMemoryTitle(m)}${modelHFAccessTitle(m) ? '; ' + modelHFAccessTitle(m) : ''}${issues.length ? '; hard integrity issues=' + issues.join(' | ') : ''}${warnings.length ? '; support warnings=' + warnings.join(' | ') : ''}`, style: modelAvailabilityOptionStyle(m, cat.color) }, modelLabel(m)); }
 function modelOptions(filter = () => true) { return sortedModels(state.models).filter(filter).map(modelOptionNode); }
 function selectHasValue(select, value) {
   return Boolean(select && value !== undefined && value !== null && [...select.options].some(o => o.value === String(value)));
@@ -885,6 +1749,13 @@ function stageCircle(status, label) {
 function modelLifecycleStrip(mOrName, compact = false) {
   return el('div', { class: `model-lifecycle ${compact ? 'compact' : ''}` }, MODEL_LIFECYCLE_STAGES.map(stage => stageCircle(stageStatus(mOrName, stage), MODEL_STAGE_LABELS[stage] || stage)));
 }
+function replaceModelLifecycleStrip(container, mOrName, compact = true) {
+  if (!container) return;
+  const name = typeof mOrName === 'string' ? mOrName : (mOrName?.name || '');
+  if (name) primeModelLifecycleForSelection(mOrName || name);
+  container.replaceChildren(modelLifecycleStrip(mOrName || name, compact));
+  updateLiveStatusDom();
+}
 function aggregateLifecycleStrip() {
   return el('div', { class: 'model-lifecycle aggregate' }, MODEL_LIFECYCLE_STAGES.map(stage => stageCircle(aggregateStageStatus(stage), MODEL_STAGE_LABELS[stage] || stage)));
 }
@@ -896,7 +1767,7 @@ function setOptimisticModelStage(modelName, stage, stateName = 'running', progre
   state.modelStatuses.models[name] ||= {};
   const prior = state.modelStatuses.models[name][stage] || defaultStageStatus(name, stage);
   const pct = Math.max(0, Math.min(1, Number(progress || 0)));
-  const row = { ...prior, model_name: name, stage, state: stateName, active: ['queued','running'].includes(String(stateName).toLowerCase()), progress: pct, percent: Math.round(pct * 100), message: message || prior.message || stateName, updated_at: new Date().toISOString() };
+  const row = { ...prior, model_name: name, stage, state: stateName, active: ['queued','running','unloading'].includes(String(stateName).toLowerCase()), progress: pct, percent: Math.round(pct * 100), message: message || prior.message || stateName, updated_at: new Date().toISOString() };
   state.modelStatuses.models[name][stage] = row;
   return row;
 }
@@ -905,15 +1776,236 @@ function mergeSingleModelStatus(modelName, status) {
   if (!name || !status) return;
   state.modelStatuses ||= { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} };
   state.modelStatuses.models ||= {};
-  state.modelStatuses.models[name] = { ...(state.modelStatuses.models[name] || {}), ...(status.stages || status || {}) };
-  if ('loaded' in status) state.modelStatuses.models[name].loaded = status.loaded;
-  if (status.placement) state.modelStatuses.models[name].placement = status.placement;
+  const prior = state.modelStatuses.models[name] || {};
+  const next = { ...prior, ...(status.stages || status || {}) };
+  if ('loaded' in status) next.loaded = status.loaded;
+  if ('loaded_instance_count' in status) next.loaded_instance_count = status.loaded_instance_count;
+  if ('loaded_instances' in status) next.loaded_instances = status.loaded_instances || [];
+  if ('offloaded_to_cpu' in status) next.offloaded_to_cpu = status.offloaded_to_cpu;
+  if (status.placement) next.placement = status.placement;
+  if (status.result?.placement && !next.placement) next.placement = status.result.placement;
+  state.modelStatuses.models[name] = next;
+  patchModelCatalogRuntimeFields(name, next);
+}
+function patchModelCatalogRuntimeFields(modelName, runtime = null) {
+  const name = String(modelName || '').trim();
+  if (!name) return null;
+  const status = runtime || (state.modelStatuses?.models || {})[name] || {};
+  const idx = (state.models || []).findIndex(m => String(m.name || '') === name);
+  if (idx < 0) return null;
+  const prior = state.models[idx] || {};
+  const next = { ...prior };
+  if ('loaded' in status) next.loaded = Boolean(status.loaded);
+  if ('loaded_instance_count' in status) next.loaded_instance_count = Number(status.loaded_instance_count || 0);
+  if (Array.isArray(status.loaded_instances)) next.loaded_instances = status.loaded_instances;
+  if ('offloaded_to_cpu' in status) next.offloaded_to_cpu = Boolean(status.offloaded_to_cpu);
+  if (status.placement) next.placement = status.placement;
+  next.lifecycle = { ...(next.lifecycle || {}) };
+  for (const stage of MODEL_LIFECYCLE_STAGES) {
+    if (status[stage]) next.lifecycle[stage] = status[stage];
+  }
+  state.models[idx] = next;
+  return next;
+}
+function syncCatalogLoadedStatusFromStatuses() {
+  const models = state.modelStatuses?.models || {};
+  for (const [name, status] of Object.entries(models)) patchModelCatalogRuntimeFields(name, status);
+}
+function modelRuntimeSignature() {
+  const loaded = Object.entries(state.modelStatuses?.models || {}).map(([name, status]) => [
+    name,
+    Boolean(status?.loaded),
+    Number(status?.loaded_instance_count || 0),
+    MODEL_LIFECYCLE_STAGES.map(stage => `${stage}:${statusPercent(status?.[stage] || {})}:${String(status?.[stage]?.state || '')}`).join('|')
+  ]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  const devices = (state.modelResource?.devices || []).map(d => [
+    d.id || d.index,
+    Number(d.actual_used_memory_gb ?? d.used_memory_gb ?? d.driver_used_memory_gb ?? d.app_reserved_gb ?? 0).toFixed(3),
+    Number(d.actual_free_memory_gb ?? d.free_memory_gb ?? d.driver_free_memory_gb ?? 0).toFixed(3),
+    Number(d.torch_allocated_gb ?? 0).toFixed(3),
+    Number(d.torch_reserved_gb ?? 0).toFixed(3),
+    Number(d.app_reserved_gb ?? 0).toFixed(3)
+  ]);
+  const jobs = (state.jobs || []).filter(isModelJobType).slice(0, 80).map(j => [j.id, j.type, j.status, Math.round(Number(j.progress || 0) * 1000), j.model_name || j.params?.model_name || '']);
+  return JSON.stringify({ loaded, devices, ram: state.modelResource?.system_ram || {}, jobs });
+}
+function patchModelsTabLive({ reorder = false } = {}) {
+  if (state.tab !== 'Models' || state.modelCatalogPatchBusy) return;
+  const root = document.getElementById('app');
+  const list = root?.querySelector('[data-model-catalog-scroll="1"]');
+  if (!list) return;
+  const active = document.activeElement;
+  const focusInsideList = Boolean(active && list.contains(active));
+  const scrollTop = list.scrollTop;
+  const scrollLeft = list.scrollLeft;
+  state.modelCatalogPatchBusy = true;
+  try {
+    syncCatalogLoadedStatusFromStatuses();
+    const rows = sortedModelsForModelsTab(state.models).filter(m => !state.modelKindFilter || m.kind === state.modelKindFilter);
+    const byName = new Map((state.models || []).map(m => [String(m.name || ''), m]));
+    if (reorder && !focusInsideList) {
+      const fragment = document.createDocumentFragment();
+      for (const row of rows) fragment.appendChild(modelCard(byName.get(String(row.name || '')) || row));
+      list.replaceChildren(fragment);
+    } else {
+      for (const node of [...list.querySelectorAll('[data-model-card-name]')]) {
+        const name = String(node.getAttribute('data-model-card-name') || '');
+        const row = byName.get(name);
+        if (!row) continue;
+        if (active && node.contains(active)) {
+          node.className = `model-card ${isUserCustomModel(row) ? 'user-custom-model' : ''} ${modelCatalogActive(row) && !isUserCustomModel(row) ? 'active-model-card' : ''}`;
+          node.setAttribute('style', modelActiveHighlightStyle(row) || '');
+          const lifecycle = node.querySelector('.model-lifecycle');
+          if (lifecycle) lifecycle.replaceWith(modelLifecycleStrip(row, true));
+          continue;
+        }
+        node.replaceWith(modelCard(row));
+      }
+    }
+    list.scrollTop = scrollTop;
+    list.scrollLeft = scrollLeft;
+  } catch (err) {
+    console.warn('models live card patch failed', err);
+  } finally {
+    state.modelCatalogPatchBusy = false;
+  }
+}
+function patchModelCatalogRow(row) {
+  if (!row || !row.name) return null;
+  state.models ||= [];
+  const idx = state.models.findIndex(m => String(m.name || '') === String(row.name || ''));
+  const prior = idx >= 0 ? state.models[idx] : {};
+  const merged = {
+    ...prior,
+    ...row,
+    lifecycle: { ...(prior.lifecycle || {}), ...(row.lifecycle || {}) },
+    status: { ...(prior.status || {}), ...(row.status || {}) }
+  };
+  if (idx >= 0) state.models[idx] = merged;
+  else state.models = [merged, ...state.models];
+  if (row.lifecycle || row.stages) mergeSingleModelStatus(row.name, row.lifecycle || row);
+  return merged;
+}
+async function reconcileDownloadedModelNow(modelName, jobId = null) {
+  const name = String(modelName || '').trim();
+  if (!name) return null;
+  const suffix = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
+  const payload = await api(`/api/models/reconcile/${encodeURIComponent(name)}${suffix}`, { method: 'POST' });
+  if (payload?.model) patchModelCatalogRow(payload.model);
+  if (payload?.lifecycle) mergeSingleModelStatus(name, payload.lifecycle);
+  return payload;
+}
+
+
+function visibleStartupStatus() {
+  const status = state.startupStatus || {};
+  const hyd = state.frontendHydration || {};
+  const hydRunning = hyd.status === 'running' || hyd.status === 'failed';
+  const backendDone = !status.status || status.status === 'idle' || status.status === 'completed';
+  if (hydRunning && backendDone) {
+    const mergedSteps = [...(status.steps || []), ...(hyd.steps || [])].slice(-10);
+    return {
+      ...status,
+      ...hyd,
+      status: hyd.status || 'running',
+      phase: hyd.phase || 'frontend_hydration',
+      job_type: hyd.job_type || 'frontend_hydration',
+      steps: mergedSteps,
+      message: hyd.message || 'Hydrating frontend catalogs after startup maintenance',
+      updated_at: hyd.updated_at || new Date().toISOString()
+    };
+  }
+  return status;
+}
+function setFrontendHydration(progress, message, extra = {}) {
+  const startedAt = state.frontendHydration?.started_at || Date.now();
+  const pct = Math.max(0, Math.min(1, Number(progress || 0)));
+  const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
+  const eta = pct > 0.03 && pct < 0.98 ? Math.max(0, elapsed * (1 - pct) / pct) : null;
+  const step = { progress: pct, message: message || 'Hydrating frontend catalogs', phase: extra.phase || 'frontend_hydration', at: new Date().toISOString() };
+  const oldSteps = state.frontendHydration?.steps || [];
+  state.frontendHydration = {
+    status: extra.status || 'running',
+    progress: pct,
+    percent: Math.round(pct * 100),
+    phase: extra.phase || 'frontend_hydration',
+    job_type: 'frontend_hydration',
+    message: message || 'Hydrating frontend catalogs',
+    elapsed_seconds: elapsed,
+    eta_seconds: eta,
+    updated_at: new Date().toISOString(),
+    started_at: startedAt,
+    steps: [...oldSteps, step].slice(-10),
+    ...extra
+  };
+  updateStartupProgressDom();
+}
+
+function updateStartupProgressDom() {
+  const root = document.getElementById('app');
+  if (!root) return;
+  const status = visibleStartupStatus();
+  const progress = Math.max(0, Math.min(1, Number(status.progress || 0)));
+  const pct = Math.round(progress * 100);
+  root.querySelectorAll('[data-startup-progress-circle]').forEach(node => {
+    node.style.setProperty('--progress', pct);
+    node.classList.toggle('failed', status.status === 'failed');
+    node.classList.toggle('complete', status.status === 'completed');
+  });
+  root.querySelectorAll('[data-startup-pct]').forEach(node => { node.textContent = `${pct}%`; });
+  root.querySelectorAll('[data-startup-status]').forEach(node => { node.textContent = status.status || 'unknown'; node.className = `badge ${status.status === 'failed' ? 'bad' : status.status === 'completed' ? 'ok' : ''}`; });
+  root.querySelectorAll('[data-startup-phase]').forEach(node => { node.textContent = status.phase || 'startup'; });
+  root.querySelectorAll('[data-startup-message]').forEach(node => { node.textContent = status.error ? `${status.message || 'Startup failed'}: ${status.error}` : (status.message || 'Startup maintenance status is not available yet.'); node.className = status.error ? 'bad-text' : 'muted'; });
+  root.querySelectorAll('[data-startup-elapsed]').forEach(node => { node.textContent = `Elapsed: ${formatDuration(status.elapsed_seconds || 0)}`; });
+  root.querySelectorAll('[data-startup-eta]').forEach(node => { node.textContent = status.status === 'running' ? `ETA: ${formatDuration(status.eta_seconds)}` : ''; });
+  root.querySelectorAll('[data-startup-updated]').forEach(node => { node.textContent = status.updated_at ? `Updated: ${new Date(status.updated_at).toLocaleTimeString()}` : ''; });
+  const list = root.querySelector('[data-startup-steps]');
+  if (list) {
+    const steps = (status.steps || []).slice(-5).reverse();
+    list.replaceChildren(...steps.map(step => el('li', {}, `${Math.round(Number(step.progress || 0) * 100)}% · ${step.message || ''}`)));
+  }
+}
+
+
+async function refreshStartupStatus({ renderAfter = false, force = false } = {}) {
+  const suffix = force ? `?t=${Date.now()}` : '';
+  state.startupStatus = await api(`/api/system/startup-status${suffix}`, { cache: 'no-store' }).catch(() => state.startupStatus);
+  updateStartupProgressDom();
+  if (renderAfter && state.tab === 'Dashboard') render(true, true);
+  return state.startupStatus;
+}
+
+async function refreshDashboardOnly(renderAfter = true) {
+  state.dashboardRefreshBusy = true;
+  state.lastDashboardRefreshAt = Date.now();
+  updateStartupProgressDom();
+  try {
+    const [summary, startupStatus, jobs, dictionaryStatus] = await Promise.all([
+      api('/api/system/summary', { cache: 'no-store' }).catch(() => state.summary),
+      api(`/api/system/startup-status?t=${Date.now()}`, { cache: 'no-store' }).catch(() => state.startupStatus),
+      api('/api/jobs', { cache: 'no-store' }).catch(() => state.jobs),
+      api(`/api/tags/dictionary/status?profile_key=${encodeURIComponent(state.tagProfile || 'e621')}&t=${Date.now()}`, { cache: 'no-store' }).catch(() => state.dictionaryStatus),
+    ]);
+    state.summary = summary || state.summary || {};
+    state.startupStatus = startupStatus || state.startupStatus;
+    state.jobs = jobs || state.jobs || [];
+    state.dictionaryStatus = dictionaryStatus || state.dictionaryStatus;
+    updateLiveStatusDom();
+    if (renderAfter && state.tab === 'Dashboard') render(true, true);
+    return state.startupStatus;
+  } finally {
+    state.dashboardRefreshBusy = false;
+    updateLiveStatusDom();
+    if (renderAfter && state.tab === 'Dashboard') render(true, true);
+  }
 }
 
 function updateLiveStatusDom() {
   const root = document.getElementById('app');
   if (!root) return;
   try {
+    syncCatalogLoadedStatusFromStatuses();
+    updateStartupProgressDom();
     root.querySelectorAll('[data-lifecycle-stage]').forEach(node => {
       const stage = node.dataset.lifecycleStage || '';
       const model = node.dataset.lifecycleModel || '';
@@ -946,18 +2038,73 @@ function updateLiveStatusDom() {
         node.className = job.error ? 'bad-text' : '';
       }
     });
+    updateModelResourceDom();
+    refreshModelOptionsInPlace();
+    updateInferenceQueueDom();
+    patchModelsTabLive({ reorder: false });
   } catch (err) { console.warn('live status update failed', err); }
 }
-async function refreshModelStatuses(renderAfter = false) {
-  state.modelStatuses = await api('/api/models/status').catch(() => state.modelStatuses || { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} });
-  if (state.modelStatuses?.placement) state.modelResource = state.modelStatuses.placement;
-  if (renderAfter) renderOrDeferForEditing();
+async function refreshModelsPanel({ force = false, renderAfter = false, immediate = false } = {}) {
+  const suffix = force ? '?force=true' : '';
+  const [models, modelStatuses, resource, assistantConfig] = await Promise.all([
+    api(`/api/models${suffix}`, { cache: 'no-store' }).catch(() => state.models || []),
+    api('/api/models/status', { cache: 'no-store' }).catch(() => state.modelStatuses || { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} }),
+    api('/api/models/resource-status', { cache: 'no-store' }).catch(() => state.modelResource || { devices: [], loaded_models: [], loading_reservations: [], warnings: [] }),
+    api('/api/models/assistant-config', { cache: 'no-store' }).catch(() => state.assistantConfig)
+  ]);
+  state.models = models || state.models || [];
+  state.modelStatuses = modelStatuses || state.modelStatuses;
+  if (resource) state.modelResource = resource;
+  else if (state.modelStatuses?.placement) state.modelResource = state.modelStatuses.placement;
+  state.assistantConfig = assistantConfig || state.assistantConfig;
+  state.lastModelListRefreshAt = Date.now();
+  syncCatalogLoadedStatusFromStatuses();
+  if (renderAfter) {
+    if ((immediate && !shouldDeferControlRender()) || !shouldDeferControlRender()) render(true, true);
+    else renderOrDeferForEditing();
+  }
+  return state.models;
+}
+async function refreshModelStatuses(renderAfter = false, immediate = false) {
+  state.modelStatuses = await api('/api/models/status', { cache: 'no-store' }).catch(() => state.modelStatuses || { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} });
+  if (!state.modelResource && state.modelStatuses?.placement) state.modelResource = state.modelStatuses.placement;
+  syncCatalogLoadedStatusFromStatuses();
+  if (renderAfter) {
+    if ((immediate && !shouldDeferControlRender()) || !shouldDeferControlRender()) render(true, true);
+    else renderOrDeferForEditing();
+  }
   return state.modelStatuses;
 }
 function datasetOptions() { return [el('option', { value: '' }, 'Any dataset'), ...state.datasets.map(d => el('option', { value: d.id }, `${d.name} (${d.media_count})`))]; }
 function profileOptions() { return (state.tagProfiles.length ? state.tagProfiles : [{ key: 'e621', label: 'e621' }]).map(p => el('option', { value: p.key }, p.label || p.key)); }
+function sourceDefinitionFor(key) { return (state.downloadSources || []).find(s => s.key === key) || null; }
+async function maybeQueueTagDictionarySync(profileKey, reason = 'profile selection') {
+  const key = profileKey || state.tagProfile || 'e621';
+  if (!key || key === 'generic-json' || key === 'custom') return null;
+  if (state.tagDictionarySyncQueued[key]) return null;
+  let status = null;
+  try { status = await api(`/api/tags/dictionary/status?profile_key=${encodeURIComponent(key)}`); } catch (_) { return null; }
+  const caps = status?.sync_capabilities || {};
+  const supported = Boolean(caps.supports_db_exports || caps.supports_tag_index_api || (status.db_export_url || '').trim());
+  if (!supported || !status?.stale) return status;
+  try {
+    const r = await api('/api/tags/dictionary/import-default', { method: 'POST', body: { profile_key: key } });
+    state.tagDictionarySyncQueued[key] = r.job_id || true;
+    toast(`${key} tag dictionary sync queued for ${reason}.`);
+    return status;
+  } catch (err) {
+    toast(`Could not queue ${key} tag dictionary sync: ${err.message}`, false);
+    return status;
+  }
+}
+async function selectTagProfile(key, { autoSync = false, reason = 'profile selection' } = {}) {
+  state.tagProfile = key || 'e621';
+  state.dictionaryStatus = null;
+  await loadDictionaryStatus().catch(() => {});
+  if (autoSync && state.settings?.auto_sync_tag_db_on_startup !== false) await maybeQueueTagDictionarySync(state.tagProfile, reason);
+}
 function tagProfileSelect(attrs = {}) {
-  const select = el('select', { ...attrs, onchange: async e => { state.tagProfile = e.target.value; state.dictionaryStatus = null; await loadDictionaryStatus().catch(() => {}); render(); } }, profileOptions());
+  const select = el('select', { ...attrs, onchange: async e => { await selectTagProfile(e.target.value, { autoSync: true, reason: 'profile selection' }); render(); } }, profileOptions());
   select.value = state.tagProfile;
   return select;
 }
@@ -986,17 +2133,128 @@ function addSelectedMedia(item) {
 }
 function clearSelectedMedia() { state.selected.clear(); }
 
+async function refreshEssentialState() {
+  setFrontendHydration(0.02, 'Loading dashboard essentials', { phase: 'frontend_boot' });
+  const [summary, startupStatus, datasets, jobs, settings, profiles, models, modelStatuses, modelResource, assistantConfig] = await Promise.all([
+    apiWithTimeout('/api/system/summary', {}, 5000, state.summary || {}),
+    apiWithTimeout(`/api/system/startup-status?t=${Date.now()}`, { cache:'no-store' }, 5000, state.startupStatus),
+    apiWithTimeout('/api/datasets', {}, 5000, state.datasets || []),
+    apiWithTimeout('/api/jobs', { cache:'no-store' }, 5000, state.jobs || []),
+    apiWithTimeout('/api/settings', {}, 5000, state.settings || {}),
+    apiWithTimeout('/api/tags/profiles', {}, 5000, state.tagProfiles || []),
+    apiWithTimeout('/api/models', {}, 7000, state.models || []),
+    apiWithTimeout('/api/models/status', {}, 7000, state.modelStatuses || { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} }),
+    apiWithTimeout('/api/models/resource-status', {}, 7000, state.modelResource || { devices: [], loaded_models: [], loading_reservations: [], warnings: [] }),
+    apiWithTimeout('/api/models/assistant-config', {}, 5000, state.assistantConfig)
+  ]);
+  Object.assign(state, { summary: summary || {}, startupStatus: startupStatus || state.startupStatus, datasets: datasets || [], jobs: jobs || [], settings: settings || {}, tagProfiles: profiles || [], models: models || [], modelStatuses: modelStatuses || state.modelStatuses, modelResource: modelResource || state.modelResource, assistantConfig });
+  if (!modelResource && state.modelStatuses?.placement) state.modelResource = state.modelStatuses.placement;
+  syncCatalogLoadedStatusFromStatuses();
+  if (settings?.default_tag_profile && state.tagProfiles.some(p => p.key === settings.default_tag_profile)) state.tagProfile = settings.default_tag_profile;
+  if (!state.tagProfiles.some(p => p.key === state.tagProfile) && state.tagProfiles.length) state.tagProfile = state.tagProfiles[0].key;
+  state.orderingStrategy = settings?.default_ordering_strategy || state.orderingStrategy;
+  state.retainImportedOrder = Boolean(settings?.retain_imported_tag_order);
+  if (settings?.preferred_external_image_tool) state.quickExternalTool = settings.preferred_external_image_tool;
+  setFrontendHydration(0.18, 'Dashboard essentials ready; rendering shell', { phase: 'frontend_boot' });
+  return state;
+}
+async function refreshOptionalStateBackground({ renderAfter = true } = {}) {
+  const started = Date.now();
+  const steps = [
+    ['presets', () => apiWithTimeout('/api/presets', {}, 7000, state.presets || []), v => { state.presets = v || []; }],
+    ['download sources', () => apiWithTimeout('/api/downloads/sources', {}, 7000, state.downloadSources || []), v => { state.downloadSources = v || []; }],
+    ['orchestration templates', () => apiWithTimeout('/api/orchestration/templates', {}, 7000, state.orchestrationTemplates || []), v => { state.orchestrationTemplates = v || []; }],
+    ['spatial model catalogs', async () => {
+      const [d, s, p] = await Promise.all([
+        apiWithTimeout('/api/spatial/detection/models', {}, 7000, state.detectionModels || []),
+        apiWithTimeout('/api/spatial/segmentation/models', {}, 7000, state.segmentationModels || []),
+        apiWithTimeout('/api/reference/annotations/pose-templates', {}, 7000, state.poseTemplates || [])
+      ]);
+      return { d, s, p };
+    }, v => { state.detectionModels = v.d || []; state.segmentationModels = v.s || []; state.poseTemplates = v.p || []; }],
+    ['3D Studio catalogs', async () => {
+      const [providers, assets] = await Promise.all([
+        apiWithTimeout('/api/three-d/providers', {}, 7000, state.threeDProviders || { generation: [], rigging: [] }),
+        apiWithTimeout('/api/three-d/assets', {}, 7000, state.threeDAssets || [])
+      ]);
+      return { providers, assets };
+    }, v => { state.threeDProviders = v.providers || { generation: [], rigging: [] }; state.threeDAssets = v.assets || []; }],
+    ['FlexAvatar status', async () => {
+      const [status, assets] = await Promise.all([
+        apiWithTimeout('/api/flexavatar/status', {}, 7000, state.flexAvatarStatus),
+        apiWithTimeout('/api/flexavatar/assets', {}, 7000, state.flexAvatarAssets || { inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] })
+      ]);
+      return { status, assets };
+    }, v => { state.flexAvatarStatus = v.status; state.flexAvatarAssets = v.assets || state.flexAvatarAssets; }],
+    ['agent / voice / MCP status', async () => {
+      const [agent, voice, mcp, nodes] = await Promise.all([
+        apiWithTimeout('/api/agent-tools/status', {}, 7000, state.agentStatus),
+        apiWithTimeout('/api/voice/status', {}, 7000, state.voiceStatus),
+        apiWithTimeout('/api/mcp-tools/status', {}, 7000, state.mcpToolStatus),
+        apiWithTimeout('/api/distributed/nodes', {}, 7000, state.distributedNodes || [])
+      ]);
+      return { agent, voice, mcp, nodes };
+    }, v => { state.agentStatus = v.agent; state.voiceStatus = v.voice; state.mcpToolStatus = v.mcp; state.distributedNodes = v.nodes || []; }],
+    ['global dataset summary', async () => {
+      const [status, branches, assets] = await Promise.all([
+        apiWithTimeout('/api/global-dataset/status', {}, 7000, state.globalDatasetStatus),
+        apiWithTimeout('/api/global-dataset/branches', {}, 7000, state.globalDatasetBranches || []),
+        apiWithTimeout('/api/global-dataset/assets?page=1&page_size=40', {}, 7000, state.globalDatasetAssets || { items: [], total: 0, page: 1, page_size: 40 })
+      ]);
+      return { status, branches, assets };
+    }, v => { state.globalDatasetStatus = v.status; state.globalDatasetBranches = v.branches || []; state.globalDatasetAssets = v.assets || state.globalDatasetAssets; }],
+    ['dataset pipeline catalogs', async () => {
+      const [catalog, printTools] = await Promise.all([
+        apiWithTimeout('/api/dataset-pipeline/catalog', {}, 7000, state.datasetPipelineCatalog),
+        apiWithTimeout('/api/dataset-pipeline/3d-print/tools', {}, 7000, state.datasetPipelinePrintTools)
+      ]);
+      return { catalog, printTools };
+    }, v => { state.datasetPipelineCatalog = v.catalog; state.datasetPipelinePrintTools = v.printTools; }],
+    ['workflow library', async () => {
+      const [catalog, items, runs] = await Promise.all([
+        apiWithTimeout('/api/workflows/catalog', {}, 7000, state.workflowCatalog),
+        apiWithTimeout('/api/workflows', {}, 7000, { items: state.workflowItems || [] }).then(r => r.items || []),
+        apiWithTimeout('/api/workflows/runs', {}, 7000, { items: state.workflowRuns || [] }).then(r => r.items || [])
+      ]);
+      return { catalog, items, runs };
+    }, v => { state.workflowCatalog = v.catalog; state.workflowItems = v.items || []; state.workflowRuns = v.runs || []; }],
+    ['graph editor library', async () => {
+      const [catalog, items, runs] = await Promise.all([
+        apiWithTimeout('/api/graph-editor/catalog', {}, 7000, state.graphEditorCatalog),
+        apiWithTimeout('/api/graph-editor', {}, 7000, { items: state.graphEditorItems || [] }).then(r => r.items || []),
+        apiWithTimeout('/api/graph-editor/runs', {}, 7000, { items: state.graphEditorRuns || [] }).then(r => r.items || [])
+      ]);
+      return { catalog, items, runs };
+    }, v => { state.graphEditorCatalog = v.catalog; state.graphEditorItems = v.items || []; state.graphEditorRuns = v.runs || []; }],
+    ['active tag dictionary status', () => apiWithTimeout(`/api/tags/dictionary/status?profile_key=${encodeURIComponent(state.tagProfile || 'e621')}&t=${Date.now()}`, { cache:'no-store' }, 9000, state.dictionaryStatus), v => { state.dictionaryStatus = v || state.dictionaryStatus; }]
+  ];
+  for (let i = 0; i < steps.length; i += 1) {
+    const [label, fetcher, apply] = steps[i];
+    const progress = 0.22 + 0.74 * (i / Math.max(1, steps.length));
+    setFrontendHydration(progress, `Hydrating frontend catalog: ${label}`, { phase: 'frontend_hydration' });
+    try { apply(await fetcher()); } catch (err) { console.warn(`Frontend hydration step failed: ${label}`, err); }
+    updateLiveStatusDom();
+    if (state.tab === 'Dashboard' && i % 3 === 0) renderOrDeferForEditing();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  const elapsed = Math.max(0, (Date.now() - started) / 1000);
+  state.frontendHydration = { ...(state.frontendHydration || {}), status: 'completed', progress: 1, percent: 100, phase: 'frontend_hydration', message: `Frontend catalogs hydrated in ${formatDuration(elapsed)}`, elapsed_seconds: elapsed, eta_seconds: null, updated_at: new Date().toISOString() };
+  updateStartupProgressDom();
+  if (renderAfter) renderOrDeferForEditing();
+  return state;
+}
+
 async function refreshAll() {
   try {
-    const [summary, datasets, jobs, models, modelStatuses, modelResource, assistantConfig, presets, settings, profiles, sources, templates, detectionModels, segmentationModels, poseTemplates, threeDProviders, threeDAssets, flexAvatarStatus, flexAvatarAssets, agentStatus, voiceStatus, mcpToolStatus, distributedNodes] = await Promise.all([
-      api('/api/system/summary'), api('/api/datasets'), api('/api/jobs'), api('/api/models'), api('/api/models/status').catch(() => ({ stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} })), api('/api/models/resource-status').catch(() => ({ devices: [], loaded_models: [], loading_reservations: [], warnings: [] })), api('/api/models/assistant-config').catch(() => null),
+    const [summary, startupStatus, datasets, jobs, models, modelStatuses, modelResource, assistantConfig, presets, settings, profiles, sources, templates, detectionModels, segmentationModels, poseTemplates, threeDProviders, threeDAssets, flexAvatarStatus, flexAvatarAssets, agentStatus, voiceStatus, mcpToolStatus, distributedNodes, globalDatasetStatus, globalDatasetBranches, globalDatasetAssets, datasetPipelineCatalog, datasetPipelinePrintTools, workflowCatalog, workflowItems, workflowRuns, graphEditorCatalog, graphEditorItems, graphEditorRuns] = await Promise.all([
+      api('/api/system/summary'), api('/api/system/startup-status').catch(() => state.startupStatus), api('/api/datasets'), api('/api/jobs'), api('/api/models'), api('/api/models/status').catch(() => ({ stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} })), api('/api/models/resource-status').catch(() => ({ devices: [], loaded_models: [], loading_reservations: [], warnings: [] })), api('/api/models/assistant-config').catch(() => null),
       api('/api/presets'), api('/api/settings'), api('/api/tags/profiles').catch(() => []),
       api('/api/downloads/sources').catch(() => []), api('/api/orchestration/templates').catch(() => []),
       api('/api/spatial/detection/models').catch(() => []), api('/api/spatial/segmentation/models').catch(() => []),
       api('/api/reference/annotations/pose-templates').catch(() => []), api('/api/three-d/providers').catch(() => ({ generation: [], rigging: [] })),
-      api('/api/three-d/assets').catch(() => []), api('/api/flexavatar/status').catch(() => null), api('/api/flexavatar/assets').catch(() => ({ inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] })), api('/api/agent-tools/status').catch(() => null), api('/api/voice/status').catch(() => null), api('/api/mcp-tools/status').catch(() => null), api('/api/distributed/nodes').catch(() => [])
+      api('/api/three-d/assets').catch(() => []), api('/api/flexavatar/status').catch(() => null), api('/api/flexavatar/assets').catch(() => ({ inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] })), api('/api/agent-tools/status').catch(() => null), api('/api/voice/status').catch(() => null), api('/api/mcp-tools/status').catch(() => null), api('/api/distributed/nodes').catch(() => []), api('/api/global-dataset/status').catch(() => null), api('/api/global-dataset/branches').catch(() => []), api('/api/global-dataset/assets?page=1&page_size=40').catch(() => ({ items: [], total: 0, page: 1, page_size: 40 })), api('/api/dataset-pipeline/catalog').catch(() => null), api('/api/dataset-pipeline/3d-print/tools').catch(() => null), api('/api/workflows/catalog').catch(() => null), api('/api/workflows').then(r => r.items || []).catch(() => []), api('/api/workflows/runs').then(r => r.items || []).catch(() => []), api('/api/graph-editor/catalog').catch(() => null), api('/api/graph-editor').then(r => r.items || []).catch(() => []), api('/api/graph-editor/runs').then(r => r.items || []).catch(() => [])
     ]);
-    Object.assign(state, { summary, datasets, jobs, models, modelStatuses: modelStatuses || { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} }, modelResource: modelResource || { devices: [], loaded_models: [], loading_reservations: [], warnings: [] }, assistantConfig, presets, settings, tagProfiles: profiles || [], downloadSources: sources || [], orchestrationTemplates: templates || [], detectionModels: detectionModels || [], segmentationModels: segmentationModels || [], poseTemplates: poseTemplates || [], threeDProviders: threeDProviders || { generation: [], rigging: [] }, threeDAssets: threeDAssets || [], flexAvatarStatus, flexAvatarAssets: flexAvatarAssets || { inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] }, agentStatus, voiceStatus, mcpToolStatus, distributedNodes: distributedNodes || [] });
+    Object.assign(state, { summary, startupStatus: startupStatus || state.startupStatus, datasets, jobs, models, modelStatuses: modelStatuses || { stages: MODEL_LIFECYCLE_STAGES, models: {}, aggregate: {} }, modelResource: modelResource || { devices: [], loaded_models: [], loading_reservations: [], warnings: [] }, assistantConfig, presets, settings, tagProfiles: profiles || [], downloadSources: sources || [], orchestrationTemplates: templates || [], detectionModels: detectionModels || [], segmentationModels: segmentationModels || [], poseTemplates: poseTemplates || [], threeDProviders: threeDProviders || { generation: [], rigging: [] }, threeDAssets: threeDAssets || [], flexAvatarStatus, flexAvatarAssets: flexAvatarAssets || { inputs: [], avatar_codes: [], renderings: [], manifests: [], training_bundles: [], driver_sequences: [] }, agentStatus, voiceStatus, mcpToolStatus, distributedNodes: distributedNodes || [], globalDatasetStatus, globalDatasetBranches: globalDatasetBranches || [], globalDatasetAssets: globalDatasetAssets || { items: [], total: 0, page: 1, page_size: 40 }, datasetPipelineCatalog, datasetPipelinePrintTools, workflowCatalog, workflowItems: workflowItems || [], workflowRuns: workflowRuns || [], graphEditorCatalog, graphEditorItems: graphEditorItems || [], graphEditorRuns: graphEditorRuns || [] });
     if (settings?.default_tag_profile && state.tagProfiles.some(p => p.key === settings.default_tag_profile)) state.tagProfile = settings.default_tag_profile;
     if (!state.tagProfiles.some(p => p.key === state.tagProfile) && state.tagProfiles.length) state.tagProfile = state.tagProfiles[0].key;
     state.orderingStrategy = settings?.default_ordering_strategy || state.orderingStrategy;
@@ -1006,19 +2264,81 @@ async function refreshAll() {
   } catch (err) { console.error(err); toast(err.message, false); }
 }
 
-async function loadMedia() {
-  const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(state.filters)) if (v !== '' && v !== null && v !== undefined) p.set(k, v);
-  p.set('page', state.media.page || 1);
-  p.set('page_size', state.media.page_size || state.settings.default_page_size || 80);
-  state.media = await api(`/api/media?${p.toString()}`);
-  cacheMediaItems(state.media.items || []);
-  if (state.activeMedia) {
-    const updated = state.media.items.find(x => x.id === state.activeMedia.id);
-    if (updated) state.activeMedia = updated;
+async function loadMedia(opts = {}) {
+  const requestSeq = ++state.mediaRequestSeq;
+  const pageSize = Math.max(1, Math.min(500, Number(state.media.page_size || state.settings.default_page_size || 80) || 80));
+  const requestedPage = Math.max(1, Number(state.media.page || 1) || 1);
+  const buildParams = pageValue => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(state.filters)) if (v !== '' && v !== null && v !== undefined) p.set(k, v);
+    p.set('page', Math.max(1, Number(pageValue || 1) || 1));
+    p.set('page_size', pageSize);
+    return p;
+  };
+  state.mediaLoading = true;
+  try {
+    let nextMedia = await api(`/api/media?${buildParams(requestedPage).toString()}`);
+    if (requestSeq !== state.mediaRequestSeq) return state.media;
+    const totalPages = Math.max(1, Math.ceil((Number(nextMedia.total || 0)) / (Number(nextMedia.page_size || pageSize) || pageSize)));
+    const clampedPage = Math.max(1, Math.min(Number(nextMedia.page || requestedPage) || 1, totalPages));
+    if (clampedPage !== Number(nextMedia.page || requestedPage)) {
+      nextMedia = await api(`/api/media?${buildParams(clampedPage).toString()}`);
+      if (requestSeq !== state.mediaRequestSeq) return state.media;
+    }
+    state.media = nextMedia;
+    state.mediaLoadError = null;
+    state.media.page = Math.max(1, Math.min(Number(state.media.page || 1) || 1, Math.max(1, Math.ceil((Number(state.media.total || 0)) / (Number(state.media.page_size || pageSize) || pageSize)))));
+    cacheMediaItems(state.media.items || []);
+    const thumbIds = (state.media.items || []).map(x => Number(x.id)).filter(Number.isFinite);
+    if (thumbIds.length) { api('/api/media/thumbnails/prewarm', { method:'POST', body:{ media_ids: thumbIds } }).catch(() => null); scheduleThumbnailHydration(thumbIds); }
+    if (state.activeMedia) {
+      const updated = state.media.items.find(x => x.id === state.activeMedia.id);
+      if (updated) state.activeMedia = updated;
+    }
+    return state.media;
+  } catch (err) {
+    if (requestSeq === state.mediaRequestSeq) {
+      state.mediaLoadError = err?.message || String(err);
+      console.warn('media load failed; preserving existing gallery state', err);
+    }
+    return state.media || { items: [], total: 0, page: 1, page_size: pageSize };
+  } finally {
+    if (requestSeq === state.mediaRequestSeq) state.mediaLoading = false;
   }
-  return state.media;
 }
+function scheduleThumbnailHydration(mediaIds = []) {
+  const ids = [...new Set((mediaIds || []).map(Number).filter(n => Number.isFinite(n) && n > 0))];
+  if (!state.thumbnailPendingIds || !(state.thumbnailPendingIds instanceof Set)) state.thumbnailPendingIds = new Set();
+  ids.forEach(id => state.thumbnailPendingIds.add(id));
+  if (state.thumbnailHydratorTimer) return;
+  const step = async () => {
+    const pending = [...(state.thumbnailPendingIds || new Set())].slice(0, 160);
+    if (!pending.length) { state.thumbnailHydratorTimer = null; return; }
+    try {
+      const status = await api('/api/media/thumbnails/status', { method:'POST', body:{ media_ids: pending } });
+      const ready = new Set((status.ready || []).map(Number));
+      const stillPending = new Set([...(status.pending || []), ...(status.missing || [])].map(Number));
+      for (const id of ready) {
+        state.thumbnailPendingIds.delete(id);
+        state.thumbnailVersions[id] = Date.now();
+        document.querySelectorAll(`img[data-thumbnail-media-id="${id}"]`).forEach(img => {
+          if (img.dataset.thumbnailReady === '1') return;
+          img.dataset.thumbnailReady = '1';
+          img.classList.add('thumbnail-ready');
+          img.src = `/api/media/${id}/thumbnail?fast=0&v=${state.thumbnailVersions[id]}`;
+        });
+      }
+      for (const id of pending) if (!ready.has(id) && !stillPending.has(id)) state.thumbnailPendingIds.delete(id);
+      document.querySelectorAll('img[data-thumbnail-media-id]').forEach(img => {
+        const id = Number(img.getAttribute('data-thumbnail-media-id'));
+        if (Number.isFinite(id) && !ready.has(id) && (state.thumbnailPendingIds || new Set()).has(id)) img.classList.add('thumbnail-pending');
+      });
+    } catch (err) { console.warn('thumbnail hydration status failed', err); }
+    state.thumbnailHydratorTimer = setTimeout(step, 750);
+  };
+  state.thumbnailHydratorTimer = setTimeout(step, 150);
+}
+
 async function refreshMediaRows(mediaIds = []) {
   const ids = [...new Set((mediaIds || []).map(Number).filter(n => Number.isFinite(n) && n > 0))];
   for (const id of ids) {
@@ -1038,6 +2358,15 @@ async function refreshMediaRows(mediaIds = []) {
       }
     }
   }
+  const scoreTargets = new Map();
+  for (const item of state.media.items || []) {
+    if (!ids.length || ids.includes(Number(item.id))) scoreTargets.set(Number(item.id), item.tags || []);
+  }
+  if (state.activeMedia && (!ids.length || ids.includes(Number(state.activeMedia.id)))) {
+    scoreTargets.set(Number(state.activeMedia.id), state.activeMedia.tags || []);
+  }
+  await Promise.all([...scoreTargets.entries()].slice(0, 80).map(([id, tags]) => requestTagScores(id, tags).catch(() => {})));
+  state.lastMediaPredictionRefreshAt = Date.now();
   return true;
 }
 function affectedMediaIdsFromJob(job) {
@@ -1050,7 +2379,86 @@ function affectedMediaIdsFromJob(job) {
   for (const value of result.applied?.media_ids || []) add(value);
   for (const key of Object.keys(result.preview_tags_by_media || {})) add(key);
   for (const key of Object.keys(result.selected_tags_by_media || {})) add(key);
+  for (const key of Object.keys(result.candidate_tags_by_media || {})) add(key);
+  for (const key of Object.keys(result.applied_tags_by_media || {})) add(key);
+  for (const key of Object.keys(result.candidate_scores_by_media || {})) add(key);
   return [...ids];
+}
+function tagsFromCompletedModelJob(job, mediaId, mode = 'applied') {
+  const result = job?.result || {};
+  const id = String(mediaId);
+  const raw = mode === 'candidate' ? (result.candidate_tags_by_media || {})[id] : (result.applied_tags_by_media || {})[id];
+  return Array.isArray(raw) ? raw.map(normalizeTag).filter(Boolean) : [];
+}
+function scoreTagsFromCompletedModelJob(job, mediaId) {
+  const result = job?.result || {};
+  const rows = (result.candidate_scores_by_media || {})[String(mediaId)] || [];
+  const tags = [];
+  for (const row of rows || []) {
+    const tag = normalizeTag(row?.tag || row?.label || row?.class || '');
+    if (tag) tags.push(tag);
+  }
+  return tags;
+}
+function patchTagScoresFromModelJob(job) {
+  const result = job?.result || {};
+  const modelName = jobModelName(job) || result.model_name || '';
+  if (!modelName) return false;
+  const kind = result.effective_task || job?.params?.task || 'tag';
+  const scoresByMedia = result.candidate_scores_by_media || {};
+  let changed = false;
+  for (const [mediaIdRaw, rows] of Object.entries(scoresByMedia || {})) {
+    const mediaKey = String(mediaIdRaw);
+    state.tagScores[mediaKey] ||= {};
+    for (const row of rows || []) {
+      const tag = normalizeTag(row?.tag || row?.label || row?.class || '');
+      if (!tag) continue;
+      const score = Math.max(0, Math.min(1, Number(row?.score ?? row?.confidence ?? row?.probability ?? 0)));
+      state.tagScores[mediaKey][tag] ||= [];
+      const existing = state.tagScores[mediaKey][tag].filter(e => String(e.model_name || e.model || '') !== String(modelName) || String(e.kind || '') !== String(kind));
+      existing.push({ model_name: modelName, kind, score, updated_at: new Date().toISOString(), run_id: job?.id });
+      existing.sort((a,b) => Number(b.score||0) - Number(a.score||0));
+      state.tagScores[mediaKey][tag] = existing;
+      changed = true;
+    }
+  }
+  return changed;
+}
+function optimisticallyPatchMediaTagsFromModelJob(job) {
+  const params = job?.params || {};
+  if (!params.apply_tags) return false;
+  const ids = affectedMediaIdsFromJob(job);
+  let changed = false;
+  for (const mediaId of ids) {
+    const applied = tagsFromCompletedModelJob(job, mediaId, 'applied');
+    const candidates = tagsFromCompletedModelJob(job, mediaId, 'candidate');
+    const next = applied.length ? applied : candidates;
+    if (!next.length) continue;
+    delete state.tagDrafts[mediaId];
+    delete state.tagDraftSource[mediaId];
+    const patch = item => {
+      if (!item || Number(item.id) !== Number(mediaId)) return item;
+      const categories = { ...(item.categories || {}) };
+      const merged = [...(item.tags || [])];
+      for (const tag of next) {
+        if (!(tag in categories)) categories[tag] = categories[tag] || 'unknown';
+        if (!merged.includes(tag)) merged.push(tag);
+      }
+      changed = true;
+      return { ...item, tags: merged, tag_string: merged.join(', '), categories };
+    };
+    const idx = (state.media.items || []).findIndex(x => Number(x.id) === Number(mediaId));
+    if (idx >= 0) state.media.items[idx] = patch(state.media.items[idx]);
+    if (state.activeMedia && Number(state.activeMedia.id) === Number(mediaId)) state.activeMedia = patch(state.activeMedia);
+  }
+  return changed;
+}
+function completedModelJobScoreTags(job, mediaId, item = null) {
+  const out = new Set((item?.tags || []).map(normalizeTag).filter(Boolean));
+  for (const tag of tagsFromCompletedModelJob(job, mediaId, 'applied')) out.add(tag);
+  for (const tag of tagsFromCompletedModelJob(job, mediaId, 'candidate')) out.add(tag);
+  for (const tag of scoreTagsFromCompletedModelJob(job, mediaId)) out.add(tag);
+  return [...out];
 }
 function isCompletedModelJob(job) {
   return Boolean(job && String(job.type || '').startsWith('model_') && ['completed', 'failed'].includes(String(job.status || '').toLowerCase()));
@@ -1063,20 +2471,287 @@ function modelJobMayMutateMedia(job) {
   return Boolean(params.apply_tags || params.apply_caption || result.applied_tags || result.applied_captions || result.applied?.changed);
 }
 async function refreshMediaAfterCompletedModelJobs(jobs) {
-  const mutating = (jobs || []).filter(modelJobMayMutateMedia);
-  if (!mutating.length) return false;
+  const modelInferenceJobs = (jobs || []).filter(j => String(j?.type || '') === 'model_inference' && ['completed','failed'].includes(String(j?.status || '').toLowerCase()));
+  if (!modelInferenceJobs.length) return false;
   const affected = new Set();
-  for (const job of mutating) for (const id of affectedMediaIdsFromJob(job)) affected.add(id);
-  return refreshMediaRows([...affected]);
+  for (const job of modelInferenceJobs) for (const id of affectedMediaIdsFromJob(job)) affected.add(id);
+  const ids = [...affected];
+  if (!ids.length) return false;
+  for (const job of modelInferenceJobs) {
+    patchTagScoresFromModelJob(job);
+    optimisticallyPatchMediaTagsFromModelJob(job);
+  }
+  invalidateTagScoreCache(ids);
+  // Always refresh the media rows after model inference. Some models persist
+  // prediction-score rows without changing final media tags, while others apply
+  // canonical/alias-normalized tags. The Tag Editor hovercards need both the
+  // current tag list and the fresh score rows as soon as the job reaches 100%.
+  await refreshMediaRows(ids);
+  const scoreTargets = ids.map(id => {
+    const item = (state.media.items || []).find(x => Number(x.id) === Number(id)) || (state.activeMedia && Number(state.activeMedia.id) === Number(id) ? state.activeMedia : null);
+    const merged = new Set((item?.tags || []).map(normalizeTag).filter(Boolean));
+    for (const job of modelInferenceJobs) for (const tag of completedModelJobScoreTags(job, id, item)) merged.add(tag);
+    return { id, tags: [...merged] };
+  });
+  await Promise.all(scoreTargets.map(row => requestTagScores(row.id, row.tags || []).catch(() => null)));
+  for (const job of modelInferenceJobs) patchTagScoresFromModelJob(job);
+  state.lastMediaPredictionRefreshAt = Date.now();
+  return true;
 }
 async function refreshCompletedModelJobById(jobId) {
   const id = Number(jobId);
   if (!Number.isFinite(id) || id <= 0) return false;
-  const job = (state.jobs || []).find(j => Number(j.id) === id);
+  let job = (state.jobs || []).find(j => Number(j.id) === id);
+  if (!job || !isCompletedModelJob(job)) {
+    job = await api(`/api/jobs/${id}`).catch(() => job);
+  }
   if (!job || !isCompletedModelJob(job)) return false;
   const refreshed = await refreshMediaAfterCompletedModelJobs([job]);
   state.lastCompletedModelJobIds.add(job.id);
   return refreshed;
+}
+async function waitForModelInferenceJob(jobId, mediaIds = [], opts = {}) {
+  const id = Number(jobId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const maxMs = Number(opts.maxMs || 10 * 60 * 1000);
+  const intervalMs = Number(opts.intervalMs || 900);
+  const started = Date.now();
+  let lastJob = null;
+  while (Date.now() - started < maxMs) {
+    lastJob = await api(`/api/jobs/${id}`).catch(() => lastJob);
+    if (lastJob) {
+      const idx = (state.jobs || []).findIndex(j => Number(j.id) === id);
+      if (idx >= 0) state.jobs[idx] = lastJob; else state.jobs = [lastJob, ...(state.jobs || [])];
+      updateLiveStatusDom();
+      if (['completed','failed','cancelled'].includes(String(lastJob.status || '').toLowerCase())) break;
+    }
+    await refreshModelStatuses(false).catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+  if (lastJob && isCompletedModelJob(lastJob)) {
+    await refreshMediaAfterCompletedModelJobs([{ ...lastJob, params: { ...(lastJob.params || {}), media_ids: (lastJob.params || {}).media_ids || mediaIds } }]);
+    state.lastCompletedModelJobIds.add(lastJob.id);
+  } else if (mediaIds && mediaIds.length) {
+    invalidateTagScoreCache(mediaIds);
+    await refreshMediaRows(mediaIds).catch(() => null);
+    await Promise.all(mediaIds.map(id => {
+      const item = (state.media.items || []).find(x => Number(x.id) === Number(id)) || (state.activeMedia && Number(state.activeMedia.id) === Number(id) ? state.activeMedia : null);
+      return requestTagScores(id, item?.tags || []).catch(() => null);
+    }));
+  }
+  return lastJob;
+}
+
+
+function nextTempJobId() {
+  const current = Number(state.nextTempJobId || -1);
+  const next = Number.isFinite(current) && current < 0 ? current - 1 : -1;
+  state.nextTempJobId = next;
+  return next;
+}
+function upsertJobRow(job, replaceId = null) {
+  if (!job) return null;
+  const row = { ...job };
+  if (row.id === undefined || row.id === null || row.id === '') row.id = nextTempJobId();
+  const idsToReplace = new Set([String(row.id)]);
+  if (replaceId !== null && replaceId !== undefined) idsToReplace.add(String(replaceId));
+  state.jobs = [row, ...(state.jobs || []).filter(j => !idsToReplace.has(String(j.id)))];
+  return row;
+}
+function removeJobRow(jobId) {
+  if (jobId === null || jobId === undefined) return;
+  const key = String(jobId);
+  state.jobs = (state.jobs || []).filter(j => String(j.id) !== key);
+}
+function queuePlaceholderJob(type, modelName, message = 'Queued', params = {}, progress = 0) {
+  const id = nextTempJobId();
+  return upsertJobRow({ id, type, status:'queued', progress, message, created_at:new Date().toISOString(), updated_at:new Date().toISOString(), params:{ model_name:modelName, ...(params || {}) }, temporary:true });
+}
+
+function watchModelDownloadJob(jobId, modelName = '') {
+  const id = Number(jobId);
+  const name = String(modelName || '').trim();
+  if (!Number.isFinite(id) || id <= 0 || !name) return;
+  if (state.modelDownloadJobWatchers[String(id)]) return;
+  const started = Date.now();
+  const tick = async () => {
+    try {
+      let job = await api(`/api/jobs/${id}`).catch(() => null);
+      if (job) {
+        const idx = (state.jobs || []).findIndex(j => Number(j.id) === id);
+        if (idx >= 0) state.jobs[idx] = job; else state.jobs = [job, ...(state.jobs || [])];
+        const status = String(job.status || '').toLowerCase();
+        const active = ['queued','running','paused'].includes(status);
+        const mappedState = status === 'paused' ? 'running' : (status || 'running');
+        const progress = Number(job.progress || 0);
+        const message = job.error ? String(job.error).slice(0, 240) : (job.message || (active ? 'Downloading model weights' : 'Download finished'));
+        if (status === 'completed') {
+          setOptimisticModelStage(name, 'download', 'completed', 1, message || 'Model download completed');
+          // Do not wait for a full catalog rescan here. The single-row reconcile
+          // endpoint validates only this model and patches the row immediately,
+          // which avoids the multi-minute stale NOT DOWNLOADED / INCOMPLETE UI state.
+          await reconcileDownloadedModelNow(name, id).catch(async () => { await refreshModelStatuses(false).catch(() => null); });
+          updateLiveStatusDom();
+          clearInterval(state.modelDownloadJobWatchers[String(id)]);
+          delete state.modelDownloadJobWatchers[String(id)];
+          if (state.tab === 'Models') renderNowPreservingState(false);
+          return;
+        }
+        if (['failed','cancelled','canceled'].includes(status)) {
+          setOptimisticModelStage(name, 'download', status === 'failed' ? 'failed' : 'cancelled', progress || 0, message || status);
+          await refreshModelStatuses(false).catch(() => null);
+          updateLiveStatusDom();
+          clearInterval(state.modelDownloadJobWatchers[String(id)]);
+          delete state.modelDownloadJobWatchers[String(id)];
+          if (state.tab === 'Models') renderNowPreservingState(false);
+          return;
+        }
+        setOptimisticModelStage(name, 'download', mappedState, progress, message);
+        await refreshModelStatuses(false).catch(() => null);
+        updateLiveStatusDom();
+      } else {
+        await refreshModelStatuses(false).catch(() => null);
+        updateLiveStatusDom();
+      }
+      if (Date.now() - started > 12 * 60 * 60 * 1000) {
+        clearInterval(state.modelDownloadJobWatchers[String(id)]);
+        delete state.modelDownloadJobWatchers[String(id)];
+      }
+    } catch (err) {
+      console.warn('model download watcher failed', err);
+    }
+  };
+  state.modelDownloadJobWatchers[String(id)] = setInterval(tick, 700);
+  tick();
+}
+
+
+function watchModelLifecycleJob(jobId, modelName = '', mode = 'load') {
+  const id = Number(jobId);
+  const name = String(modelName || '').trim();
+  const action = String(mode || 'load').toLowerCase() === 'unload' ? 'unload' : 'load';
+  if (!Number.isFinite(id) || id <= 0 || !name) return;
+  const key = String(id);
+  if (state.modelLifecycleJobWatchers[key]) return;
+
+  const entry = { timer: null, stopped: false, started: Date.now(), mode: action, modelName: name };
+  state.modelLifecycleJobWatchers[key] = entry;
+
+  const stop = () => {
+    entry.stopped = true;
+    if (entry.timer) clearTimeout(entry.timer);
+    delete state.modelLifecycleJobWatchers[key];
+  };
+  const schedule = () => {
+    if (!entry.stopped) entry.timer = setTimeout(tick, 500);
+  };
+  const tick = async () => {
+    try {
+      const job = await api(`/api/jobs/${id}`, { cache:'no-store' }).catch(() => null);
+      if (!job) {
+        if (Date.now() - entry.started > 30 * 60 * 1000) stop();
+        else schedule();
+        return;
+      }
+      const idx = (state.jobs || []).findIndex(j => Number(j.id) === id);
+      if (idx >= 0) state.jobs[idx] = job; else state.jobs = [job, ...(state.jobs || [])];
+
+      const status = String(job.status || '').toLowerCase();
+      const rawProgress = Math.max(0, Math.min(1, Number(job.progress || 0)));
+      const terminal = ['completed','failed','cancelled','canceled'].includes(status);
+      const message = job.error ? String(job.error).slice(0, 400) : String(job.message || '');
+      let stageState = status || 'queued';
+      let stageProgress = rawProgress;
+      if (action === 'unload' && ['queued','running','paused'].includes(status)) stageState = 'unloading';
+      if (status === 'paused') stageState = action === 'unload' ? 'unloading' : 'running';
+      if (status === 'completed') {
+        stageState = action === 'unload' ? 'idle' : 'completed';
+        stageProgress = action === 'unload' ? 0 : 1;
+      }
+      if (status === 'canceled') stageState = 'cancelled';
+
+      const row = setOptimisticModelStage(
+        name,
+        'load',
+        stageState,
+        stageProgress,
+        message || (action === 'unload' ? 'Unloading model from memory' : 'Loading model into memory')
+      );
+      if (row) {
+        row.job_id = id;
+        row.error = job.error || null;
+      }
+      if (state.modelStatuses?.models?.[name]) {
+        if (status === 'completed') state.modelStatuses.models[name].loaded = action !== 'unload';
+      }
+      updateLiveStatusDom();
+
+      if (terminal) {
+        stop();
+        await refreshModelsPanel({ force:true, renderAfter:false, immediate:true }).catch(() => null);
+        syncCatalogLoadedStatusFromStatuses();
+        updateLiveStatusDom();
+        if (state.tab === 'Models') patchModelsTabLive({ reorder: true });
+        return;
+      }
+      if (Date.now() - entry.started > 30 * 60 * 1000) {
+        stop();
+        return;
+      }
+    } catch (err) {
+      console.warn('model lifecycle watcher failed', err);
+    }
+    schedule();
+  };
+  tick();
+}
+
+function watchModelInferenceJob(jobId, mediaIds = []) {
+  const id = Number(jobId);
+  if (!Number.isFinite(id) || id <= 0) return;
+  if (state.modelInferenceJobWatchers[String(id)]) return;
+  const started = Date.now();
+  state.modelInferenceRefreshPending[String(id)] = true;
+  const tick = async () => {
+    try {
+      let job = await api(`/api/jobs/${id}`).catch(() => null);
+      if (job) {
+        const idx = (state.jobs || []).findIndex(j => Number(j.id) === id);
+        if (idx >= 0) state.jobs[idx] = job; else state.jobs = [job, ...(state.jobs || [])];
+        const inferredModelName = jobModelName(job);
+        const status = String(job.status || '').toLowerCase();
+        if (inferredModelName) {
+          const rawProgress = Math.max(0, Math.min(1, Number(job.progress || 0)));
+          const terminal = ['completed','failed','cancelled','canceled'].includes(status);
+          const stageState = status === 'canceled' ? 'cancelled' : (status || 'queued');
+          const row = setOptimisticModelStage(inferredModelName, 'inference', stageState, status === 'completed' ? 1 : rawProgress, job.error ? String(job.error).slice(0, 240) : (job.message || 'Inference job update'));
+          if (row) { row.job_id = id; row.error = job.error || null; }
+          if (row && terminal && stageState !== 'completed') row.active = false;
+        }
+        updateLiveStatusDom();
+        if (['completed','failed','cancelled','canceled'].includes(status)) {
+          clearInterval(state.modelInferenceJobWatchers[String(id)]);
+          delete state.modelInferenceJobWatchers[String(id)];
+          delete state.modelInferenceRefreshPending[String(id)];
+          const patched = { ...job, params: { ...(job.params || {}), media_ids: (job.params || {}).media_ids || mediaIds } };
+          await refreshMediaAfterCompletedModelJobs([patched]).catch(err => console.warn('model inference media refresh failed', err));
+          state.lastCompletedModelJobIds.add(id);
+          await refreshModelStatuses(false).catch(() => {});
+          if (['Tag Editor','Compare','Gallery','Batch Tags','Prediction Analytics','Models'].includes(state.tab)) renderNowPreservingState('hard');
+          return;
+        }
+      }
+      if (Date.now() - started > 10 * 60 * 1000) {
+        clearInterval(state.modelInferenceJobWatchers[String(id)]);
+        delete state.modelInferenceJobWatchers[String(id)];
+        delete state.modelInferenceRefreshPending[String(id)];
+      }
+    } catch (err) {
+      console.warn('model inference watcher failed', err);
+    }
+  };
+  state.modelInferenceJobWatchers[String(id)] = setInterval(tick, 700);
+  tick();
 }
 
 async function loadDictionaryStatus() {
@@ -1102,6 +2777,7 @@ async function loadScopedChatConversation(id, scope = 'main') {
   if (!id) {
     if (scope === 'tagSelection') { state.tagSelectionChatConversationId = null; state.tagSelectionChatMessages = []; }
     else if (scope === 'code') { state.codeConversationId = null; state.codeMessages = []; }
+    else if (scope === 'graph') { state.graphChatConversationId = null; state.graphChatMessages = []; state.graphChatConversationState = {}; }
     else { state.chatConversationId = null; state.chatMessages = []; }
     return null;
   }
@@ -1109,6 +2785,7 @@ async function loadScopedChatConversation(id, scope = 'main') {
   const messages = (r.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content, created_at: m.created_at, model_name: m.model_name, response: m.response || {}, context: m.context || {} }));
   if (scope === 'tagSelection') { state.tagSelectionChatConversationId = r.conversation?.id || id; state.tagSelectionChatMessages = messages; state.tagSelectionChatState = r.state || r.conversation?.state || {}; }
   else if (scope === 'code') { state.codeConversationId = r.conversation?.id || id; state.codeMessages = messages; state.codeConversationState = r.state || r.conversation?.state || {}; }
+  else if (scope === 'graph') { state.graphChatConversationId = r.conversation?.id || id; state.graphChatMessages = messages; state.graphChatConversationState = r.state || r.conversation?.state || {}; }
   else { state.chatConversationId = r.conversation?.id || id; state.chatMessages = messages; state.chatConversationState = r.state || r.conversation?.state || {}; }
   return r;
 }
@@ -1117,6 +2794,7 @@ async function loadScopedChatConversation(id, scope = 'main') {
 function chatStateForScope(scope) {
   if (scope === 'tagSelection') return state.tagSelectionChatState || {};
   if (scope === 'code') return state.codeConversationState || {};
+  if (scope === 'graph') return state.graphChatConversationState || {};
   return state.chatConversationState || {};
 }
 function zeroContextBudget(modelName = '', contextLimitTokens = 0) {
@@ -1146,11 +2824,16 @@ function setScopeContextCleared(scope, conversationId, messages = []) {
   } else if (scope === 'code') {
     state.codeConversationState = { ...(state.codeConversationState || {}), memory_summary: '', context_reset_message_id: maxId, context_cleared_at: new Date().toISOString(), last_context_budget: budget };
     if (state.codeLastResponse) state.codeLastResponse = { ...state.codeLastResponse, memory_summary: '', context_budget: budget };
+  } else if (scope === 'graph') {
+    state.graphChatConversationState = { ...(state.graphChatConversationState || {}), memory_summary: '', context_reset_message_id: maxId, context_cleared_at: new Date().toISOString(), last_context_budget: budget };
+    if (state.graphChatLastResponse) state.graphChatLastResponse = { ...state.graphChatLastResponse, memory_summary: '', context_budget: budget };
   } else {
     state.chatConversationState = { ...(state.chatConversationState || {}), memory_summary: '', context_reset_message_id: maxId, context_cleared_at: new Date().toISOString(), last_context_budget: budget };
   }
 }
 function chatContextBudgetForScope(scope, messages = []) {
+  const live = state.liveChatContextBudgets?.[scope];
+  if (live) return live;
   const scopeState = chatStateForScope(scope);
   const resetId = Number(scopeState?.context_reset_message_id || 0);
   const stateBudget = scopeState?.last_context_budget || null;
@@ -1160,6 +2843,7 @@ function chatContextBudgetForScope(scope, messages = []) {
   if (lastWithBudget?.response?.context_budget) return lastWithBudget.response.context_budget;
   if (scope === 'tagSelection') return state.lastTagSelectionChat?.context_budget || stateBudget || null;
   if (scope === 'code') return state.codeLastResponse?.context_budget || stateBudget || null;
+  if (scope === 'graph') return state.graphChatLastResponse?.context_budget || stateBudget || null;
   return stateBudget || null;
 }
 function contextBudgetPanel(scope, messages = []) {
@@ -1167,14 +2851,92 @@ function contextBudgetPanel(scope, messages = []) {
   if (!b) return null;
   const pct = Math.max(0, Math.min(100, Math.round(Number(b.percent_used || 0) * 100)));
   const cls = b.critical ? 'failed' : (b.warning ? 'queued' : 'completed');
-  return el('div', { class: `stage-pill context-budget ${cls}`, title: b.note || 'Estimated context usage' }, [
+  const liveLabel = b.live ? 'live estimate' : 'estimate';
+  const condenseLabel = b.auto_condensed ? 'auto-condensed' : (b.auto_condense_pending ? 'auto-condense check' : (b.warning ? 'near limit' : null));
+  return el('div', { class: `stage-pill context-budget ${cls} ${b.live ? 'live' : ''}`, title: b.note || 'Estimated context usage', 'data-context-budget-scope': scope }, [
     el('div', { class: 'progress-ring', style: `--pct:${pct}%` }, el('span', {}, `${pct}%`)),
     el('div', { class: 'stage-text' }, [
-      el('strong', {}, 'Context'),
+      el('strong', {}, `Context · ${liveLabel}`),
       el('span', {}, `${b.tokens_used_estimate || 0} / ${b.context_limit_tokens || '?'} tokens used`),
-      b.auto_condensed ? el('span', { class: 'ok-text' }, 'auto-condensed') : (b.warning ? el('span', { class: 'warn-text' }, 'near limit') : null)
+      condenseLabel ? el('span', { class: b.auto_condensed ? 'ok-text' : 'warn-text' }, condenseLabel) : null
     ].filter(Boolean))
   ]);
+}
+function roughTokenEstimate(value) {
+  let text = '';
+  try { text = typeof value === 'string' ? value : JSON.stringify(value || {}); } catch (_) { text = String(value || ''); }
+  if (!text) return 0;
+  const charEst = Math.ceil(text.length / 4);
+  const wordEst = Math.ceil((text.match(/\S+/g) || []).length * 1.15);
+  return Math.max(charEst, wordEst, 1);
+}
+function modelContextLimitEstimate(modelName = '', options = {}) {
+  const optLimit = Number(options.context_length || options.context_window || options.max_context_tokens || 0);
+  if (Number.isFinite(optLimit) && optLimit > 0) return Math.max(1024, Math.round(optLimit));
+  const row = (state.models || []).find(m => String(m.name || '') === String(modelName || '')) || {};
+  const rowLimit = Number(row.context_length || row.context_window || row.max_context_tokens || 0);
+  if (Number.isFinite(rowLimit) && rowLimit > 0) return Math.max(1024, Math.round(rowLimit));
+  return 8192;
+}
+function messagesForChatScope(scope) {
+  if (scope === 'tagSelection') return state.tagSelectionChatMessages || [];
+  if (scope === 'code') return state.codeMessages || [];
+  if (scope === 'graph') return state.graphChatMessages || [];
+  return state.chatMessages || [];
+}
+function setLiveContextBudget(scope, budget = null) {
+  state.liveChatContextBudgets ||= {};
+  if (!budget) delete state.liveChatContextBudgets[scope];
+  else state.liveChatContextBudgets[scope] = budget;
+  patchContextBudgetPanels(scope);
+}
+function patchContextBudgetPanels(scope = null) {
+  const root = document.getElementById('app');
+  if (!root) return;
+  const selector = scope ? `[data-context-budget-scope="${scope}"]` : '[data-context-budget-scope]';
+  root.querySelectorAll(selector).forEach(node => {
+    const panelScope = node.getAttribute('data-context-budget-scope') || scope || 'main';
+    const next = contextBudgetPanel(panelScope, messagesForChatScope(panelScope));
+    if (next) node.replaceWith(next);
+  });
+}
+function startLiveContextBudgetTicker(scope, modelName, prompt, context = {}, options = {}) {
+  state.liveContextBudgetTickers ||= {};
+  if (state.liveContextBudgetTickers[scope]) clearInterval(state.liveContextBudgetTickers[scope]);
+  const limit = modelContextLimitEstimate(modelName, options);
+  const inputTokens = roughTokenEstimate({ prompt, context });
+  const maxOut = Math.max(256, Number(options.max_new_tokens || options.min_chat_max_new_tokens || options.deep_chat_max_new_tokens || state.settings?.model_max_new_tokens || 1024) || 1024);
+  const threshold = Math.max(0.5, Math.min(0.95, Number(options.auto_condense_context_threshold || 0.72)));
+  const started = Date.now();
+  const update = () => {
+    const elapsed = Math.max(0, (Date.now() - started) / 1000);
+    const outEstimate = Math.min(maxOut, Math.round(elapsed * 14));
+    const total = inputTokens + outEstimate;
+    const pct = Math.min(1, total / Math.max(1, limit));
+    setLiveContextBudget(scope, {
+      estimated: true,
+      live: true,
+      model_name: modelName || '',
+      context_limit_tokens: limit,
+      input_tokens_estimate: inputTokens,
+      output_tokens_estimate: outEstimate,
+      tokens_used_estimate: total,
+      percent_used: Number(pct.toFixed(4)),
+      warning: pct >= 0.82,
+      critical: pct >= 0.94,
+      auto_condense_enabled: true,
+      auto_condense_threshold: threshold,
+      auto_condense_pending: pct >= threshold,
+      note: 'Live client-side token/context pressure estimate while the assistant response is running. Backend automatic condensation is enabled and verified again before model execution.'
+    });
+  };
+  update();
+  state.liveContextBudgetTickers[scope] = setInterval(update, 750);
+  return () => {
+    if (state.liveContextBudgetTickers?.[scope]) clearInterval(state.liveContextBudgetTickers[scope]);
+    delete state.liveContextBudgetTickers?.[scope];
+    setLiveContextBudget(scope, null);
+  };
 }
 
 function chatMemorySummaryForScope(scope) {
@@ -1182,18 +2944,20 @@ function chatMemorySummaryForScope(scope) {
   if (scopeState?.context_reset_message_id && !scopeState?.memory_summary) return '';
   if (scope === 'tagSelection') return state.tagSelectionChatState?.memory_summary || state.lastTagSelectionChat?.memory_summary || '';
   if (scope === 'code') return state.codeConversationState?.memory_summary || state.codeLastResponse?.memory_summary || '';
+  if (scope === 'graph') return state.graphChatConversationState?.memory_summary || state.graphChatLastResponse?.memory_summary || '';
   return scopeState?.memory_summary || '';
 }
 function chatQueueStateForScope(scope) {
   if (scope === 'tagSelection') return { sending: state.tagSelectionChatSending, current: state.tagSelectionChatCurrent, queue: state.tagSelectionChatQueue || [] };
   if (scope === 'code') return { sending: state.codeChatSending, current: state.codeChatCurrent, queue: state.codeChatQueue || [] };
+  if (scope === 'graph') return { sending: state.graphChatSending, current: state.graphChatCurrent, queue: state.graphChatQueue || [] };
   return { sending: state.chatSending, current: state.chatCurrent, queue: state.chatQueue || [] };
 }
 
 function resetStaleChatQueueLock(scope, maxMs = 10 * 60 * 1000) {
   const now = Date.now();
-  const currentKey = scope === 'tagSelection' ? 'tagSelectionChatCurrent' : scope === 'code' ? 'codeChatCurrent' : 'chatCurrent';
-  const sendingKey = scope === 'tagSelection' ? 'tagSelectionChatSending' : scope === 'code' ? 'codeChatSending' : 'chatSending';
+  const currentKey = scope === 'tagSelection' ? 'tagSelectionChatCurrent' : scope === 'code' ? 'codeChatCurrent' : scope === 'graph' ? 'graphChatCurrent' : 'chatCurrent';
+  const sendingKey = scope === 'tagSelection' ? 'tagSelectionChatSending' : scope === 'code' ? 'codeChatSending' : scope === 'graph' ? 'graphChatSending' : 'chatSending';
   const current = state[currentKey];
   if (!state[sendingKey]) return false;
   const started = Date.parse(current?.queued_at || current?.started_at || '') || 0;
@@ -1207,6 +2971,7 @@ function resetStaleChatQueueLock(scope, maxMs = 10 * 60 * 1000) {
 function clearChatQueueForScope(scope) {
   if (scope === 'tagSelection') { state.tagSelectionChatSending = false; state.tagSelectionChatCurrent = null; state.tagSelectionChatQueue = []; }
   else if (scope === 'code') { state.codeChatSending = false; state.codeChatCurrent = null; state.codeChatQueue = []; }
+  else if (scope === 'graph') { state.graphChatSending = false; state.graphChatCurrent = null; state.graphChatQueue = []; }
   else { state.chatSending = false; state.chatCurrent = null; state.chatQueue = []; }
 }
 async function saveConversationState(scope, conversationId, snapshot = {}) {
@@ -1214,6 +2979,7 @@ async function saveConversationState(scope, conversationId, snapshot = {}) {
   const r = await api(`/api/models/chat/conversations/${conversationId}/state`, { method: 'PUT', body: snapshot });
   if (scope === 'tagSelection') { state.tagSelectionChatState = r.state || r.conversation?.state || {}; state.tagSelectionChatMessages = r.messages || state.tagSelectionChatMessages || []; }
   else if (scope === 'code') { state.codeConversationState = r.state || r.conversation?.state || {}; state.codeMessages = r.messages || state.codeMessages || []; }
+  else if (scope === 'graph') { state.graphChatConversationState = r.state || r.conversation?.state || {}; state.graphChatMessages = r.messages || state.graphChatMessages || []; }
   toast('Conversation state saved');
   return r;
 }
@@ -1250,25 +3016,83 @@ function agentToolDecisionPill(decision, compact = false) {
   ].filter(Boolean));
 }
 
+function assistantScopeLabel(scope) {
+  if (scope === 'tagSelection') return 'Tag Editor assistant';
+  if (scope === 'code') return 'Code assistant';
+  if (scope === 'graph') return 'Graph assistant';
+  return 'Top-level assistant';
+}
+function assistantQueueScopeEntries() {
+  return ['assistant', 'tagSelection', 'graph', 'code']
+    .map(scope => ({ scope, qState: chatQueueStateForScope(scope) }))
+    .filter(row => Boolean(row.qState?.sending || row.qState?.current || (row.qState?.queue || []).length || row.qState?.activeJobId));
+}
+function liveActionNotesEnabled(scope = 'assistant') {
+  const local = scope === 'code' ? state.codeShowLiveActionNotes : state.assistantShowLiveActionNotes;
+  return local !== false && state.settings?.assistant_show_live_action_notes !== false;
+}
+function liveReasoningTraceEnabled(scope = 'assistant') {
+  const localChain = scope === 'code' ? state.codeShowLiveChainOfThought : state.assistantShowLiveChainOfThought;
+  const localTrace = scope === 'code' ? state.codeShowLiveReasoningTrace : state.assistantShowLiveReasoningTrace;
+  return localChain !== false && localTrace !== false && state.settings?.assistant_show_live_chain_of_thought !== false && state.settings?.assistant_show_live_reasoning_trace !== false;
+}
+function currentAssistantPromptPreview(qState) {
+  return String(qState?.current?.text || qState?.current?.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+}
 function liveActionNotesOverlay(scope, qState, options = {}) {
-  const enabled = (scope === 'code' ? state.codeShowLiveActionNotes : state.assistantShowLiveActionNotes) !== false && state.settings?.assistant_show_live_action_notes !== false;
+  const enabled = liveActionNotesEnabled(scope);
   if (!enabled || !(qState?.sending || qState?.current || (qState?.queue || []).length || options.activeJobId)) return null;
   const phases = [
-    'Reading current UI context and selected media/data',
-    'Building compact model context and checking token budget',
-    'Preparing visible plan/action notes',
-    'Waiting for model output or approved tool result',
-    'Parsing COAs/tool calls and preserving debug logs',
-    'Ready to relay tool results back into the conversation'
+    'Reading current UI context, selected media, tags, captions, model state, and active dataset rules',
+    'Checking context budget, RAM/VRAM pressure, and whether context condensation is needed',
+    'Preparing visible plan/action notes and deciding whether approved local tools/model jobs are needed',
+    'Waiting for model output, queued tool/model result, or assistant continuation',
+    'Parsing COAs/tool calls, model-queue actions, tag edits, and verification notes',
+    'Applying approved GUI/model actions and preserving results for follow-up planning'
   ];
-  const idx = Math.floor(Date.now() / 1800) % phases.length;
-  return el('div', { class: 'live-action-notes-overlay', title: 'Temporary live status/action notes. This is not hidden chain-of-thought.' }, [
-    el('div', { class: 'live-action-header' }, [el('span', { class: 'pulse-dot' }, ''), el('strong', {}, 'Live action notes')]),
-    el('div', { class: 'tiny muted' }, 'Model-private hidden chain-of-thought is not exposed; this panel shows live, user-facing execution status.'),
+  const idx = Math.floor(Date.now() / 1700) % phases.length;
+  return el('div', { class: 'live-action-notes-overlay live-assistant-overlay-panel', title: 'Live user-visible action/status notes for the active assistant run.' }, [
+    el('div', { class: 'live-action-header' }, [el('span', { class: 'pulse-dot' }, ''), el('strong', {}, `${assistantScopeLabel(scope)} · live action notes`)]),
     el('div', { class: 'live-action-line' }, phases[idx]),
-    qState?.current ? el('div', { class: 'tiny' }, `Active: ${(qState.current.text || qState.current.prompt || '').slice(0, 160)}`) : null,
-    (qState?.queue || []).length ? el('div', { class: 'tiny' }, `${qState.queue.length} queued message(s)`) : null
+    qState?.current ? el('div', { class: 'tiny' }, `Active request: ${currentAssistantPromptPreview(qState)}`) : null,
+    (qState?.queue || []).length ? el('div', { class: 'tiny' }, `${qState.queue.length} queued message(s) waiting behind the active run`) : null
   ].filter(Boolean));
+}
+function liveReasoningTraceOverlay(scope, qState, options = {}) {
+  if (!liveReasoningTraceEnabled(scope) || !(qState?.sending || qState?.current || (qState?.queue || []).length || options.activeJobId)) return null;
+  const steps = [
+    '1. Interpret the user goal against the active tab context.',
+    '2. Identify available evidence: selected media, current tags/captions, model outputs, LoRA rules, and queue state.',
+    '3. Decide whether this turn needs direct answer, GUI action, model delegation, or approved tool/model queue work.',
+    '4. Track uncertainty and wait for required model/job results before making irreversible edits.',
+    '5. Condense context if token pressure approaches the configured threshold, then continue from the compact state.',
+    '6. Produce final user-visible output plus any approved tag/edit/model-queue actions.'
+  ];
+  const idx = Math.floor(Date.now() / 1550) % steps.length;
+  const budget = chatContextBudgetForScope(scope, messagesForChatScope(scope));
+  return el('div', { class: 'live-chain-of-thought-overlay live-assistant-overlay-panel', title: 'Live chain-of-thought style user-visible reasoning trace. Provider/private hidden reasoning is not available to the browser; this is the visible trace generated by the app/model contract.' }, [
+    el('div', { class: 'live-action-header' }, [el('span', { class: 'pulse-dot reasoning' }, ''), el('strong', {}, `${assistantScopeLabel(scope)} · live chain-of-thought / reasoning trace`)]),
+    el('div', { class: 'tiny muted' }, 'Visible reasoning stream. Provider/private hidden reasoning is not extracted; local/model-visible trace is shown by default.'),
+    el('div', { class: 'live-action-line reasoning-line' }, steps[idx]),
+    budget ? el('div', { class: 'tiny' }, `Context: ${Math.round(Number(budget.percent_used || 0) * 100)}% · ${budget.tokens_used_estimate || 0}/${budget.context_limit_tokens || '?'} tokens · ${budget.auto_condense_pending ? 'condense pending' : 'condense armed'}`) : null,
+    qState?.current ? el('div', { class: 'tiny live-reasoning-prompt' }, `Prompt: ${currentAssistantPromptPreview(qState)}`) : null
+  ].filter(Boolean));
+}
+function globalAssistantOverlays() {
+  const entries = assistantQueueScopeEntries();
+  const panels = [];
+  for (const { scope, qState } of entries.slice(0, 3)) {
+    const action = liveActionNotesOverlay(scope, qState, { global: true });
+    const trace = liveReasoningTraceOverlay(scope, qState, { global: true });
+    if (action) panels.push(action);
+    if (trace) panels.push(trace);
+  }
+  return el('div', { id: 'global-assistant-overlays', class: `global-assistant-overlays ${panels.length ? 'active' : ''}` }, panels);
+}
+function patchGlobalAssistantOverlays() {
+  const existing = document.getElementById('global-assistant-overlays');
+  const next = globalAssistantOverlays();
+  if (existing) existing.replaceWith(next);
 }
 
 function conversationHistoryPanel(scope, conversationId, messages, options = {}) {
@@ -1279,6 +3103,7 @@ function conversationHistoryPanel(scope, conversationId, messages, options = {})
   const setConv = options.setConversation || (id => {
     if (scope === 'tagSelection') state.tagSelectionChatConversationId = id;
     else if (scope === 'code') state.codeConversationId = id;
+    else if (scope === 'graph') state.graphChatConversationId = id;
     else state.chatConversationId = id;
   });
   const rows = messages || [];
@@ -1393,13 +3218,20 @@ function conversationHistoryPanel(scope, conversationId, messages, options = {})
     el('div', { class: 'row spread' }, [
       el('h3', {}, `${title}${conversationId ? ' #' + conversationId : ' · new'}`),
       options.saveState ? el('button', { class: 'secondary small', disabled: !conversationId, title: 'Save the current image/project, tags/captions, selected files, and conversation memory as this chat state.', onclick: async () => { try { await saveConversationState(scope, conversationId, options.saveState()); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Save current state') : null,
-      el('button', { class: 'secondary small', disabled: !conversationId, title: 'Clear the model-visible memory/context for this conversation. Visible messages stay on screen as a transcript, but they are no longer sent back to the model unless new turns are added after this reset.', onclick: async () => { try { const r = await api(`/api/models/chat/conversations/${conversationId}/clear`, { method: 'POST', body: { clear_messages: false, clear_memory: true, keep_state: true, reset_context: true } }); await reload(conversationId); const rowsAfter = scope === 'tagSelection' ? state.tagSelectionChatMessages : scope === 'code' ? state.codeMessages : state.chatMessages; setScopeContextCleared(scope, conversationId, rowsAfter || r.messages || []); toast('Cleared model memory/context for this conversation'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Clear memory'),
+      el('button', { class: 'secondary small', disabled: !conversationId, title: 'Clear the model-visible memory/context for this conversation. Visible messages stay on screen as a transcript, but they are no longer sent back to the model unless new turns are added after this reset.', onclick: async () => { try { const r = await api(`/api/models/chat/conversations/${conversationId}/clear`, { method: 'POST', body: { clear_messages: false, clear_memory: true, keep_state: true, reset_context: true } }); await reload(conversationId); const rowsAfter = scope === 'tagSelection' ? state.tagSelectionChatMessages : scope === 'code' ? state.codeMessages : scope === 'graph' ? state.graphChatMessages : state.chatMessages; setScopeContextCleared(scope, conversationId, rowsAfter || r.messages || []); toast('Cleared model memory/context for this conversation'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Clear memory'),
       el('button', { class: 'danger small', disabled: !conversationId, title: 'Clear chat messages and cached memory, while keeping saved image/project state.', onclick: async () => { try { if (!confirm('Clear all visible messages and cached memory for this conversation?')) return; await api(`/api/models/chat/conversations/${conversationId}/clear`, { method: 'POST', body: { clear_messages: true, clear_memory: true, keep_state: true } }); await reload(conversationId); toast('Cleared conversation messages and memory'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Clear chat'),
       (qState.sending || (qState.queue || []).length) ? el('button', { class: 'secondary small', title: 'Unlock the local UI queue only. This does not cancel a backend model/tool job; use Jobs to stop jobs.', onclick: () => { clearChatQueueForScope(scope); toast('Cleared local pending chat queue / send lock'); render(true, true); } }, 'Unlock / Clear Pending') : null
     ].filter(Boolean)),
     liveActionNotesOverlay(scope, qState, options),
     contextBudgetPanel(scope, rows),
-    memory ? el('details', { class: 'memory-summary' }, [el('summary', {}, 'Cached memory / condensed context'), el('pre', { class: 'log compact' }, memory)]) : el('p', { class: 'muted tiny' }, 'Cached memory will appear here automatically once the conversation gets long enough, or after you save state.'),
+    memory ? el('details', { class: 'memory-summary memory-summary-expanded', open: true }, [
+      el('summary', {}, 'Cached memory / condensed context'),
+      el('div', { class: 'row tight' }, [
+        el('button', { class: 'secondary small', onclick: async () => copyText(memory, 'Copied condensed conversation memory') }, 'Copy Memory'),
+        el('button', { class: 'secondary small', onclick: () => downloadTextFile(`condensed-conversation-memory-${conversationId || 'new'}.txt`, memory) }, 'Download Memory')
+      ]),
+      el('pre', { class: 'log full-log memory-summary-log' }, memory)
+    ]) : el('p', { class: 'muted tiny' }, 'Cached memory will appear here automatically once the conversation gets long enough, or after you save state.'),
     lastVoiceOutputPanel(),
     el('div', { class: 'chat-thread' }, [...bubbles, ...queuedBubbles]),
     composerNode
@@ -1453,15 +3285,65 @@ function shell(content) {
         el('label', { class: 'label compact' }, ['Active tag dictionary', tagProfileSelect()]),
         el('div', { class: 'muted tiny' }, 'Autocomplete, colors, ordering, tag agents, and downloader tag fields use this profile.')
       ]),
-      el('div', { class: 'nav' }, tabs.map(tab => el('button', { class: state.tab === tab ? 'active' : '', onclick: () => setTab(tab) }, tab)))
+      el('div', { class: 'nav' }, tabs.map(tab => el('button', { class: state.tab === tab ? 'active' : '', onclick: ev => { ev.preventDefault(); try { ev.currentTarget.blur(); } catch (_) {} setTab(tab); } }, tab)))
     ]),
-    el('main', { class: 'main' }, [
+    el('main', { class: 'main', 'data-scroll-key': `main:${state.tab}` }, [
       el('div', { class: 'topbar' }, [
         el('h1', {}, state.tab),
         el('span', { class: 'badge', 'data-role': 'selected-count' }, `${state.selected.size} selected`),
         state.lastModelRunJob ? el('button', { class: 'secondary small', onclick: () => { state.jobDetailId = state.lastModelRunJob; setTab('Jobs'); } }, `Open Last Job #${state.lastModelRunJob}`) : null
       ].filter(Boolean)),
       content
+    ]),
+    globalAssistantOverlays()
+  ]);
+}
+
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return 'unknown';
+  const total = Math.max(0, Math.round(Number(seconds)));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h) return `${h}h ${m}m ${s}s`;
+  if (m) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+function startupProgressCard() {
+  const status = visibleStartupStatus();
+  const progress = Math.max(0, Math.min(1, Number(status.progress || 0)));
+  const pct = Math.round(progress * 100);
+  const running = status.status === 'running';
+  const failed = status.status === 'failed';
+  const complete = status.status === 'completed';
+  const recent = running || failed || (complete && Number(status.elapsed_seconds || 0) > 0);
+  if (!recent && state.tab !== 'Dashboard') return null;
+  const circleStyle = `--progress:${pct};`;
+  const steps = (status.steps || []).slice(-5).reverse();
+  return card('Startup Maintenance Progress', [
+    el('div', { class: 'startup-progress-card' }, [
+      el('div', { class: `startup-progress-circle ${failed ? 'failed' : complete ? 'complete' : ''}`, style: circleStyle, 'data-startup-progress-circle': '1' }, [
+        el('span', { 'data-startup-pct': '1' }, `${pct}%`)
+      ]),
+      el('div', { class: 'startup-progress-body' }, [
+        el('div', { class: 'row wrap' }, [
+          el('span', { class: `badge ${failed ? 'bad' : complete ? 'ok' : ''}`, 'data-startup-status': '1' }, status.status || 'unknown'),
+          el('span', { class: 'badge', 'data-startup-phase': '1' }, status.phase || 'startup'),
+          status.job_id ? el('span', { class: 'badge' }, `job #${status.job_id}`) : null,
+          el('button', { class: 'secondary small', disabled: state.dashboardRefreshBusy, onclick: async () => { try { await refreshDashboardOnly(true); toast('Dashboard refreshed'); } catch (err) { toast(err.message, false); } } }, state.dashboardRefreshBusy ? 'Refreshing…' : 'Refresh Dashboard'),
+          status.job_id ? el('button', { class: 'secondary small', onclick: () => { state.jobDetailId = status.job_id; setTab('Jobs'); } }, 'Open Job') : null
+        ].filter(Boolean)),
+        el('p', { class: failed ? 'bad-text' : 'muted', 'data-startup-message': '1' }, status.error ? `${status.message || 'Startup failed'}: ${status.error}` : (status.message || 'Startup maintenance status is not available yet.')),
+        el('div', { class: 'row wrap muted tiny' }, [
+          el('span', { 'data-startup-elapsed': '1' }, `Elapsed: ${formatDuration(status.elapsed_seconds || 0)}`),
+          running ? el('span', { 'data-startup-eta': '1' }, `ETA: ${formatDuration(status.eta_seconds)}`) : el('span', { 'data-startup-eta': '1' }, ''),
+          status.updated_at ? el('span', { 'data-startup-updated': '1' }, `Updated: ${new Date(status.updated_at).toLocaleTimeString()}`) : el('span', { 'data-startup-updated': '1' }, '')
+        ].filter(Boolean)),
+        steps.length ? el('details', {}, [
+          el('summary', {}, 'Recent startup steps'),
+          el('ul', { class: 'compact-list', 'data-startup-steps': '1' }, steps.map(step => el('li', {}, `${Math.round(Number(step.progress || 0) * 100)}% · ${step.message || ''}`)))
+        ]) : null
+      ].filter(Boolean))
     ])
   ]);
 }
@@ -1474,7 +3356,15 @@ function categoryLegend(profileKey = state.tagProfile) {
 
 function dashboard() {
   const status = state.dictionaryStatus;
+  const startupCard = startupProgressCard();
   return el('div', { class: 'grid' }, [
+    card('Dashboard Controls', [
+      el('div', { class: 'row wrap' }, [
+        el('button', { class: 'primary', disabled: state.dashboardRefreshBusy, onclick: async () => { try { await refreshDashboardOnly(true); toast('Dashboard refreshed'); } catch (err) { toast(err.message, false); } } }, state.dashboardRefreshBusy ? 'Refreshing Dashboard…' : 'Refresh Dashboard Now'),
+        el('span', { class: 'muted tiny' }, 'Use this after queueing migration or startup maintenance if the Dashboard was opened after the job began.')
+      ])
+    ]),
+    startupCard,
     el('div', { class: 'grid cols-3' }, [
       card('Datasets', [el('div', { class: 'stat' }, state.summary.datasets || 0), el('div', { class: 'muted' }, 'loaded dataset roots')]),
       card('Media', [el('div', { class: 'stat' }, state.summary.media || 0), el('div', { class: 'muted' }, 'tracked files')]),
@@ -1526,9 +3416,24 @@ function importView() {
     card('Import Local Dataset Folder/s', [
       el('label', { class: 'label' }, ['Root folder', path]),
       el('div', { class: 'row' }, [
-        el('button', { class: 'secondary', onclick: async () => { const p = await pickFolder(path); if (p) addCurrent(); } }, 'Browse Folder...'),
+        el('button', { class: 'secondary', disabled: state.importPickerBusy, onclick: async () => {
+          try {
+            state.importPickerBusy = true;
+            toast('Opening native folder picker…');
+            updateLiveStatusDom();
+            const p = await pickFolder(path);
+            state.importPickerBusy = false;
+            if (p) addCurrent(); else renderNowPreservingState(false);
+          } finally {
+            if (state.importPickerBusy) {
+              state.importPickerBusy = false;
+              renderNowPreservingState(false);
+            }
+          }
+        } }, state.importPickerBusy ? 'Opening Picker…' : 'Browse Folder...'),
         el('button', { class: 'secondary', onclick: addCurrent }, 'Add Typed Folder'),
-        el('button', { class: 'secondary', onclick: () => { state.importFolders = []; render(); } }, 'Clear Folder List')
+        el('button', { class: 'secondary', onclick: () => { state.importFolders = []; render(); } }, 'Clear Folder List'),
+        state.importPickerBusy ? el('span', { class: 'badge' }, 'Waiting on native folder dialog') : null
       ]),
       el('label', { class: 'label' }, ['Name', name]),
       el('div', { class: 'row' }, [
@@ -1575,7 +3480,11 @@ function importView() {
             await api('/api/settings', { method: 'PUT', body: { values: { retain_imported_tag_order: retainOrder.checked } } }).catch(() => {});
           }
           const result = clean.length === 1 ? await api('/api/datasets/import', { method: 'POST', body: clean[0] }) : await api('/api/datasets/import-many', { method: 'POST', body: { folders: clean } });
-          toast(`Import queued as job ${result.job_id}`); await refreshAll(); setTab('Jobs');
+          state.lastImportJobId = result.job_id;
+          state.jobs = [{ id: result.job_id, type: clean.length === 1 ? 'dataset_import' : 'dataset_import_many', status: 'queued', progress: 0, message: 'Import queued' }, ...(state.jobs || [])];
+          toast(`Import queued as job ${result.job_id}`);
+          setTab('Jobs');
+          api('/api/jobs').then(jobs => { state.jobs = jobs || state.jobs; renderNowPreservingState(false); }).catch(() => null);
         } catch (err) { toast(err.message, false); }
       } }, 'Import Selected Folder/s')
     ]),
@@ -1693,10 +3602,13 @@ async function refreshGallerySidecars() {
     if (!ids.length) return toast('No visible or selected media to refresh.', false);
     const result = await api('/api/media/refresh-sidecars', { method: 'POST', body: { media_ids: ids, tag_profile: state.tagProfile } });
     state.tagMeta[state.tagProfile] = {};
-    await loadMedia();
+    await loadMedia({ force: true });
     toast(`Refreshed sidecars for ${result.refreshed || 0} media item(s).`);
-    render();
-  } catch (err) { toast(err.message, false); }
+    forceRenderPreservingScroll();
+  } catch (err) {
+    if (placeholder?.id) removeJobRow(placeholder.id);
+    toast(err.message, false);
+  }
 }
 
 async function reapplyVisibleCategories(saveSidecars = false) {
@@ -1713,8 +3625,21 @@ async function reapplyVisibleCategories(saveSidecars = false) {
 
 async function refreshGalleryPage(resetPage = false) {
   if (resetPage) state.media.page = 1;
-  await loadMedia();
-  render();
+  state.mediaLoading = true;
+  forceRenderPreservingScroll();
+  await loadMedia({ force: true });
+  forceRenderPreservingScroll();
+}
+async function goToGalleryPage(page) {
+  const totalPages = Math.max(1, Math.ceil((Number(state.media.total || 0)) / (Number(state.media.page_size || state.settings.default_page_size || 80) || 80)));
+  const nextPage = Math.max(1, Math.min(Number(page || 1) || 1, totalPages));
+  state.media.page = nextPage;
+  state.mediaLoading = true;
+  forceRenderPreservingScroll();
+  await loadMedia({ force: true });
+  const actualTotalPages = Math.max(1, Math.ceil((Number(state.media.total || 0)) / (Number(state.media.page_size || state.settings.default_page_size || 80) || 80)));
+  state.media.page = Math.max(1, Math.min(Number(state.media.page || nextPage) || 1, actualTotalPages));
+  forceRenderPreservingScroll();
 }
 
 async function discoverExternalApps(deepScan = false) {
@@ -1772,7 +3697,17 @@ function mediaPreviewElement(item, cls = 'preview', opts = {}) {
   if (type === 'video' || ['.webm','.mov','.mp4','.mkv','.avi','.m4v'].includes(ext)) {
     return el('video', { ...common, src, controls: true, muted: Boolean(opts.muted ?? true), loop: Boolean(opts.loop ?? false), preload: 'metadata', playsInline: true });
   }
-  return el('img', { ...common, src: opts.thumbnail ? thumb : src, loading: opts.thumbnail ? 'lazy' : undefined });
+  const img = opts.thumbnail ? el('img', { ...common, src: `/api/media/${item.id}/thumbnail?fast=1&v=${state.thumbnailVersions?.[item.id] || 0}`, loading: 'lazy', decoding: 'async', 'data-thumbnail-media-id': item.id, 'data-thumbnail-ready': '0' }) : el('img', { ...common, src });
+  if (opts.thumbnail) setTimeout(() => scheduleThumbnailHydration([item.id]), 0);
+  const overlayUrl = opts.attentionOverlayUrl || '';
+  if (!overlayUrl) return img;
+  const opacity = Math.max(0, Math.min(1, Number(opts.attentionOverlayOpacity ?? 0.45)));
+  const blend = String(opts.attentionOverlayBlendMode || 'screen').replace(/[^a-z-]/gi, '') || 'screen';
+  return el('div', { class:`attention-overlay-wrap ${cls}-attention-wrap`, title: common.title }, [
+    img,
+    el('img', { class:'attention-heatmap-layer', 'data-attention-heatmap-layer':'1', src:overlayUrl, alt:'', 'aria-hidden':'true', style:`opacity:${opacity};mix-blend-mode:${blend};display:${opacity <= 0 ? 'none' : ''};` }),
+    el('span', { class:'attention-overlay-badge' }, 'heatmap')
+  ]);
 }
 
 function updateTileSelectionDom() {
@@ -1802,13 +3737,14 @@ function galleryView() {
   const externalQuick = el('select', { onchange: e => { state.quickExternalTool = e.target.value; } }, EXTERNAL_APP_OPTIONS.map(([value, label]) => el('option', { value }, label)));
   externalQuick.value = state.quickExternalTool || 'topaz_photo_ai';
   return el('div', { class: 'grid' }, [
+    state.mediaLoadError ? el('div', { class: 'notice bad-text' }, `Gallery/media refresh failed but the existing page was preserved: ${state.mediaLoadError}`) : null,
     el('div', { class: 'gallery-toolbar' }, [
       q, dataset, type, tagCtl.wrap,
       el('button', { class: 'primary', onclick: () => refreshGalleryPage(true) }, 'Search / Refresh'),
       el('button', { class: 'secondary', onclick: () => refreshGalleryPage(false) }, 'Reload Page'),
       el('button', { class: 'secondary', onclick: refreshGallerySidecars }, 'Refresh JSON/Sidecars + Reload'),
       el('button', { class: 'secondary', onclick: () => reapplyVisibleCategories(false) }, 'Reapply Profile/Custom Categories'),
-      el('button', { class: 'secondary', onclick: () => { state.galleryScoresEnabled = !state.galleryScoresEnabled; if (state.galleryScoresEnabled) for (const item of (state.media.items || [])) requestTagScores(item.id, item.tags || []); render(); } }, state.galleryScoresEnabled ? 'Hide Page Prediction Scores' : 'Load Page Prediction Scores')
+      el('button', { class: 'secondary', onclick: () => { state.galleryScoresEnabled = !state.galleryScoresEnabled; if (state.galleryScoresEnabled) for (const item of (state.media.items || [])) requestTagScores(item.id, item.tags || []); forceRenderPreservingScroll(); } }, state.galleryScoresEnabled ? 'Hide Page Prediction Scores' : 'Load Page Prediction Scores')
     ]),
     el('div', { class: 'row' }, [
       el('button', { class: 'secondary', onclick: () => { clearSelectedMedia(); updateTileSelectionDom(); } }, 'Clear Selection'),
@@ -1822,7 +3758,7 @@ function galleryView() {
       el('button', { class: 'secondary', onclick: () => { const first = state.media.items.find(x => state.selected.has(x.id)); if (first) { state.activeMedia = first; setTab('Detection & Boxes'); } } }, 'Detect / Draw Boxes'),
       el('button', { class: 'secondary', onclick: () => { const first = state.media.items.find(x => state.selected.has(x.id)); if (first) { state.activeMedia = first; setTab('Segmentation & Masks'); } } }, 'Segment / Edit Masks'),
       el('button', { class: 'secondary', onclick: () => { const first = state.media.items.find(x => state.selected.has(x.id)); if (first) { state.activeMedia = first; setTab('Tag Editor'); } } }, 'Edit First Selected'),
-      el('span', { class: 'muted', 'data-role': 'gallery-selected-count' }, `Selected: ${state.selected.size} image(s)`), el('span', { class: 'muted' }, `${state.media.total || 0} files`)
+      el('span', { class: 'muted', 'data-role': 'gallery-selected-count' }, `Selected: ${state.selected.size} image(s)`), el('span', { class: 'muted' }, `${state.media.total || 0} files`), state.mediaLoading ? el('span', { class: 'badge' }, 'Loading page…') : null
     ]),
     el('div', { class: 'gallery' }, state.media.items.map(tile)),
     pager()
@@ -1843,11 +3779,14 @@ function tile(item) {
 }
 
 function pager() {
-  const totalPages = Math.max(1, Math.ceil((state.media.total || 0) / (state.media.page_size || 80)));
+  const pageSize = Number(state.media.page_size || 80) || 80;
+  const totalPages = Math.max(1, Math.ceil((Number(state.media.total || 0)) / pageSize));
+  const currentPage = Math.max(1, Math.min(Number(state.media.page || 1) || 1, totalPages));
+  if (Number(state.media.page || 1) !== currentPage) state.media.page = currentPage;
   return el('div', { class: 'row' }, [
-    el('button', { class: 'secondary', disabled: state.media.page <= 1, onclick: async () => { state.media.page--; await loadMedia(); render(); } }, 'Prev'),
-    el('span', { class: 'muted' }, `Page ${state.media.page || 1} / ${totalPages}`),
-    el('button', { class: 'secondary', disabled: state.media.page >= totalPages, onclick: async () => { state.media.page++; await loadMedia(); render(); } }, 'Next')
+    el('button', { class: 'secondary', disabled: currentPage <= 1 || state.mediaLoading, onclick: async () => { await goToGalleryPage(currentPage - 1); } }, 'Prev'),
+    el('span', { class: 'muted' }, `Page ${currentPage} / ${totalPages}`),
+    el('button', { class: 'secondary', disabled: currentPage >= totalPages || state.mediaLoading, onclick: async () => { await goToGalleryPage(currentPage + 1); } }, 'Next')
   ]);
 }
 
@@ -1894,8 +3833,33 @@ async function requestTagMetadata(tags) {
   finally { state.tagMetaPending.delete(key); }
 }
 
-function scoreColorClass(modelName, idx = 0) { return `model-score-${Math.abs(hashString(modelName || String(idx))) % 10}`; }
+function scoreColorClass(modelName, idx = 0) { return `model-score-${Math.abs(hashString(modelName || String(idx))) % 32}`; }
 function hashString(s) { let h = 0; for (let i = 0; i < String(s).length; i++) h = ((h << 5) - h + String(s).charCodeAt(i)) | 0; return h; }
+function modelScoreHue(modelName, idx = 0, used = null) {
+  let hue = ((Math.abs(hashString(modelName || String(idx))) + idx * 137) % 360 + 360) % 360;
+  if (used) {
+    let guard = 0;
+    const tooClose = h => [...used].some(u => Math.abs(((h - u + 540) % 360) - 180) < 38);
+    while (tooClose(hue) && guard++ < 72) hue = (hue + 57) % 360;
+    used.add(hue);
+  }
+  return hue;
+}
+const MODEL_SCORE_HUE_PALETTE = [205, 28, 145, 276, 92, 338, 184, 44, 252, 118, 315, 166, 12, 228, 72, 292, 136, 350, 196, 52, 264, 104, 326, 154, 6, 236, 84, 304, 176, 34, 216, 124];
+function modelScorePanelHue(modelName, idx = 0, peerModels = []) {
+  const peers = [...new Set((peerModels || []).map(x => String(x || '').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const pos = peers.indexOf(String(modelName || '').trim());
+  if (pos >= 0) return MODEL_SCORE_HUE_PALETTE[pos % MODEL_SCORE_HUE_PALETTE.length];
+  return MODEL_SCORE_HUE_PALETTE[Math.abs(hashString(modelName || String(idx))) % MODEL_SCORE_HUE_PALETTE.length];
+}
+function modelScoreStyle(modelName, idx = 0, used = null) {
+  const hue = modelScoreHue(modelName, idx, used);
+  return `--model-score-color:hsl(${hue} 92% 68%);--model-score-color-soft:hsla(${hue},92%,68%,.24);--model-score-color-dim:hsla(${hue},92%,68%,.12);`;
+}
+function modelScorePanelStyle(modelName, idx = 0, peerModels = []) {
+  const hue = modelScorePanelHue(modelName, idx, peerModels);
+  return `--model-score-color:hsl(${hue} 94% 68%);--model-score-color-soft:hsla(${hue},94%,68%,.26);--model-score-color-dim:hsla(${hue},94%,68%,.13);`;
+}
 function tagScoreRequestSignature(mediaId, tags = []) {
   const clean = [...new Set((tags || []).map(normalizeTag).filter(Boolean))].sort();
   return `${mediaId}:${clean.join('|')}`;
@@ -1903,6 +3867,50 @@ function tagScoreRequestSignature(mediaId, tags = []) {
 function invalidateTagScoreCache(mediaIds = null) {
   if (!mediaIds) { state.tagScoreRequestKeys = {}; return; }
   for (const mediaId of mediaIds) delete state.tagScoreRequestKeys[String(mediaId)];
+}
+function quickTagMenuInteractionActive() {
+  const root = document.getElementById('app');
+  const active = document.activeElement;
+  if (!root || !active || !root.contains(active)) return false;
+  return Boolean(active.closest?.('.quick-model-queue-controls,.quick-tag-gpu-controls,.attention-overlay-controls,.attention-visualizer-controls') || active.classList?.contains('quick-model-status-select') || active.classList?.contains('attention-heatmap-control-select'));
+}
+
+function attentionOverlayInteractionActive() {
+  const root = document.getElementById('app');
+  const active = document.activeElement;
+  if (!root || !active || !root.contains(active)) return false;
+  return Boolean(active.closest?.('.attention-overlay-controls,.attention-visualizer-controls') || active.classList?.contains('attention-heatmap-control-select'));
+}
+function preserveAttentionControlAttrs(extra = {}) {
+  const cls = ['attention-heatmap-control-select', extra.class || ''].filter(Boolean).join(' ');
+  return {
+    ...extra,
+    class: cls,
+    'data-preserve-selection': '1',
+    onfocus: e => markControlInteraction(e.target, 90000),
+    onpointerdown: e => markControlInteraction(e.target, 90000),
+    onwheel: e => { e.stopPropagation(); markControlInteraction(e.target, 90000); }
+  };
+}
+function updateAttentionOverlayDom() {
+  const root = document.getElementById('app');
+  if (!root) return;
+  root.querySelectorAll('.attention-heatmap-layer').forEach(layer => {
+    const opacity = state.attentionOverlayEnabled === false ? 0 : Math.max(0, Math.min(1, Number(state.attentionOverlayOpacity ?? 0.45)));
+    layer.style.opacity = String(opacity);
+    layer.style.mixBlendMode = String(state.attentionOverlayBlendMode || 'screen');
+    layer.style.display = opacity <= 0 ? 'none' : '';
+  });
+  root.querySelectorAll('[data-attention-overlay-enabled-label]').forEach(node => { node.textContent = state.attentionOverlayEnabled === false ? 'hidden' : 'visible'; });
+}
+function refreshAfterAttentionArtifactChange() {
+  if (attentionOverlayInteractionActive()) {
+    updateAttentionOverlayDom();
+    state.renderDeferredForEditing = true;
+    setTimeout(flushDeferredRenderWhenSafe, 500);
+  } else {
+    render(true, true);
+  }
 }
 async function requestTagScores(mediaId, tags = []) {
   if (!mediaId) return;
@@ -1919,7 +3927,10 @@ async function requestTagScores(mediaId, tags = []) {
     state.tagScores[key] = res.scores || {};
     state.tagScoreRequestKeys[key] = signature;
     const changed = previous !== JSON.stringify(state.tagScores[key] || {});
-    if (changed && (state.tab === 'Tag Editor' || state.tab === 'Compare' || state.tab === 'Gallery' || state.tab === 'Prediction Analytics')) scheduleRender();
+    if (changed && (state.tab === 'Tag Editor' || state.tab === 'Compare' || state.tab === 'Gallery' || state.tab === 'Prediction Analytics')) {
+      if (quickTagMenuInteractionActive()) updateLiveStatusDom();
+      else scheduleRender();
+    }
   } catch (err) { console.warn('tag score load failed', err); }
   finally { state.tagScorePending.delete(key); }
 }
@@ -1929,6 +3940,104 @@ function bestTagScore(mediaId, tag) {
   if (!entries.length) return null;
   const best = Math.max(...entries.map(e => Number(e.score || 0)).filter(v => Number.isFinite(v)));
   return Number.isFinite(best) ? best : null;
+}
+function scoreEntriesForModel(mediaId, tag, modelName = '') {
+  const wanted = String(modelName || '').trim();
+  const entries = scoreEntriesFor(mediaId, tag);
+  if (!wanted || wanted === '__all_models__') return entries;
+  return entries.filter(e => String(e.model_name || e.model_id || e.model || '').trim() === wanted);
+}
+function finiteScores(entries = []) {
+  return (entries || []).map(e => Number(e.score)).filter(v => Number.isFinite(v));
+}
+function scoreMedianValues(values = []) {
+  const vals = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!vals.length) return null;
+  const mid = Math.floor(vals.length / 2);
+  return vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+}
+function scoreStdDevValues(values = []) {
+  const vals = values.map(Number).filter(Number.isFinite);
+  if (!vals.length) return null;
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const variance = vals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / vals.length;
+  return Math.sqrt(variance);
+}
+function scoreModeValues(values = []) {
+  const vals = values.map(Number).filter(Number.isFinite);
+  if (!vals.length) return null;
+  const counts = new Map();
+  for (const v of vals) {
+    const bucket = Math.round(v * 1000) / 1000;
+    counts.set(bucket, (counts.get(bucket) || 0) + 1);
+  }
+  let bestScore = null;
+  let bestCount = -1;
+  for (const [score, count] of counts.entries()) {
+    if (count > bestCount || (count === bestCount && Number(score) > Number(bestScore ?? -Infinity))) {
+      bestScore = score; bestCount = count;
+    }
+  }
+  return bestScore;
+}
+function uniqueModelCountForEntries(entries = []) {
+  const names = new Set();
+  for (const e of entries || []) {
+    const name = String(e.model_name || e.model_id || e.model || '').trim();
+    if (name) names.add(name);
+  }
+  return names.size;
+}
+function tagPredictionStats(mediaId, tag, modelName = '') {
+  const allEntries = scoreEntriesFor(mediaId, tag);
+  const entries = scoreEntriesForModel(mediaId, tag, modelName);
+  const values = finiteScores(entries);
+  const allValues = finiteScores(allEntries);
+  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+  const allAvg = allValues.length ? allValues.reduce((a, b) => a + b, 0) / allValues.length : null;
+  return {
+    entries,
+    values,
+    score: values.length ? Math.max(...values) : null,
+    avg,
+    allAvg,
+    count: uniqueModelCountForEntries(allEntries),
+    stddev: scoreStdDevValues(values.length ? values : allValues),
+    median: scoreMedianValues(values.length ? values : allValues),
+    mode: scoreModeValues(values.length ? values : allValues),
+  };
+}
+function sortDraftTagsByPredictionMetric(item, tags, metric, specificModel = '') {
+  const rows = tags.map((tag, idx) => ({
+    tag, idx, categoryRank: categoryRankForTag(item, tag),
+    stats: tagPredictionStats(item?.id, tag, metric === 'specific_model_prediction_desc' ? specificModel : '')
+  }));
+  const metricValue = row => {
+    const s = row.stats || {};
+    if (metric === 'average_prediction_desc') return s.allAvg;
+    if (metric === 'specific_model_prediction_desc') return s.score;
+    if (metric === 'detected_model_count_desc') return s.count || null;
+    if (metric === 'stddev_asc') return s.stddev;
+    if (metric === 'median_prediction_desc') return s.median;
+    if (metric === 'mode_prediction_desc') return s.mode;
+    return s.score;
+  };
+  const hasMetric = row => Number.isFinite(Number(metricValue(row)));
+  const scored = rows.filter(hasMetric);
+  const unscored = rows.filter(row => !hasMetric(row)).sort((a, b) => a.idx - b.idx);
+  if (!scored.length) return null;
+  scored.sort((a, b) => {
+    const av = Number(metricValue(a));
+    const bv = Number(metricValue(b));
+    if (metric === 'stddev_asc') {
+      if (Math.abs(av - bv) > 1e-9) return av - bv;
+    } else if (Math.abs(bv - av) > 1e-9) return bv - av;
+    const avgDiff = Number(b.stats?.allAvg ?? -1) - Number(a.stats?.allAvg ?? -1);
+    if (Math.abs(avgDiff) > 1e-9) return avgDiff;
+    if (a.categoryRank !== b.categoryRank) return a.categoryRank - b.categoryRank;
+    return a.idx - b.idx;
+  });
+  return [...scored, ...unscored].map(row => row.tag);
 }
 function categorySortIndex(category) {
   const key = normalizeCategoryKey(category || 'unknown');
@@ -1969,26 +4078,71 @@ function sortDraftTagsWithScores(item, tags, mode = 'scored_category') {
   const sortedScored = scored.sort(mode === 'scored_accuracy' ? byScoreThenCategory : byCategoryThenScore);
   return [...sortedScored, ...unscored].map(row => row.tag);
 }
+function scoreAverage(entries = []) {
+  const scores = (entries || []).map(e => Number(e.score)).filter(Number.isFinite);
+  if (!scores.length) return null;
+  return scores.reduce((a,b) => a + b, 0) / scores.length;
+}
 function scoreTitle(mediaId, tag, category) {
   const entries = scoreEntriesFor(mediaId, tag);
   if (!entries.length) return `${category || 'unknown'} · no stored model scores yet`;
-  return `${category || 'unknown'} · model scores:\n` + entries.map(e => `${e.model_name}: ${(Number(e.score||0)*100).toFixed(1)}%`).join('\n');
+  const avg = scoreAverage(entries);
+  const avgLine = entries.length > 1 && avg !== null ? `Average across ${entries.length} prediction row(s): ${(avg*100).toFixed(1)}%\n` : '';
+  return `${category || 'unknown'} · model scores:\n${avgLine}` + entries.map(e => `${e.model_name}: ${(Number(e.score||0)*100).toFixed(1)}%`).join('\n');
 }
 function tagScoreHoverPanel(mediaId, tag) {
   const entries = scoreEntriesFor(mediaId, tag);
   if (!entries.length) return el('span', { class: 'tag-score-popover muted' }, 'No stored model scores for this tag yet.');
-  return el('span', { class: 'tag-score-popover' }, [
-    el('strong', {}, 'Prediction scores'),
-    ...entries.map((e, idx) => el('span', { class: `score-line ${scoreColorClass(e.model_name, idx)}` }, [
-      el('span', { class: 'score-model' }, e.model_name),
+  const avg = scoreAverage(entries);
+  const lines = [];
+  if (entries.length > 1 && avg !== null) {
+    lines.push(el('span', { class: 'score-line model-score-average' }, [
+      el('span', { class: 'score-model' }, `AVERAGE · ${entries.length} predictions`),
+      el('span', { class: 'score-bar', style: `--score:${Math.round(avg*100)}%` }, ''),
+      el('span', { class: 'score-value' }, `${(avg*100).toFixed(1)}%`)
+    ]));
+  }
+  const peerModels = [...new Set(entries.map(e => String(e.model_name || '').trim()).filter(Boolean))];
+  for (const [idx, e] of entries.entries()) {
+    lines.push(el('span', { class: `score-line ${scoreColorClass(e.model_name, idx)}`, style: modelScorePanelStyle(e.model_name, idx, peerModels) }, [
+      el('span', { class: 'score-model' }, `${e.model_name}${e.kind ? ' · ' + e.kind : ''}`),
       el('span', { class: 'score-bar', style: `--score:${Math.round(Number(e.score||0)*100)}%` }, ''),
       el('span', { class: 'score-value' }, `${(Number(e.score||0)*100).toFixed(1)}%`)
-    ]))
+    ]));
+  }
+  return el('span', { class: 'tag-score-popover' }, [el('strong', {}, 'Prediction scores'), ...lines]);
+}
+function storedPredictionScoresCard(mediaId) {
+  if (!mediaId) return null;
+  const scores = state.tagScores?.[String(mediaId)] || {};
+  const tags = Object.keys(scores).sort((a,b) => {
+    const ba = bestTagScore(mediaId, b) ?? -1;
+    const aa = bestTagScore(mediaId, a) ?? -1;
+    if (ba !== aa) return ba - aa;
+    return a.localeCompare(b);
+  });
+  const rows = tags.slice(0, 120).map(tag => {
+    const entries = (scores[tag] || []).slice().sort((a,b)=>Number(b.score||0)-Number(a.score||0));
+    return el('tr', {}, [
+      el('td', {}, tag),
+      el('td', {}, entries.length ? `${(Number(entries[0].score||0)*100).toFixed(1)}%` : ''),
+      el('td', {}, entries.map(e => `${e.model_name}: ${(Number(e.score||0)*100).toFixed(1)}%`).join(' · '))
+    ]);
+  });
+  return card('Stored Model Prediction Scores for This Media', [
+    el('p', { class:'muted' }, 'These scores are persisted per media item, model, and normalized tag when inference runs. They can be reviewed later without rerunning the model.'),
+    tags.length ? el('div', { class:'table-scroll compact' }, el('table', { class:'table compact' }, [
+      el('thead', {}, el('tr', {}, ['Tag','Best score','Model scores'].map(h => el('th', {}, h)))),
+      el('tbody', {}, rows)
+    ])) : el('p', { class:'muted tiny' }, 'No stored prediction scores have been loaded for this image yet. Run a model or use Load Page Prediction Scores in Gallery.')
   ]);
 }
+
 function predictionChip(tag, category = 'unknown', mediaId = null, attrs = {}) {
   const cleanAttrs = { ...attrs };
-  cleanAttrs.class = `${attrs.class || 'chip'} ${categoryCss(category)} prediction-aware-chip`;
+  const entries = mediaId ? scoreEntriesFor(mediaId, tag) : [];
+  const scoreClass = entries.length > 1 ? 'multi-model-predicted-chip' : (entries.length ? 'model-predicted-chip' : '');
+  cleanAttrs.class = `${attrs.class || 'chip'} ${categoryCss(category)} prediction-aware-chip ${scoreClass}`.trim();
   cleanAttrs.style = [attrs.style || '', categoryStyle(category)].filter(Boolean).join(';');
   cleanAttrs.title = mediaId ? scoreTitle(mediaId, tag, category) : (attrs.title || String(category || 'unknown'));
   const children = [el('span', { class: 'chip-label' }, tag)];
@@ -2134,6 +4288,85 @@ function sortDraftTagsForEditor(item, tags, mode) {
   return [...predicted, ...unpredicted].map(x => x.tag);
 }
 
+
+function tagScoreModelsForMedia(mediaId, tags = null) {
+  const rows = (state.tagScores || {})[String(mediaId)] || {};
+  const wanted = tags ? new Set((tags || []).map(normalizeTag).filter(Boolean)) : null;
+  const names = new Set();
+  for (const [tag, entries] of Object.entries(rows || {})) {
+    if (wanted && !wanted.has(normalizeTag(tag))) continue;
+    for (const entry of entries || []) {
+      const name = String(entry.model_name || entry.model_id || entry.model || '').trim();
+      if (name) names.add(name);
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+function selectedTagScoreModelNames(mediaId, tags = []) {
+  const current = Array.isArray(state.tagScoreHighlightModels) ? state.tagScoreHighlightModels.filter(Boolean) : [];
+  if (current.includes('__all_models__')) return tagScoreModelsForMedia(mediaId, tags);
+  return current;
+}
+function tagMatchesModelScoreHighlight(item, tag, allTags = []) {
+  const mediaId = item?.id;
+  if (!mediaId) return false;
+  const selected = selectedTagScoreModelNames(mediaId, allTags);
+  if (!selected.length) return false;
+  const threshold = Math.max(0, Math.min(1, Number(state.tagScoreHighlightMinScore || 0)));
+  const entries = scoreEntriesFor(mediaId, tag);
+  if (!entries.length) return false;
+  const byModel = new Map();
+  for (const entry of entries) {
+    const name = String(entry.model_name || entry.model_id || entry.model || '').trim();
+    if (!name) continue;
+    const score = Number(entry.score || 0);
+    const current = Number(byModel.get(name) ?? -Infinity);
+    if (Number.isFinite(score) && score > current) byModel.set(name, score);
+  }
+  if (state.tagScoreHighlightMode === 'average') {
+    const vals = selected.map(name => byModel.get(name)).filter(v => Number.isFinite(Number(v)));
+    if (!vals.length) return false;
+    return vals.reduce((a, b) => a + Number(b), 0) / vals.length >= threshold;
+  }
+  if (state.tagScoreHighlightMode === 'all') return selected.every(name => Number(byModel.get(name) ?? -1) >= threshold);
+  return selected.some(name => Number(byModel.get(name) ?? -1) >= threshold);
+}
+function matchingModelScoreTags(item, tags = []) {
+  return (tags || []).filter(tag => tagMatchesModelScoreHighlight(item, tag, tags)).map(normalizeTag).filter(Boolean);
+}
+function tagScoreModelHighlightControls(item, tags, draw) {
+  const models = tagScoreModelsForMedia(item?.id, tags);
+  if (!models.length) return el('div', { class: 'model-score-filter-panel muted tiny' }, 'No stored per-model tag scores are available for this media yet. Run model inference or refresh tag scores first.');
+  const select = el('select', { multiple: true, size: String(Math.min(6, Math.max(3, models.length + 1))), class: 'tag-score-model-select', onchange: e => {
+    state.tagScoreHighlightModels = [...e.target.selectedOptions].map(o => o.value).filter(Boolean);
+    draw();
+  } }, [
+    el('option', { value: '__all_models__' }, 'All model rows used on this image'),
+    ...models.map(name => el('option', { value: name }, name))
+  ]);
+  for (const opt of select.options) opt.selected = (state.tagScoreHighlightModels || []).includes(opt.value);
+  const mode = el('select', { onchange: e => { state.tagScoreHighlightMode = e.target.value; draw(); } }, [
+    el('option', { value: 'any' }, 'Any selected model'),
+    el('option', { value: 'all' }, 'All selected models'),
+    el('option', { value: 'average' }, 'Average selected score')
+  ]);
+  mode.value = state.tagScoreHighlightMode || 'any';
+  const min = el('input', { type: 'number', min: '0', max: '100', step: '1', value: String(Math.round(Number(state.tagScoreHighlightMinScore || 0) * 100)), onchange: e => { state.tagScoreHighlightMinScore = Math.max(0, Math.min(1, Number(e.target.value || 0) / 100)); draw(); } });
+  const matches = () => matchingModelScoreTags(item, tags);
+  const count = el('span', { class: 'badge' }, `${matches().length} matching tag(s)`);
+  return el('div', { class: 'model-score-filter-panel' }, [
+    el('div', { class: 'muted tiny' }, 'Model score highlighter: choose one model, several models, or all model rows. Matching chips get a bright outline; use Select Matching to add them to the editor highlight set.'),
+    el('div', { class: 'row tight model-score-filter-row' }, [
+      select,
+      el('label', { class: 'label inline' }, ['Match rule', mode]),
+      el('label', { class: 'label inline tiny-number' }, ['Min score %', min]),
+      count,
+      el('button', { class: 'secondary small', onclick: () => { const set = new Set(editorSelectedTags(item)); for (const tag of matches()) set.add(tag); setEditorSelectedTags(item, [...set]); draw(); } }, 'Select Matching Model Tags'),
+      el('button', { class: 'secondary small', onclick: () => { state.tagScoreHighlightModels = []; draw(); } }, 'Clear Model Filter')
+    ])
+  ]);
+}
+
 function tagStrip(item, unknownCategorySelect) {
   const tags = ensureDraft(item);
   requestTagMetadata(tags);
@@ -2148,6 +4381,12 @@ function tagStrip(item, unknownCategorySelect) {
   ]);
   selectionCategory.value = state.editorSelectionCategory || '';
   const selectedCount = el('span', { class: 'badge', 'data-role': 'editor-selected-tag-count', 'data-editor-media-id': item.id }, '0 highlighted');
+  const predictionSortModels = tagScoreModelsForMedia(item?.id, tags);
+  const sortModelSelect = el('select', { title: 'Model used by Sort Specific Model Prediction', onchange: e => { state.tagSortModelName = e.target.value || ''; } }, [
+    el('option', { value: '' }, 'specific model…'),
+    ...predictionSortModels.map(name => el('option', { value: name }, name))
+  ]);
+  sortModelSelect.value = predictionSortModels.includes(state.tagSortModelName || '') ? state.tagSortModelName : '';
   const candidateBox = el('div', { class: 'assistant-candidate-tags' });
   let drag = null;
   let pendingPointer = null;
@@ -2192,7 +4431,8 @@ function tagStrip(item, unknownCategorySelect) {
       const category = categoryOf(tag, item);
       const cleanTag = normalizeTag(tag);
       const isSelected = selectedNow.has(cleanTag);
-      const chipNode = el('span', { class: `tag-chip ${categoryCss(category)} ${isSelected ? 'selected-tag' : ''}`, style: categoryStyle(category), title: scoreTitle(item.id, tag, category), 'data-index': idx, 'data-editor-tag': cleanTag, 'data-editor-media-id': item.id }, [
+      const modelScoreHighlighted = tagMatchesModelScoreHighlight(item, tag, tags);
+      const chipNode = el('span', { class: `tag-chip ${categoryCss(category)} ${isSelected ? 'selected-tag' : ''} ${modelScoreHighlighted ? 'model-score-filter-hit' : ''}`, style: categoryStyle(category), title: scoreTitle(item.id, tag, category), 'data-index': idx, 'data-editor-tag': cleanTag, 'data-editor-media-id': item.id }, [
         el('button', { class: `tag-select-toggle ${isSelected ? 'active' : ''}`, title: isSelected ? 'Deselect/highlight off' : 'Select/highlight this tag', onclick: e => { e.preventDefault(); e.stopPropagation(); toggleEditorSelectedTag(item, tag); draw(); } }, isSelected ? '✓' : '○'),
         el('span', { class: 'tag-chip-text' }, tag),
         tagScoreHoverPanel(item.id, tag),
@@ -2270,13 +4510,33 @@ function tagStrip(item, unknownCategorySelect) {
     draw();
   }
   function sortPredictedDraft(mode) {
-    const sorted = mode === 'all_category' ? sortDraftTagsWithScores(item, tags, 'all_category') : sortPredictedTagsForDraft(item, tags, mode);
+    const metricModes = new Set(['average_prediction_desc', 'specific_model_prediction_desc', 'detected_model_count_desc', 'stddev_asc', 'median_prediction_desc', 'mode_prediction_desc']);
+    let sorted = null;
+    if (metricModes.has(mode)) {
+      if (mode === 'specific_model_prediction_desc' && !String(state.tagSortModelName || '').trim()) {
+        toast('Choose a specific model in the sort-model dropdown first.', false);
+        return;
+      }
+      sorted = sortDraftTagsByPredictionMetric(item, tags, mode, state.tagSortModelName || '');
+    } else {
+      sorted = mode === 'all_category' ? sortDraftTagsWithScores(item, tags, 'all_category') : sortPredictedTagsForDraft(item, tags, mode);
+    }
     if (!sorted) { toast('No stored prediction scores are available for these tags yet. Run/refresh a model prediction first, or use Sort All by Category.', false); return; }
     tags.splice(0, tags.length, ...sorted);
     raw.value = tags.join(', ');
     draw();
-    if (mode === 'all_category') toast('All draft tags sorted by category.');
-    else toast(mode === 'accuracy' ? 'Predicted tags sorted by score; unscored tags kept at the end in current/manual order.' : 'Predicted tags sorted by category; unscored tags kept at the end in current/manual order.');
+    const messages = {
+      all_category: 'All draft tags sorted by category.',
+      accuracy: 'Predicted tags sorted by score; unscored tags kept at the end in current/manual order.',
+      category: 'Predicted tags sorted by category; unscored tags kept at the end in current/manual order.',
+      average_prediction_desc: 'Tags sorted by average prediction score, highest to lowest.',
+      specific_model_prediction_desc: `Tags sorted by ${state.tagSortModelName || 'selected model'} prediction score, highest to lowest.`,
+      detected_model_count_desc: 'Tags sorted by number of models that detected them, most to least.',
+      stddev_asc: 'Tags sorted by prediction standard deviation, smallest to highest.',
+      median_prediction_desc: 'Tags sorted by median prediction score, highest to lowest.',
+      mode_prediction_desc: 'Tags sorted by mode prediction score, highest to lowest.'
+    };
+    toast(messages[mode] || 'Draft tags sorted.');
   }
   function sortDraft(mode) {
     const sorted = sortDraftTagsForEditor(item, tags, mode);
@@ -2292,6 +4552,7 @@ function tagStrip(item, unknownCategorySelect) {
   });
   return el('div', { class: 'grid' }, [
     categoryLegend(),
+    tagScoreModelHighlightControls(item, tags, draw),
     el('div', { class: 'selection-toolbar' }, [
       selectedCount,
       el('button', { class: 'secondary small', onclick: () => mutateSelection('all') }, 'Select All'),
@@ -2300,6 +4561,13 @@ function tagStrip(item, unknownCategorySelect) {
       el('button', { class: 'secondary small', title: 'Sort only tags with prediction scores by category; keep tags with no score at the end in the current/manual order.', onclick: () => sortPredictedDraft('category') }, 'Sort Predicted by Category'),
       el('button', { class: 'secondary small', title: 'Sort only tags with prediction scores by confidence; keep tags with no score at the end in the current/manual order.', onclick: () => sortPredictedDraft('accuracy') }, 'Sort Predicted by Accuracy'),
       el('button', { class: 'secondary small', title: 'Sort every draft tag by the selected tag-profile category order.', onclick: () => sortPredictedDraft('all_category') }, 'Sort All by Category'),
+      sortModelSelect,
+      el('button', { class: 'secondary small', title: 'Sort by average prediction across all stored model rows, highest to lowest.', onclick: () => sortPredictedDraft('average_prediction_desc') }, 'Sort Avg Pred ↓'),
+      el('button', { class: 'secondary small', title: 'Sort by the selected model prediction, highest to lowest.', onclick: () => sortPredictedDraft('specific_model_prediction_desc') }, 'Sort Specific Model ↓'),
+      el('button', { class: 'secondary small', title: 'Sort by how many different models detected each tag, most to least.', onclick: () => sortPredictedDraft('detected_model_count_desc') }, 'Sort Most Detected'),
+      el('button', { class: 'secondary small', title: 'Sort by prediction standard deviation, smallest to highest.', onclick: () => sortPredictedDraft('stddev_asc') }, 'Sort StdDev ↑'),
+      el('button', { class: 'secondary small', title: 'Sort by median prediction, highest to lowest.', onclick: () => sortPredictedDraft('median_prediction_desc') }, 'Sort Median ↓'),
+      el('button', { class: 'secondary small', title: 'Sort by mode prediction, highest to lowest.', onclick: () => sortPredictedDraft('mode_prediction_desc') }, 'Sort Mode ↓'),
       selectionCategory,
       el('button', { class: 'secondary small', onclick: () => mutateSelection('category') }, 'Select by Category'),
       el('button', { class: 'secondary small', onclick: () => mutateSelection('uncategory') }, 'Deselect by Category')
@@ -2389,15 +4657,82 @@ function editorQueueControls(item) {
   ]);
 }
 
+
+function booruResetSourceSelect() {
+  const sources = ['e621','e926','danbooru','gelbooru','safebooru','rule34','konachan','yandere'];
+  const select = el('select', { onchange:e=>{ state.booruResetSource = e.target.value || 'e621'; } }, sources.map(x => el('option', { value:x }, x)));
+  select.value = state.booruResetSource || state.tagProfile || 'e621';
+  return select;
+}
+async function watchBooruResetJob(jobId, mediaIds = []) {
+  const id = Number(jobId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const started = Date.now();
+  let job = null;
+  while (Date.now() - started < 15 * 60 * 1000) {
+    job = await api(`/api/jobs/${id}`).catch(() => job);
+    if (job) {
+      const status = String(job.status || '').toLowerCase();
+      state.jobs = [job, ...(state.jobs || []).filter(j => Number(j.id) !== id)];
+      updateLiveStatusDom();
+      if (['completed','failed','cancelled','canceled'].includes(status)) break;
+    }
+    await sleep(700);
+  }
+  if (job && String(job.status || '').toLowerCase() === 'completed') {
+    state.booruResetReport = job.result || job;
+    await refreshMediaRows(mediaIds);
+    toast(`Booru tag reset completed: ${job.result?.updated?.length || 0} updated, ${job.result?.failures?.length || 0} failed.`);
+    renderNowPreservingState('hard');
+  } else if (job && String(job.status || '').toLowerCase() === 'failed') {
+    toast(job.error || 'Booru tag reset failed.', false);
+  }
+  return job;
+}
+async function resetTagsFromBooru(mediaIds = []) {
+  const ids = [...new Set((mediaIds || []).map(Number).filter(Number.isFinite))];
+  if (!ids.length) return toast('Select at least one media item to reset from a booru source.', false);
+  const source = state.booruResetSource || state.tagProfile || 'e621';
+  try {
+    const r = await api('/api/media/reset-tags-from-booru/job', { method:'POST', body:{ media_ids:ids, source, profile_key: source, order_strategy: state.orderingStrategy || 'booru' } });
+    state.jobDetailId = r.job_id;
+    state.jobs = [{ id:r.job_id, type:'booru_tag_reset', status:'queued', progress:0, message:'Queued booru tag reset', params:{ media_ids:ids, source } }, ...(state.jobs || [])];
+    toast(`Booru tag reset queued as job ${r.job_id}.`);
+    updateLiveStatusDom();
+    watchBooruResetJob(r.job_id, ids);
+  } catch (err) {
+    toast(err.message, false);
+  }
+}
+function booruResetReportPanel() {
+  const report = state.booruResetReport;
+  if (!report) return null;
+  const failures = report.failures || [];
+  return el('details', { class:'details-card', open: Boolean(failures.length) }, [
+    el('summary', {}, `Last booru tag reset report · ${report.updated?.length || 0} updated · ${failures.length} failed`),
+    report.report_path ? el('p', { class:'muted tiny path' }, `Persisted report: ${report.report_path}`) : null,
+    failures.length ? el('pre', { class:'log compact' }, JSON.stringify(failures.slice(0, 250), null, 2)) : el('p', { class:'muted tiny' }, 'No failures reported.')
+  ].filter(Boolean));
+}
+function booruResetCard(mediaIdsProvider, title = 'Reset Tags From Booru Metadata') {
+  const src = booruResetSourceSelect();
+  return card(title, [
+    el('p', { class:'muted' }, 'Re-fetches the selected booru post metadata using the local .download.json sidecar, then replaces the media tags with the fresh booru tag list. Files that lack usable source/post metadata or no longer exist on the selected site are written to a persisted failure report.'),
+    el('div', { class:'row' }, [src, el('button', { class:'danger', onclick: async()=>resetTagsFromBooru(mediaIdsProvider()) }, 'Reset / Replace Tags From Selected Booru')]),
+    booruResetReportPanel()
+  ]);
+}
+
 function tagEditorView() {
   const item = activeEditorItem();
   if (!item) return card('Tag Editor', [el('p', { class: 'muted' }, 'Load the gallery and select an image.')]);
+  requestTagScores(item.id, item.tags || []);
   const captionText = el('textarea', { 'data-form-key': `caption-${item.id}` }, item.caption || '');
   captionText.dataset.noPersist = '1';
   const unknownCategory = el('select', {}, categories().map(c => el('option', { value: c.key }, c.label || c.key))); unknownCategory.value = 'custom';
   const retainOrder = el('input', { type: 'checkbox', checked: state.retainImportedOrder, onchange: e => state.retainImportedOrder = e.target.checked });
   return el('div', { class: 'detail' }, [
-    el('div', {}, [mediaPreviewElement(item, 'preview')]),
+    el('div', {}, [attentionOverlayPreview(item, 'preview'), attentionOverlayControls([item], { title:'Attention Heatmap Overlay', description:'Use this while editing tags/captions to see where a classifier/ViT/diffusion/tag-region method is focusing. Turn it off at any time if it gets in the way.' })]),
     el('div', { class: 'grid' }, [
       card('Selected Media', [editorQueueControls(item), el('div', { class: 'muted path' }, item.path)]),
       card('Tag Source, Ordering, and Unknown Tags', [
@@ -2432,6 +4767,9 @@ function tagEditorView() {
         }
       }),
       imageTagRatingQuickRunCard({ title: 'Quick Tag / Rating Model for This Image', getMediaIds: () => [item.id] }),
+      integrityRunCard(() => [item.id], 'Nightshade / Glaze Integrity Check for This Image'),
+      booruResetCard(() => [item.id], 'Reset This Image Tags From Booru'),
+      storedPredictionScoresCard(item.id),
       metadataQuickCard({ title: 'Metadata Extraction / Compose for This Image', getMediaIds: () => [item.id] }),
       card('Caption', [captionText, el('button', { class: 'primary', onclick: async () => { try { await api(`/api/media/${item.id}/caption`, { method: 'PUT', body: { caption: captionText.value } }); toast('Caption saved'); await loadMedia(); state.activeMedia = cacheMediaItem(await api(`/api/media/${item.id}`)); render(); } catch (err) { toast(err.message, false); } } }, 'Save Caption')])
     ])
@@ -2502,7 +4840,7 @@ function annotationModelStatusPanel(m) {
       el('button', { class: 'secondary', disabled: !(m && m.download_supported) || downloadActive || loadActive, onclick: async () => { try { const r = await api('/api/reference/annotations/download-model', { method: 'POST', body: { model_key: m.name, dry_run: true, parallel_downloads: modelDownloadWorkerCount() } }); state.annotationLastJob = r.job_id; await refreshModelStatuses(); toast(`Annotation model download dry-run queued as job ${r.job_id}`); render(); } catch (err) { toast(err.message, false); } } }, 'Dry-run Download'),
       el('button', { class: 'primary', disabled: !(m && m.download_supported) || downloadActive || loadActive, onclick: async () => { try { const r = await api('/api/reference/annotations/download-model', { method: 'POST', body: { model_key: m.name, dry_run: false, parallel_downloads: modelDownloadWorkerCount() } }); state.annotationLastJob = r.job_id; await refreshModelStatuses(); toast(`Annotation model download queued as job ${r.job_id}`); render(); } catch (err) { toast(err.message, false); } } }, m && m.downloaded ? 'Re-download / Update Weights' : 'Download Weights'),
       el('button', { class: 'primary', disabled: !(m && m.name) || downloadActive || loadActive, onclick: async () => { try { state.annotationModelStatus = await api('/api/reference/annotations/load-model', { method: 'POST', body: { model_key: m?.name || '', device: state.annotationDevice || 'auto', options: { local_model_path: state.annotationLocalModelPath || '', custom_model_type: state.annotationCustomModelType || 'auto' } } }); await refreshModelStatuses(); toast('Annotation model validated/loaded'); render(); } catch (err) { toast(err.message, false); } } }, 'Load / Validate'),
-      el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/models/unload', { method: 'POST', body: { model_name: m?.name } }); await refreshAll(); toast(r.job_id ? `Unload queued as job ${r.job_id}` : (r.message || 'No loaded model to unload.')); render(); } catch (err) { toast(err.message, false); } } }, 'Unload'),
+      el('button', { class: 'secondary', onclick: async () => { try { await queueModelUnload(m); } catch (err) { toast(err.message, false); } } }, 'Unload'),
       state.annotationLastJob ? el('button', { class: 'secondary', onclick: () => setTab('Jobs') }, `Open Job #${state.annotationLastJob}`) : null
     ].filter(Boolean)),
     el('pre', { class: 'log' }, JSON.stringify(status || m || {}, null, 2))
@@ -2578,7 +4916,7 @@ function annotationEditorView() {
   modelSelect.value = state.annotationModel || (selectedModel && selectedModel.name) || '';
   const prompt = el('textarea', { rows: '2', placeholder: 'Prompt for model/assistant proposal, e.g. detect the blue-haired character, segment the foreground subject, estimate the 2D pose skeleton' }, state.annotationPrompt || 'find the target object');
   prompt.addEventListener('input', e => { state.annotationPrompt = e.target.value; });
-  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.05', value: state.annotationThreshold || state.settings.classifier_threshold || 0.35, oninput: e => { state.annotationThreshold = e.target.value; } });
+  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.05', value: state.annotationThreshold || defaultClassifierThreshold(), oninput: e => { state.annotationThreshold = e.target.value; } });
   const device = el('input', { placeholder: 'device: auto, cpu, cuda:0', value: state.annotationDevice || 'auto', style: 'width:150px', oninput: e => { state.annotationDevice = e.target.value; } });
   const maxProps = el('input', { type: 'number', min: '1', max: '1000', value: state.annotationMaxProposals || 25, style: 'width:90px', oninput: e => { state.annotationMaxProposals = e.target.value; } });
   const imgsz = el('input', { type: 'number', min: '128', step: '32', value: state.annotationImageSize || 1024, style: 'width:90px', oninput: e => { state.annotationImageSize = e.target.value; } });
@@ -2625,7 +4963,7 @@ function annotationEditorView() {
       el('div', { class: 'row' }, [
         el('button', { class: 'secondary', onclick: async () => {
           try {
-            state.annotationOutput = await api('/api/reference/annotations/propose', { method: 'POST', body: { media_id: item.id, label: label.value || 'object', target_name: target.value || '', prompt: prompt.value, model_key: modelSelect.value || '', threshold: Number(threshold.value || 0.35), annotation_type: mode.value, save: false, create_mask: mode.value.includes('mask'), device: device.value || 'auto', options: proposalOptions() } });
+            state.annotationOutput = await api('/api/reference/annotations/propose', { method: 'POST', body: { media_id: item.id, label: label.value || 'object', target_name: target.value || '', prompt: prompt.value, model_key: modelSelect.value || '', threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD), annotation_type: mode.value, save: false, create_mask: mode.value.includes('mask'), device: device.value || 'auto', options: proposalOptions() } });
             state.annotationModelStatus = state.annotationOutput.model_status || state.annotationModelStatus;
             if (state.annotationOutput.ok === false) { toast(state.annotationOutput.error || 'No model-generated proposals were produced.', false); render(); return; }
             const p = (state.annotationOutput.proposals || [])[0]; if (p) { state.annotationDraftBbox = p.bbox || null; state.annotationPolygon = p.polygon || []; state.annotationPose2D = p.metadata?.keypoints_2d || state.annotationPose2D || []; state.annotationPose3D = p.metadata?.keypoints_3d || state.annotationPose3D || []; }
@@ -2634,7 +4972,7 @@ function annotationEditorView() {
         } }, 'Preview Proposal'),
         el('button', { class: 'primary', onclick: async () => {
           try {
-            state.annotationOutput = await api('/api/reference/annotations/propose', { method: 'POST', body: { media_id: item.id, label: label.value || 'object', target_name: target.value || '', prompt: prompt.value, model_key: modelSelect.value || '', threshold: Number(threshold.value || 0.35), annotation_type: mode.value, save: true, create_mask: mode.value.includes('mask'), device: device.value || 'auto', options: proposalOptions() } });
+            state.annotationOutput = await api('/api/reference/annotations/propose', { method: 'POST', body: { media_id: item.id, label: label.value || 'object', target_name: target.value || '', prompt: prompt.value, model_key: modelSelect.value || '', threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD), annotation_type: mode.value, save: true, create_mask: mode.value.includes('mask'), device: device.value || 'auto', options: proposalOptions() } });
             state.annotationModelStatus = state.annotationOutput.model_status || state.annotationModelStatus;
             if (state.annotationOutput.ok === false) { toast(state.annotationOutput.error || 'No model-generated annotations were saved.', false); render(); return; }
             await loadAnnotationState(item.id); toast(`Saved ${state.annotationOutput.saved?.length || 0} model annotation(s)`); render();
@@ -2664,7 +5002,7 @@ function annotationEditorView() {
         el('button', { class: 'secondary', onclick: () => { const bbox = state.annotationDraftBbox; if (bbox) bboxPrompt.value = JSON.stringify(bbox); state.annotationBboxPrompt = bboxPrompt.value; toast('Draft bbox copied to SAM prompt field'); } }, 'Use Draft BBox as SAM Prompt')
       ])
     ]),
-    quickCurationModelRunCard({ title: 'Tag/Rating Classifier for Annotated Image', getMediaIds: () => [item.id], description: 'Run JTP-3 or visual rating models on the image you are annotating so labels, ratings, and annotation decisions can be cross-checked.' }),
+    quickCurationModelRunCard({ title: 'Tag/Rating Classifier for Annotated Image', getMediaIds: () => [item.id], description: 'Run Hydra 3.5, JTP-3, legacy EVA/EfficientNet taggers, or visual rating models on the image you are annotating so labels, ratings, and annotation decisions can be cross-checked.' }),
     card('Krita annotation bridge', [
       el('p', { class: 'muted' }, 'Export the selected image plus annotation manifest/masks to a Krita handoff folder. Import a mask PNG back as an annotation after editing in Krita.'),
       el('div', { class: 'row' }, [
@@ -2683,7 +5021,7 @@ function annotationEditorView() {
       ]),
       el('pre', { class: 'log' }, JSON.stringify({ keypoints_3d: state.annotationPose3D || [], edges: state.annotationEdges || [] }, null, 2))
     ]),
-    imageTagRatingQuickRunCard({ title: 'Quick Tag / Rating Model for Annotated Image', getMediaIds: () => [item.id], description: 'Use JTP/rating/classifier models while annotating so labels can be generated alongside bbox/mask/pose work.' }),
+    imageTagRatingQuickRunCard({ title: 'Quick Tag / Rating Model for Annotated Image', getMediaIds: () => [item.id], description: 'Use Hydra/JTP/legacy tagger/rating/classifier models while annotating so labels can be generated alongside bbox/mask/pose work.' }),
     card('Existing annotations', [annotationTable(annotations)]),
     card('Annotation output', [el('pre', { class: 'log' }, JSON.stringify(state.annotationOutput || {}, null, 2))])
   ]);
@@ -2763,7 +5101,7 @@ function annotationCanvas(item, annotations) {
 
 function annotationTable(rows) {
   if (!rows || !rows.length) return el('p', { class: 'muted' }, 'No annotations saved for this media item yet.');
-  return el('div', { class: 'table-scroll' }, el('table', { class: 'table' }, [
+  return el('div', { class: 'table-scroll', 'data-scroll-key': 'models-raw-registry-scroll' }, el('table', { class: 'table' }, [
     el('thead', {}, el('tr', {}, ['ID','Label','Type','Source','Confidence','BBox','Polygon pts','Mask','Metadata','Actions'].map(h => el('th', {}, h)))),
     el('tbody', {}, rows.map(a => el('tr', {}, [
       el('td', {}, a.id), el('td', {}, a.label || ''), el('td', {}, a.annotation_type || ''), el('td', {}, a.source || ''), el('td', {}, a.confidence == null ? '' : Number(a.confidence).toFixed(3)),
@@ -2960,7 +5298,7 @@ function spatialModelPanel(task, model) {
         await refreshSpatialModelClasses(task, model.name).catch(() => null);
         toast(`${task} model loaded/validated`); render();
       } catch (err) { toast(err.message, false); } } }, 'Load / Validate'),
-      el('button', { class: 'secondary', disabled: !model, onclick: async () => { try { const r = await api('/api/models/unload', { method: 'POST', body: { model_name: model.name } }); toast(r.job_id ? `Unload queued as job ${r.job_id}` : (r.message || 'No loaded model to unload.')); await refreshSpatialModelStatus(task, model.name); await refreshAll(); render(); } catch (err) { toast(err.message, false); } } }, 'Unload'),
+      el('button', { class: 'secondary', disabled: !model, onclick: async () => { try { await queueModelUnload(model); await refreshSpatialModelStatus(task, model.name); } catch (err) { toast(err.message, false); } } }, 'Unload'),
       el('button', { class: 'secondary', disabled: !model, onclick: async () => { try { await refreshSpatialModelStatus(task, model.name); toast('Status refreshed'); render(); } catch (err) { toast(err.message, false); } } }, 'Refresh Status'),
       state.annotationLastJob ? el('button', { class: 'secondary', onclick: () => setTab('Jobs') }, `Open Job #${state.annotationLastJob}`) : null
     ].filter(Boolean)),
@@ -3156,7 +5494,7 @@ function spatialProposalSummary(task, output) {
 
 function spatialAnnotationTable(rows, task) {
   if (!rows?.length) return el('p', { class: 'muted' }, `No saved ${task} annotations for this image.`);
-  return el('div', { class: 'table-scroll' }, el('table', { class: 'table' }, [
+  return el('div', { class: 'table-scroll', 'data-scroll-key': 'models-raw-registry-scroll' }, el('table', { class: 'table' }, [
     el('thead', {}, el('tr', {}, ['ID','Label','Type','Source / Model','Confidence','Geometry / Mask','Actions'].map(h => el('th', {}, h)))),
     el('tbody', {}, rows.map(row => el('tr', {}, [
       el('td', {}, row.id), el('td', {}, row.label || ''), el('td', {}, row.annotation_type || ''),
@@ -3553,7 +5891,7 @@ function detectionEditorView() {
       ].filter(Boolean))
     ]),
     spatialLayerCompositor('detection', item, rows, proposals),
-    quickCurationModelRunCard({ title: 'Tag / Rating Cross-check for Detection Image', getMediaIds: () => [item.id], description: 'Run JTP-3 or visual rating models separately from spatial detection.' }),
+    quickCurationModelRunCard({ title: 'Tag / Rating Cross-check for Detection Image', getMediaIds: () => [item.id], description: 'Run Hydra 3.5, JTP-3, legacy EVA/EfficientNet taggers, or visual rating models separately from spatial detection.' }),
     card('Detection Result JSON', [el('pre', { class: 'log' }, JSON.stringify(output || {}, null, 2))])
   ]);
 }
@@ -3785,7 +6123,7 @@ function segmentationEditorView() {
       maskPath, el('button', { class: 'secondary', onclick: async () => await pickFilePath(maskPath, 'Select edited mask PNG') }, 'Browse Mask...'),
       el('button', { class: 'primary', onclick: async () => { try { if (!maskPath.value.trim()) throw new Error('Select an edited mask PNG first.'); state.annotationOutput = await api('/api/krita/import-annotation-mask', { method: 'POST', body: { media_id: item.id, mask_path: maskPath.value.trim(), label: label.value || state.segmentationClassQuery || 'object', target_name: target.value || '' } }); await loadAnnotationState(item.id); toast('Krita mask imported'); render(); } catch (err) { toast(err.message, false); } } }, 'Import Edited Mask')
     ]), el('a', { href: '/api/krita/plugin', target: '_blank' }, 'Download optional Krita bridge plugin')]),
-    quickCurationModelRunCard({ title: 'Tag / Rating Cross-check for Segmentation Image', getMediaIds: () => [item.id], description: 'Run JTP-3 or visual rating models independently from mask generation.' }),
+    quickCurationModelRunCard({ title: 'Tag / Rating Cross-check for Segmentation Image', getMediaIds: () => [item.id], description: 'Run Hydra 3.5, JTP-3, legacy EVA/EfficientNet taggers, or visual rating models independently from mask generation.' }),
     spatialLayerCompositor('segmentation', item, rows, proposals),
     card('Segmentation Result JSON', [el('pre', { class: 'log' }, JSON.stringify(output || {}, null, 2))])
   ].filter(Boolean));
@@ -4415,7 +6753,21 @@ function threeDStudioView() {
     card('Import Existing 3D Asset',[
       el('div',{class:'row'},[importPath,el('button',{class:'secondary',onclick:async()=>{try{const result=await api('/api/three-d/assets/import',{method:'POST',body:{source_path:importPath.value.trim(),copy:true,label:''}});state.threeDAssets=await api('/api/three-d/assets');state.threeDSelectedAsset=result.path;toast('3D asset imported into the managed library');render();}catch(err){toast(err.message,false);}}},'Copy into 3D Asset Library'),el('button',{class:'secondary',onclick:async()=>{try{state.threeDAssets=await api('/api/three-d/assets');toast('3D asset library refreshed');render();}catch(err){toast(err.message,false);}}},'Refresh Assets')])
     ]),
-    card('Managed 3D Assets',[assetTable]),
+    card('3D Print / Slicer Handoff Package',[
+      el('p',{class:'muted'},'Create a slicer-ready handoff package for STL/3MF/OBJ/G-code workflows. This creates manifests and copies the source asset; conversion/slicing remains user-approved in Blender, MeshLab, PrusaSlicer, OrcaSlicer, Cura, or Bambu Studio.'),
+      el('div',{class:'row wrap'},[
+        el('input',{value:state.printAssetPath||state.threeDSelectedAsset||'',placeholder:'3D asset path to package for printing',style:'min-width:420px',oninput:e=>state.printAssetPath=e.target.value}),
+        el('input',{value:state.printPackageName||'',placeholder:'optional package name',oninput:e=>state.printPackageName=e.target.value}),
+        el('input',{value:state.printTargetFormats||'stl, 3mf',placeholder:'target formats: stl, 3mf, obj, gcode',oninput:e=>state.printTargetFormats=e.target.value})
+      ]),
+      el('div',{class:'row wrap'},[
+        (()=>{const sel=el('select',{onchange:e=>state.printSlicer=e.target.value},['blender','prusaslicer','orcaslicer','cura','bambu_studio','meshlab','generic'].map(x=>el('option',{value:x},x)));sel.value=state.printSlicer||'prusaslicer';return sel;})(),
+        (()=>{const sel=el('select',{onchange:e=>state.printUnitScale=e.target.value},['millimeters','centimeters','meters','inches','asset_native'].map(x=>el('option',{value:x},x)));sel.value=state.printUnitScale||'millimeters';return sel;})(),
+        (()=>{const sel=el('select',{onchange:e=>state.printRepairPolicy=e.target.value},['none','manual_review_only','make_manifold_if_needed','decimate_and_make_manifold'].map(x=>el('option',{value:x},x)));sel.value=state.printRepairPolicy||'make_manifold_if_needed';return sel;})(),
+        el('button',{class:'primary',onclick:async()=>{try{const formats=parseTagString(state.printTargetFormats||'stl,3mf');state.datasetPipelinePrintPackage=await api('/api/dataset-pipeline/3d-print/package',{method:'POST',body:{asset_path:state.printAssetPath||state.threeDSelectedAsset||'',package_name:state.printPackageName||'',target_formats:formats.length?formats:['stl','3mf'],slicer:state.printSlicer||'prusaslicer',unit_scale:state.printUnitScale||'millimeters',repair_policy:state.printRepairPolicy||'make_manifold_if_needed'}});toast('3D print handoff package created');render();}catch(err){toast(err.message,false);}}},'Create 3D Print Package')
+      ]),
+      state.datasetPipelinePrintPackage?el('pre',{class:'log compact'},JSON.stringify(state.datasetPipelinePrintPackage,null,2)):el('p',{class:'muted tiny'},'No 3D-print package created yet.')
+    ]),
     card('3D Workflow Guide',[
       el('ol',{},[
         el('li',{},'Choose a text-to-3D, image-to-3D, multi-image-to-3D, or video-to-3D provider and set the required local repository path, endpoint/API key, or token profile.'),
@@ -4733,6 +7085,274 @@ function flexAvatarView() {
 
 
 
+
+async function refreshMultimodalBuilder(opts = {}) {
+  const force = Boolean(opts.force);
+  if (!force && state.multimodalCatalog && (Date.now() - (state.multimodalLastRefreshAt || 0) < 2500)) return;
+  const [catalog, assets, clips, samples] = await Promise.all([
+    api('/api/multimodal/catalog'),
+    api('/api/multimodal/assets?limit=500'),
+    api('/api/multimodal/clips?limit=500'),
+    api('/api/multimodal/training-samples?limit=500')
+  ]);
+  state.multimodalCatalog = catalog || {};
+  state.multimodalAssets = assets.items || [];
+  state.multimodalClips = clips.items || [];
+  state.multimodalSamples = samples.items || [];
+  state.multimodalLastRefreshAt = Date.now();
+  if (!state.multimodalSelectedAssetId && state.multimodalAssets[0]) state.multimodalSelectedAssetId = state.multimodalAssets[0].id;
+  if (!state.multimodalSelectedClipId && state.multimodalClips[0]) state.multimodalSelectedClipId = state.multimodalClips[0].id;
+}
+function parseJsonField(text, fallback = {}) {
+  try { return JSON.parse(String(text || '').trim() || '{}'); } catch (err) { toast(`Invalid JSON: ${err.message}`, false); return fallback; }
+}
+function prettyJson(value) { return JSON.stringify(value || {}, null, 2); }
+function multimodalOptionList(rows = [], valueKey = 'key', labelKey = 'label') {
+  return (rows || []).map(row => el('option', { value: row[valueKey] || row.id || row.key }, row[labelKey] || row.name || row.id || row.key));
+}
+function multimodalAssetSelect() {
+  const select = el('select', { onchange: e => { state.multimodalSelectedAssetId = e.target.value; state.multimodalSuggestions = []; } }, [
+    el('option', { value: '' }, 'select imported/probed asset…'),
+    ...(state.multimodalAssets || []).map(a => el('option', { value: a.id }, `${a.media_type || 'asset'} · ${(a.source_path || a.normalized_path || a.id).split(/[\\/]/).pop()} · ${a.duration_sec ? Number(a.duration_sec).toFixed(2)+'s' : ''}`))
+  ]);
+  select.value = state.multimodalSelectedAssetId || '';
+  return select;
+}
+function multimodalClipSelect() {
+  const select = el('select', { onchange: e => { state.multimodalSelectedClipId = e.target.value; } }, [
+    el('option', { value: '' }, 'select clip/sample candidate…'),
+    ...(state.multimodalClips || []).map(c => el('option', { value: c.id }, `${c.id.slice(0, 14)} · ${Number(c.start_sec || 0).toFixed(2)}-${Number(c.end_sec || 0).toFixed(2)}s · ${(c.clip_path || c.asset_id || '').split(/[\\/]/).pop()}`))
+  ]);
+  select.value = state.multimodalSelectedClipId || '';
+  return select;
+}
+async function multimodalProbeImport(copyAsset = false) {
+  if (!state.multimodalSourcePath.trim()) return toast('Enter a media path first.', false);
+  try {
+    const body = { source_path: state.multimodalSourcePath.trim(), copy_asset: copyAsset || state.multimodalCopyAsset, provenance: { source: 'manual_ui' } };
+    const res = copyAsset || state.multimodalCopyAsset ? await api('/api/multimodal/media/import', { method: 'POST', body }) : await api('/api/multimodal/media/probe', { method: 'POST', body });
+    state.multimodalLastOutput = res;
+    if (res.id) state.multimodalSelectedAssetId = res.id;
+    await refreshMultimodalBuilder({ force: true });
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalSuggestClips() {
+  if (!state.multimodalSelectedAssetId) return toast('Select an asset first.', false);
+  try {
+    const res = await api('/api/multimodal/clips/suggest', { method: 'POST', body: {
+      asset_id: state.multimodalSelectedAssetId,
+      method: state.multimodalClipMethod,
+      min_duration: Number(state.multimodalMinDuration || 0),
+      max_duration: Number(state.multimodalMaxDuration || 0),
+      overlap_seconds: Number(state.multimodalOverlapSeconds || 0),
+      target_frames: Number(state.multimodalTargetFrames || 0) || null
+    }});
+    state.multimodalSuggestions = res.suggestions || [];
+    state.multimodalLastOutput = res;
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalCreateSuggestedClips() {
+  if (!state.multimodalSelectedAssetId) return toast('Select an asset first.', false);
+  const suggestions = state.multimodalSuggestions || [];
+  if (!suggestions.length) return toast('No suggestions available. Run Suggest Clips first.', false);
+  try {
+    const res = await api('/api/multimodal/clips/batch-create', { method: 'POST', body: { asset_id: state.multimodalSelectedAssetId, suggestions, method: state.multimodalClipMethod } });
+    state.multimodalLastOutput = res;
+    state.multimodalSuggestions = [];
+    await refreshMultimodalBuilder({ force: true });
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalRenderCaption() {
+  const structured = parseJsonField(state.multimodalCaptionStructuredText, {});
+  try {
+    const res = await api('/api/multimodal/captions/render', { method: 'POST', body: { structured, style: state.multimodalCaptionStyle, trigger_strategy: state.multimodalTriggerStrategy, trigger_token: state.multimodalTriggerToken } });
+    state.multimodalLastOutput = res;
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalSaveCaptionRevision() {
+  if (!state.multimodalSelectedClipId) return toast('Select a clip first.', false);
+  const structured = parseJsonField(state.multimodalCaptionStructuredText, {});
+  try {
+    const rendered = await api('/api/multimodal/captions/render', { method: 'POST', body: { structured, style: state.multimodalCaptionStyle, trigger_strategy: state.multimodalTriggerStrategy, trigger_token: state.multimodalTriggerToken } });
+    const res = await api('/api/multimodal/captions/revisions', { method: 'POST', body: { clip_id: state.multimodalSelectedClipId, structured, caption_flat: rendered.caption || '', trigger_token: state.multimodalTriggerToken, reviewed: false, approved: false, edited_by_user: true, render_style: state.multimodalCaptionStyle, trigger_strategy: state.multimodalTriggerStrategy } });
+    state.multimodalLastOutput = res;
+    await refreshMultimodalBuilder({ force: true });
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalCreateSample() {
+  if (!state.multimodalSelectedClipId) return toast('Select a clip first.', false);
+  try {
+    const res = await api('/api/multimodal/training-samples/create', { method: 'POST', body: { clip_id: state.multimodalSelectedClipId, task_profile: state.multimodalTaskProfile, split: 'train', enabled: true, sample_weight: 1.0, export_overrides: {} } });
+    state.multimodalLastOutput = res;
+    state.multimodalSelectedSampleIds.add(res.id);
+    await refreshMultimodalBuilder({ force: true });
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalValidateExport() {
+  const ids = [...(state.multimodalSelectedSampleIds || new Set())];
+  try {
+    const res = await api('/api/multimodal/datasets/validate-export', { method: 'POST', body: { export_profile: state.multimodalExportProfile, sample_ids: ids, config: parseJsonField(state.multimodalExportConfigText, {}) } });
+    state.multimodalLastOutput = res;
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalExportDataset() {
+  try {
+    const ids = [...(state.multimodalSelectedSampleIds || new Set())];
+    const res = await api('/api/multimodal/datasets/export', { method: 'POST', body: { export_profile: state.multimodalExportProfile, sample_ids: ids, output_dir: '', name: state.multimodalExportName, config: parseJsonField(state.multimodalExportConfigText, {}) } });
+    state.multimodalLastJob = res;
+    state.multimodalLastOutput = res;
+    state.jobs = await api('/api/jobs').catch(() => state.jobs);
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalPrepareCommand() {
+  try {
+    const res = await api('/api/multimodal/training/prepare-command', { method: 'POST', body: { export_profile: state.multimodalExportProfile, output_dir: '<export_output_dir>', trainer: '', config: parseJsonField(state.multimodalExportConfigText, {}) } });
+    state.multimodalLastOutput = res;
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+async function multimodalPlanPipeline() {
+  const clipIds = state.multimodalSelectedClipId ? [state.multimodalSelectedClipId] : (state.multimodalClips || []).map(c => c.id).slice(0, 50);
+  const passes = String(state.multimodalPipelinePasses || '').split(',').map(x => x.trim()).filter(Boolean);
+  if (!clipIds.length) return toast('Create or select clips first.', false);
+  try {
+    const res = await api('/api/multimodal/pipeline/plan', { method: 'POST', body: { clip_ids: clipIds, passes } });
+    state.multimodalLastJob = res;
+    state.multimodalLastOutput = res;
+    state.jobs = await api('/api/jobs').catch(() => state.jobs);
+    render();
+  } catch (err) { toast(err.message, false); }
+}
+function multimodalRowsTable(rows, columns, emptyText = 'No rows yet.') {
+  if (!rows || !rows.length) return el('p', { class: 'muted' }, emptyText);
+  return el('table', { class: 'compact-table' }, [
+    el('thead', {}, el('tr', {}, columns.map(c => el('th', {}, c.label)))),
+    el('tbody', {}, rows.map(row => el('tr', {}, columns.map(c => el('td', { class: c.class || '' }, typeof c.value === 'function' ? c.value(row) : row[c.value])))))
+  ]);
+}
+function multimodalDatasetBuilderView() {
+  if (!state.multimodalCatalog) refreshMultimodalBuilder({ force: true }).then(() => render()).catch(err => { state.multimodalLastOutput = { error: err.message }; render(); });
+  const catalog = state.multimodalCatalog || {};
+  const assetRows = state.multimodalAssets || [];
+  const clipRows = state.multimodalClips || [];
+  const sampleRows = state.multimodalSamples || [];
+  const taskProfiles = catalog.ltx_task_profiles || [];
+  const wanProfiles = catalog.wan_task_profiles || [];
+  const exportProfiles = catalog.export_profiles || [];
+  const selectedProfile = [...taskProfiles, ...wanProfiles].find(p => p.key === state.multimodalTaskProfile) || taskProfiles[0] || wanProfiles[0] || {};
+  const selectedExport = exportProfiles.find(p => p.key === state.multimodalExportProfile) || exportProfiles[0] || {};
+  const source = el('input', { placeholder: 'C:\\path\\clip.mp4 or /data/audio.wav', value: state.multimodalSourcePath, oninput: e => state.multimodalSourcePath = e.target.value });
+  const copyCheck = el('input', { type: 'checkbox', checked: state.multimodalCopyAsset, onchange: e => state.multimodalCopyAsset = e.target.checked });
+  const clipMethod = el('select', { onchange: e => state.multimodalClipMethod = e.target.value }, ['fixed_window','sliding_window','scene_cut','silence_boundary','manual_keep_full'].map(x => el('option', { value: x }, x)));
+  clipMethod.value = state.multimodalClipMethod;
+  const captionStyle = el('select', { onchange: e => state.multimodalCaptionStyle = e.target.value }, (catalog.caption_styles || ['structured_blocks','natural_language','short_action','aesthetic_cinematic']).map(x => el('option', { value: x }, x)));
+  captionStyle.value = state.multimodalCaptionStyle;
+  const triggerStrategy = el('select', { onchange: e => state.multimodalTriggerStrategy = e.target.value }, (catalog.trigger_strategies || ['none','prepend_in_caption','trainer_arg_ltx_lora_trigger']).map(x => el('option', { value: x }, x)));
+  triggerStrategy.value = state.multimodalTriggerStrategy;
+  const taskSelect = el('select', { onchange: e => state.multimodalTaskProfile = e.target.value }, [el('optgroup', { label: 'LTX 2.3' }, multimodalOptionList(taskProfiles)), el('optgroup', { label: 'Wan 2.2' }, multimodalOptionList(wanProfiles))]);
+  taskSelect.value = state.multimodalTaskProfile;
+  const exportSelect = el('select', { onchange: e => state.multimodalExportProfile = e.target.value }, multimodalOptionList(exportProfiles));
+  exportSelect.value = state.multimodalExportProfile;
+  return el('div', { class: 'grid' }, [
+    card('Multimodal Dataset Builder', [
+      el('p', { class: 'muted' }, 'Trainer-neutral image/video/audio clip schema with LTX-2.3 and Wan 2.2 export adapters. This prepares datasets and handoff commands; training frameworks stay external/MCP-controlled.'),
+      el('div', { class: 'chips' }, [
+        el('span', { class: 'chip' }, 'LTX frames: F % 8 == 1'),
+        el('span', { class: 'chip' }, 'LTX spatial: multiples of 32'),
+        el('span', { class: 'chip' }, 'Wan/Musubi frames: N*4+1'),
+        el('span', { class: 'chip' }, 'Audio transcript + Foley fields'),
+        el('span', { class: 'chip' }, 'Reference video/audio/masks')
+      ]),
+      el('button', { class: 'secondary', onclick: async () => { await refreshMultimodalBuilder({ force: true }); render(); } }, 'Refresh Multimodal Builder')
+    ]),
+    card('Media Inspector / Import', [
+      el('div', { class: 'row' }, [source, el('label', {}, [copyCheck, ' copy asset into project outputs'])]),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'secondary', onclick: () => multimodalProbeImport(false) }, 'Probe Path'),
+        el('button', { class: 'primary', onclick: () => multimodalProbeImport(true) }, 'Import / Register Asset')
+      ]),
+      multimodalRowsTable(assetRows.slice(0, 8), [
+        { label: 'Type', value: 'media_type' }, { label: 'Duration', value: r => r.duration_sec ? Number(r.duration_sec).toFixed(2) + 's' : '' },
+        { label: 'Size', value: r => [r.width, r.height].filter(Boolean).join('×') }, { label: 'Path', value: r => r.source_path || r.normalized_path, class: 'path tiny' }
+      ], 'No multimodal assets imported yet.')
+    ]),
+    card('Clip Builder', [
+      el('div', { class: 'row' }, [multimodalAssetSelect(), el('label', { class: 'label inline' }, ['Method', clipMethod])]),
+      el('div', { class: 'row' }, [
+        el('label', { class: 'label tiny-number' }, ['Min sec', el('input', { type: 'number', step: '0.1', value: state.multimodalMinDuration, onchange: e => state.multimodalMinDuration = e.target.value })]),
+        el('label', { class: 'label tiny-number' }, ['Max sec', el('input', { type: 'number', step: '0.1', value: state.multimodalMaxDuration, onchange: e => state.multimodalMaxDuration = e.target.value })]),
+        el('label', { class: 'label tiny-number' }, ['Overlap', el('input', { type: 'number', step: '0.1', value: state.multimodalOverlapSeconds, onchange: e => state.multimodalOverlapSeconds = e.target.value })]),
+        el('label', { class: 'label tiny-number' }, ['Target frames', el('input', { type: 'number', step: '1', value: state.multimodalTargetFrames, onchange: e => state.multimodalTargetFrames = e.target.value })])
+      ]),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'secondary', onclick: multimodalSuggestClips }, 'Suggest Clips'),
+        el('button', { class: 'primary', onclick: multimodalCreateSuggestedClips }, 'Create Suggested Clips')
+      ]),
+      state.multimodalSuggestions?.length ? el('pre', { class: 'log compact' }, prettyJson(state.multimodalSuggestions.slice(0, 20))) : null,
+      multimodalRowsTable(clipRows.slice(0, 10), [
+        { label: 'Clip', value: r => r.id.slice(0, 12), class: 'tiny' }, { label: 'Time', value: r => `${Number(r.start_sec || 0).toFixed(2)}-${Number(r.end_sec || 0).toFixed(2)}s` },
+        { label: 'Frames', value: 'frame_count' }, { label: 'Path', value: r => r.clip_path || r.asset_id, class: 'path tiny' }
+      ], 'No clips created yet.')
+    ]),
+    card('Structured Caption Editor', [
+      el('div', { class: 'row' }, [multimodalClipSelect(), el('label', { class: 'label inline' }, ['Caption style', captionStyle]), el('label', { class: 'label inline' }, ['Trigger strategy', triggerStrategy]), el('input', { placeholder: 'trigger token', value: state.multimodalTriggerToken, oninput: e => state.multimodalTriggerToken = e.target.value })]),
+      el('textarea', { rows: '12', value: state.multimodalCaptionStructuredText, oninput: e => state.multimodalCaptionStructuredText = e.target.value, placeholder: 'Structured caption JSON: visual_summary, speech_transcript, non_speech_audio, camera_motion, subject_motion...' }),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'secondary', onclick: multimodalRenderCaption }, 'Render Caption Preview'),
+        el('button', { class: 'primary', onclick: multimodalSaveCaptionRevision }, 'Save Caption Revision')
+      ])
+    ]),
+    card('Training Sample / Compatibility', [
+      el('div', { class: 'row' }, [multimodalClipSelect(), el('label', { class: 'label inline' }, ['Task profile', taskSelect]), el('button', { class: 'primary', onclick: multimodalCreateSample }, 'Create Training Sample')]),
+      selectedProfile.description ? el('p', { class: 'muted tiny' }, selectedProfile.description) : null,
+      multimodalRowsTable(sampleRows.slice(0, 10), [
+        { label: 'Use', value: r => { const cb = el('input', { type: 'checkbox', checked: state.multimodalSelectedSampleIds.has(r.id), onchange: e => { if (e.target.checked) state.multimodalSelectedSampleIds.add(r.id); else state.multimodalSelectedSampleIds.delete(r.id); } }); return cb; } },
+        { label: 'Profile', value: 'task_profile' }, { label: 'Split', value: 'split' }, { label: 'Clip', value: 'clip_id', class: 'tiny' }
+      ], 'No training samples created yet.'),
+      el('button', { class: 'secondary', onclick: multimodalValidateExport }, 'Validate Selected / All Samples')
+    ]),
+    card('Dataset Export Wizard', [
+      el('div', { class: 'row' }, [el('label', { class: 'label inline' }, ['Export profile', exportSelect]), el('input', { placeholder: 'optional export name', value: state.multimodalExportName, oninput: e => state.multimodalExportName = e.target.value })]),
+      selectedExport.description ? el('p', { class: 'muted tiny' }, selectedExport.description) : null,
+      el('textarea', { rows: '8', value: state.multimodalExportConfigText, oninput: e => state.multimodalExportConfigText = e.target.value, placeholder: 'Exporter config JSON: target_frames, resolution, caption_style, copy_media, link_mode...' }),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'secondary', onclick: multimodalPrepareCommand }, 'Prepare Training Command'),
+        el('button', { class: 'primary', onclick: multimodalExportDataset }, 'Queue Export Job')
+      ]),
+      state.multimodalLastJob ? el('p', { class: 'muted tiny' }, `Last multimodal job: #${state.multimodalLastJob.job_id || ''} ${state.multimodalLastJob.export_profile || ''}`) : null
+    ]),
+    card('Agentic Captioning / Audio-Video Pipeline Plan', [
+      el('p', { class: 'muted' }, 'Creates a reversible, job-backed plan for media probe, video understanding, audio understanding, transcript alignment, caption synthesis, verification, and human review. Model execution remains controlled through the model catalog/MCP tabs.'),
+      el('input', { value: state.multimodalPipelinePasses, oninput: e => state.multimodalPipelinePasses = e.target.value }),
+      el('button', { class: 'secondary', onclick: multimodalPlanPipeline }, 'Queue Pipeline Plan for Selected Clip / First 50 Clips')
+    ]),
+    card('Training MCP Frameworks', [
+      el('p', { class: 'muted' }, 'External training frameworks are exposed as MCP/handoff contracts so LTX, Wan/Musubi, DiffSynth, SimpleTuner, AI Toolkit, Diffusers, Kohya, OneTrainer, and ComfyUI training nodes can consume reviewed exports.'),
+      el('div', { class: 'chips' }, (catalog.training_mcp_frameworks || []).map(x => el('span', { class: 'chip' }, `${x.label || x.key}: ${(x.export_profiles || []).join(', ')}`)))
+    ]),
+    card('Voice / Speaker Dataset Consent Scope', [
+      el('p', { class: 'warning' }, (catalog.voice_dataset_scope || {}).policy || 'Voice identity datasets require documented consent, provenance, license, and generated-output policy before export.'),
+      el('div', { class: 'chips' }, ((catalog.voice_dataset_scope || {}).tracked_fields || []).map(x => el('span', { class: 'chip' }, x))),
+      el('p', { class: 'muted tiny' }, 'Voice profiles are stored separately from audio annotations and can be linked to STT, TTS, and voice-conversion export profiles without forcing those dependencies into the base install.')
+    ]),
+    card('Audio + Video Dataset Objectives', [
+      el('p', { class: 'muted tiny' }, 'Audio and video are treated as synchronized streams with separate probe, transcript, speaker, sound-event, motion, caption, verification, and export stages.'),
+      el('div', { class: 'chips' }, [...(((catalog.audio_video_objectives || {}).audio || {}).stages || []), ...(((catalog.audio_video_objectives || {}).video_audio || {}).stages || [])].map(x => el('span', { class: 'chip' }, x)))
+    ]),
+    card('Last Multimodal Result', [
+      state.multimodalLastOutput ? el('pre', { class: 'log compact' }, prettyJson(state.multimodalLastOutput)) : el('p', { class: 'muted' }, 'No multimodal action result yet.')
+    ])
+  ]);
+}
+
 function futureModalitiesView() {
   const phaseChip = (label, status = 'planned') => el('span', { class: status === 'active' ? 'badge ok' : status === 'scaffold' ? 'badge' : 'badge muted' }, label);
   return el('div', { class: 'grid' }, [
@@ -4889,6 +7509,8 @@ function batchTagsView() {
     batchOperationCard(),
     modelTagSelectionCard(),
     imageTagRatingQuickRunCard({ title: 'Quick Tag / Rating Model on Selected Batch', getMediaIds: () => [...state.selected] }),
+    integrityRunCard(() => [...state.selected], 'Batch Nightshade / Glaze Integrity Check'),
+    booruResetCard(() => [...state.selected], 'Batch Reset Tags From Booru'),
     metadataQuickCard({ title: 'Batch Metadata Extraction / Compose', getMediaIds: () => [...state.selected] })
   ]);
 }
@@ -4907,10 +7529,10 @@ function predictionAnalyticsView() {
       el('div', { class: 'row' }, [dataset, el('label', {}, ['limit', limit]), el('label', {}, ['min score', minScore]),
         el('button', { class: 'primary', onclick: async () => { try { const body = { dataset_id: dataset.value ? Number(dataset.value) : null, media_ids: dataset.value ? [] : [...state.selected], limit: Number(limit.value || 300), min_score: Number(minScore.value || 0) }; state.tagScoreAnalytics = await api('/api/models/tag-score-analytics', { method: 'POST', body }); render(); } catch (err) { toast(err.message, false); } } }, 'Build Analytics')
       ]),
-      el('div', { class: 'model-legend' }, models.map((m, idx) => el('span', { class: `legend-chip ${scoreColorClass(m, idx)}` }, m))),
+      el('div', { class: 'model-legend' }, models.map((m, idx) => el('span', { class: `legend-chip ${scoreColorClass(m, idx)}`, style: modelScorePanelStyle(m, idx, models) }, m))),
       tags.length ? el('div', { class: 'score-chart' }, tags.map(tag => el('div', { class: 'score-chart-row' }, [
         el('div', { class: 'score-tag-label' }, tag),
-        el('div', { class: 'score-bars' }, models.map((m, idx) => { const cell = (matrix[tag] || {})[m] || {}; const v = Number(cell.avg_score || 0); return el('div', { class: `score-bar-wrap ${scoreColorClass(m, idx)}`, title: `${m} · avg ${(v*100).toFixed(1)}% · max ${((cell.max_score || 0)*100).toFixed(1)}% · n=${cell.count || 0}` }, [el('span', { class: 'score-bar-fill', style: `width:${Math.round(v*100)}%` }, ''), el('span', { class: 'score-bar-text' }, v ? `${(v*100).toFixed(0)}%` : '')]); }))
+        el('div', { class: 'score-bars' }, models.map((m, idx) => { const cell = (matrix[tag] || {})[m] || {}; const v = Number(cell.avg_score || 0); return el('div', { class: `score-bar-wrap ${scoreColorClass(m, idx)}`, style: modelScorePanelStyle(m, idx, models), title: `${m} · avg ${(v*100).toFixed(1)}% · max ${((cell.max_score || 0)*100).toFixed(1)}% · n=${cell.count || 0}` }, [el('span', { class: 'score-bar-fill', style: `width:${Math.round(v*100)}%` }, ''), el('span', { class: 'score-bar-text' }, v ? `${(v*100).toFixed(0)}%` : '')]); }))
       ]))) : el('p', { class: 'muted' }, 'No analytics loaded yet. Run one or more tag/class/rating models, then press Build Analytics.')
     ]),
     card('Raw Score Rows', [el('pre', { class: 'log' }, JSON.stringify(rows.slice(0, 500), null, 2))])
@@ -4968,6 +7590,61 @@ async function copyActiveToSelected(item = state.activeMedia) {
 }
 
 
+
+
+function latestModelInferenceJobForMediaIds(mediaIds = [], modelName = '') {
+  const wantedIds = new Set((mediaIds || []).map(Number).filter(n => Number.isFinite(n) && n > 0).map(String));
+  const wantedModel = String(modelName || '').trim();
+  const rows = [...(state.jobs || [])].filter(job => String(job?.type || '') === 'model_inference');
+  rows.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+  for (const job of rows) {
+    const params = job.params || {};
+    if (wantedModel && String(params.model_name || '') !== wantedModel) continue;
+    const ids = new Set(affectedMediaIdsFromJob(job).map(String));
+    if (wantedIds.size && ![...wantedIds].some(id => ids.has(id))) continue;
+    return job;
+  }
+  return null;
+}
+function quickModelInferencePreviewPanel(mediaIds = [], modelName = '') {
+  const job = latestModelInferenceJobForMediaIds(mediaIds, modelName);
+  if (!job) return null;
+  const status = String(job.status || '').toLowerCase();
+  const result = job.result || {};
+  const firstId = String((mediaIds || [])[0] || affectedMediaIdsFromJob(job)[0] || '');
+  const scores = (result.candidate_scores_by_media || {})[firstId] || [];
+  const previewTags = (result.applied_tags_by_media || {})[firstId] || (result.candidate_tags_by_media || {})[firstId] || (result.preview_tags_by_media || {})[firstId] || [];
+  const scoreRows = (scores || []).slice(0, 36).map(row => {
+    const tag = normalizeTag(row?.tag || row?.label || row?.class || '');
+    const score = Number(row?.score ?? row?.confidence ?? row?.probability ?? 0);
+    if (!tag) return null;
+    return el('span', { class: 'chip prediction-score-preview', title: `${tag}: ${(Math.max(0, Math.min(1, score)) * 100).toFixed(1)}%` }, `${tag} ${(Math.max(0, Math.min(1, score)) * 100).toFixed(1)}%`);
+  }).filter(Boolean);
+  return el('div', { class: `quick-model-result-preview ${status}` }, [
+    el('div', { class: 'muted tiny' }, `Last quick model job #${job.id || '?'} · ${status || 'unknown'} · processed ${result.processed ?? '?'} · applied tags ${result.applied_tags ?? 0}`),
+    previewTags.length ? el('div', { class: 'chips open' }, previewTags.slice(0, 48).map(tag => predictionChip(tag, 'unknown', firstId || null, { class: 'chip prediction-preview-chip' }))) : null,
+    scoreRows.length ? el('details', { open: true }, [el('summary', {}, 'Prediction values from the last run'), el('div', { class: 'chips open' }, scoreRows)]) : null
+  ].filter(Boolean));
+}
+
+function hydraModelOptionsControls() {
+  const metric = el('input', { value: state.hydraMetric || 'f1.0@0.1', placeholder: 'Hydra metric f1.0@0.1', style: 'width:140px', oninput: e => { state.hydraMetric = e.target.value; } });
+  const implications = el('select', { onchange: e => { state.hydraImplications = e.target.value; } }, ['inherit','preserve','constrain','enforce','remove','constrain-remove','enforce-inherit','enforce-constrain','enforce-remove','off'].map(v => el('option', { value: v }, v)));
+  implications.value = state.hydraImplications || 'inherit';
+  const serviceUrl = el('input', { value: state.hydraServiceUrl || '', placeholder: 'optional remote Hydra service URL', style: 'min-width:280px', oninput: e => { state.hydraServiceUrl = e.target.value; } });
+  const seqlen = el('input', { type: 'number', min: '64', max: '4096', value: state.hydraSeqlen || 1024, style: 'width:90px', oninput: e => { state.hydraSeqlen = Number(e.target.value || 1024); } });
+  const varlen = el('input', { type: 'checkbox', checked: Boolean(state.hydraVarlen), onchange: e => { state.hydraVarlen = e.target.checked; } });
+  const underscores = el('input', { type: 'checkbox', checked: state.hydraUnderscores ?? (activeTagTextMode() !== 'spaces'), onchange: e => { state.hydraUnderscores = e.target.checked; } });
+  return {
+    wrap: el('details', { class: 'details-card' }, [
+      el('summary', {}, 'Hydra 3.5 advanced/local-remote options'),
+      el('p', { class: 'muted tiny' }, 'These options are used when the selected model is RedRocket Hydra 3.5. Remote service URL lets another device host Hydra service.py so this machine does not spend VRAM on the tagger.'),
+      el('div', { class: 'row' }, [el('label', {}, ['metric ', metric]), el('label', {}, ['implications ', implications]), serviceUrl, el('label', {}, ['NaFlex seqlen ', seqlen]), el('label', {}, [varlen, ' varlen attention']), el('label', {}, [underscores, ' output underscores'])])
+    ]),
+    options: () => ({ hydra_metric: metric.value || 'f1.0@0.1', hydra_implications: implications.value || 'inherit', hydra_service_url: serviceUrl.value.trim(), hydra_seqlen: Number(seqlen.value || 1024), hydra_varlen: varlen.checked, hydra_underscores: underscores.checked })
+  };
+}
+
 function imageTagRatingQuickRunCard(options = {}) {
   const opts = options || {};
   const models = state.models.filter(m => {
@@ -4975,64 +7652,179 @@ function imageTagRatingQuickRunCard(options = {}) {
     return caps.has('tag') || caps.has('rating') || caps.has('classify') || ['tagger','classifier','rating_classifier'].includes(m.kind);
   });
   if (!models.length) return null;
-  const model = el('select', {}, models.map(m => el('option', { value: m.name }, modelLabel(m))));
-  const preferredQuick = models.find(m => m.name === 'redrocket-jtp-3') || models.find(m => m.name === 'redrocket-e6-visual-ratings');
-  rememberSelect('quickModelSelection', model, preferredQuick?.name || '', true);
+  const model = el('select', { class: 'model-category-select quick-model-status-select', 'data-model-live-options': '1', 'data-preserve-selection': '1', title: 'Loaded models have a green highlighted option; downloaded-but-not-loaded models have a blue background; missing models are dimmed.' }, sortedModels(models).map(modelOptionNode));
+  const queueSelect = el('select', { multiple: 'multiple', size: 7, class: 'model-category-select quick-model-status-select quick-model-queue-select', 'data-model-live-options': '1', 'data-preserve-selection': '1', title: 'Ctrl/Cmd-click toggles models; Shift-click selects a range; Ctrl/Cmd+A selects all. Each option updates live as download/load/unload/inference status changes.' }, sortedModels(models).map(modelOptionNode));
+  queueSelect.addEventListener('wheel', e => { e.stopPropagation(); markControlInteraction(queueSelect, 90000); }, { passive:true });
+  queueSelect.addEventListener('focus', () => markControlInteraction(queueSelect, 90000));
+  queueSelect.addEventListener('pointerdown', () => markControlInteraction(queueSelect, 90000));
+  enableRangeMultiSelect(queueSelect, 'quickModelQueueSelection');
+  const queueParallel = el('input', { type: 'checkbox', checked: state.quickModelQueueParallel !== false, onchange: e => { state.quickModelQueueParallel = e.target.checked; } });
+  const preferredQuick = models.find(m => m.name === 'redrocket-hydra-3-5') || models.find(m => m.name === 'redrocket-jtp-3') || models.find(m => m.name === 'redrocket-e6-visual-ratings');
+  rememberSelect('quickModelSelection', model, preferredQuick?.name || '', false);
+  const rememberedQueue = new Set((state.quickModelQueueSelection || []).filter(Boolean));
+  [...queueSelect.options].forEach(o => { if (rememberedQueue.has(o.value)) { o.selected = true; o.dataset.queueSelected = '1'; } });
+  persistQuickModelQueueSelection(queueSelect, [...rememberedQueue]);
+  queueSelect.addEventListener('change', () => { persistQuickModelQueueSelection(queueSelect, quickModelQueueDomSelectedValues(queueSelect)); markControlInteraction(queueSelect, 90000); updateLiveStatusDom(); });
   const selectedModel = () => state.models.find(m => m.name === model.value) || { name: model.value, label: model.value };
-  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: opts.threshold || state.settings.classifier_threshold || 0.35, style: 'width:90px' });
+  const lifecycleMount = el('div', { class: 'quick-model-lifecycle-mount', 'data-role': 'quick-model-lifecycle-mount' });
+  if (!Number.isFinite(Number(state.quickTagThreshold)) || Number(state.quickTagThreshold) <= 0) state.quickTagThreshold = defaultClassifierThreshold();
+  const threshold = el('input', { type: 'number', min: '0.001', max: '1', step: '0.01', value: String(stableThresholdValue(opts.threshold ?? state.quickTagThreshold, defaultClassifierThreshold())), style: 'width:90px', oninput: e => { state.quickTagThreshold = stableThresholdValue(e.target.value, defaultClassifierThreshold()); if (!e.target.value) e.target.value = String(state.quickTagThreshold); }, onchange: e => { state.quickTagThreshold = stableThresholdValue(e.target.value, defaultClassifierThreshold()); e.target.value = String(state.quickTagThreshold); } });
   const topK = el('input', { type: 'number', min: '1', max: '1000', value: opts.topK || 200, style: 'width:90px' });
-  const device = el('input', { value: state.settings.preferred_device || 'auto', placeholder: 'auto/cpu/cuda:0', style: 'width:130px' });
+  const availableGpuIds = () => (state.modelResource?.devices || []).map((d, idx) => Number(String(d.id ?? d.device_id ?? idx).replace(/^cuda:/,''))).filter(Number.isFinite);
+  const defaultGpuIds = (state.quickTagGpuIds && state.quickTagGpuIds.length) ? state.quickTagGpuIds : (state.settings.default_model_device_ids || availableGpuIds().slice(0,1) || []);
+  state.quickTagGpuIds = [...new Set(defaultGpuIds.map(Number).filter(Number.isFinite))];
+  if (!state.quickTagDeviceMode) state.quickTagDeviceMode = availableGpuIds().length ? 'cuda' : 'auto';
+  const deviceMode = el('select', { onchange:e=>{ state.quickTagDeviceMode = e.target.value || 'auto'; updateLiveStatusDom(); } }, ['auto','cpu','cuda'].map(x => el('option', { value:x }, x === 'cuda' ? 'selected CUDA ids' : x)));
+  deviceMode.value = state.quickTagDeviceMode || 'auto';
+  const useLoadedPlacement = el('input', { type:'checkbox', checked: Boolean(state.quickTagUseLoadedPlacement), onchange:e=>{ state.quickTagUseLoadedPlacement = e.target.checked; updateLiveStatusDom(); } });
+  const gpuChecks = availableGpuIds().map(id => {
+    const cb = el('input', { type:'checkbox', checked: state.quickTagGpuIds.includes(id), onchange:e=>{ const set = new Set((state.quickTagGpuIds || []).map(Number)); e.target.checked ? set.add(id) : set.delete(id); state.quickTagGpuIds = [...set].sort((a,b)=>a-b); if (set.size) { state.quickTagDeviceMode = 'cuda'; deviceMode.value = 'cuda'; } updateLiveStatusDom(); } });
+    return el('label', { class:'gpu-id-chip' }, [cb, ` cuda:${id}`]);
+  });
+  const shard = el('select', { onchange:e=>{ state.quickTagShardingStrategy = e.target.value || 'none'; } }, ['none','auto','balanced','balanced_low_0','sequential','custom'].map(x => el('option', { value:x }, x)));
+  shard.value = state.quickTagShardingStrategy || 'none';
+  const deviceValue = (name = '') => {
+    if (state.quickTagUseLoadedPlacement) {
+      const loaded = loadedPlacementForQuickModel(name);
+      if (loaded?.device) return String(loaded.device);
+    }
+    const mode = state.quickTagDeviceMode || 'auto';
+    if (mode === 'cpu') return 'cpu';
+    if (mode === 'auto') return 'auto';
+    const ids = (state.quickTagGpuIds || []).map(Number).filter(Number.isFinite);
+    if (!ids.length) return 'auto';
+    return ids.length === 1 ? `cuda:${ids[0]}` : 'auto';
+  };
+  const placementBody = (name = '') => {
+    const loaded = state.quickTagUseLoadedPlacement ? loadedPlacementForQuickModel(name) : null;
+    const loadedIds = (loaded?.device_ids || loaded?.selected_device_ids || []).map(Number).filter(Number.isFinite);
+    const mode = state.quickTagDeviceMode || 'auto';
+    const ids = loaded ? loadedIds : (mode === 'cuda' ? (state.quickTagGpuIds || []).map(Number).filter(Number.isFinite) : []);
+    const strategy = loaded ? (loaded.sharding_strategy || (loadedIds.length > 1 ? 'auto' : 'none')) : (shard.value || state.quickTagShardingStrategy || (ids.length > 1 ? 'auto' : 'none'));
+    return { device: deviceValue(name), device_ids: ids, sharding_strategy: strategy, tensor_parallel_size: Math.max(1, ids.length || Number(loaded?.tensor_parallel_size || 1) || 1), runtime_engine: settingValueOr('default_model_runtime_engine', 'transformers'), torch_dtype: settingValueOr('default_model_dtype', 'auto'), quantization: settingValueOr('default_model_quantization', 'none'), options:{ tag_profile: state.tagProfile, use_loaded_model_placement: Boolean(state.quickTagUseLoadedPlacement) } };
+  };
   const apply = el('input', { type: 'checkbox', checked: opts.applyDefault !== false });
+  const hydra = hydraModelOptionsControls();
   const ids = () => (opts.getMediaIds ? opts.getMediaIds() : [...state.selected]).filter(Boolean);
+  let runButton = null;
+  const updateQuickLifecycle = async (fetch = false) => {
+    const selected = selectedModel();
+    state.quickModelSelection = selected.name || model.value || '';
+    if (!Number.isFinite(Number(threshold.value)) || Number(threshold.value) <= 0) threshold.value = String(quickTagThresholdValue());
+    primeModelLifecycleForSelection(selected);
+    replaceModelLifecycleStrip(lifecycleMount, selected, true);
+    if (runButton) runButton.disabled = modelBusy(selected, ['download', 'load']);
+    if (fetch) {
+      await refreshModelStatuses(false).catch(() => null);
+      replaceModelLifecycleStrip(lifecycleMount, selectedModel(), true);
+      if (runButton) runButton.disabled = modelBusy(selectedModel(), ['download', 'load']);
+    }
+  };
+  model.addEventListener('change', () => { state.quickModelSelection = model.value || ''; updateQuickLifecycle(true); });
+  setTimeout(() => updateQuickLifecycle(false), 0);
+  requestTagScores((ids() || [])[0], []);
+  const previewPanel = quickModelInferencePreviewPanel(ids(), model.value);
+  const buildQuickRunBody = (name) => {
+    const selectedRow = state.models.find(m => m.name === name) || {};
+    const thresholdValue = stableThresholdValue(threshold.value, defaultClassifierThreshold());
+    threshold.value = String(thresholdValue);
+    return {
+      media_ids: ids(),
+      model_name: name,
+      task: defaultTaskForModelName(name),
+      threshold: thresholdValue,
+      ...placementBody(name),
+      apply_tags: apply.checked,
+      options: { tag_profile: state.tagProfile, tag_text_mode: activeTagTextMode(), order_strategy: state.orderingStrategy || 'booru', top_k: Number(topK.value || 200), max_tags: Number(topK.value || 200), threshold: thresholdValue, apply_model_tag_aliases: true, apply_model_tag_implications: true, quick_tag_surface: true, model_kind: selectedRow.kind || '', ...hydra.options() }
+    };
+  };
+  const selectedQueueNames = () => quickQueueSelectedNames(queueSelect, model.value);
+  runButton = el('button', { class: 'primary', disabled: modelBusy(selectedModel(), ['download', 'load']), onclick: async () => {
+    try {
+      const mediaIds = ids();
+      if (modelBusy(selectedModel(), ['download', 'load'])) throw new Error('Selected model is downloading or loading. Wait for the status circle to finish before running inference.');
+      if (!mediaIds.length) throw new Error('No media selected for model run.');
+      const queued = await queueModelInferenceJobs([model.value], buildQuickRunBody(model.value), { parallel: true, queueScope: 'quick_tag' });
+      replaceModelLifecycleStrip(lifecycleMount, selectedModel(), true);
+      await pollModelRuntimeLive({ force: true }).catch(() => null);
+      toast(`Queued ${model.value} job ${queued[0]?.job_id || ''}. The queue below will update live.`);
+    } catch (err) { toast(err.message, false); }
+  } }, 'Queue Current Tag/Rating Model');
+  const queueButton = el('button', { class: 'secondary', onclick: async () => {
+    try {
+      const mediaIds = ids();
+      if (!mediaIds.length) throw new Error('No media selected for model queue.');
+      const names = selectedQueueNames();
+      for (const name of names) {
+        const row = state.models.find(m => m.name === name) || {};
+        if (modelBusy(row || name, ['download','load'])) throw new Error(`${row.label || name} is downloading or loading. Wait before queueing it.`);
+      }
+      await queueModelInferenceJobs(names, buildQuickRunBody, { parallel: queueParallel.checked, queueScope: 'quick_tag_batch' });
+      await pollModelRuntimeLive({ force: true }).catch(() => null);
+      toast(`Queued ${names.length} quick tag/rating inference job(s).`);
+    } catch (err) { toast(err.message, false); }
+  } }, 'Queue Selected Models');
+  const downloadButton = el('button', { class:'secondary', onclick: async () => {
+    const names = selectedQueueNames();
+    if (!names.length) return toast('Select at least one model to download/update.', false);
+    for (const name of names) await queueModelDownload(state.models.find(m => m.name === name) || { name, label:name, download_supported:true }, false, { noRender:true });
+    await pollModelRuntimeLive({ force:true }).catch(()=>null);
+  } }, 'Queue Download/Update Selected');
+  const loadButton = el('button', { class:'secondary', onclick: async () => {
+    const names = selectedQueueNames();
+    if (!names.length) return toast('Select at least one model to load.', false);
+    for (const name of names) await queueModelLoad(state.models.find(m => m.name === name) || { name, label:name }, { body: () => ({ ...placementBody(name), model_name:name, options:{ tag_profile:state.tagProfile, quick_tag_surface:true } }) });
+    await pollModelRuntimeLive({ force:true }).catch(()=>null);
+  } }, 'Queue Load Selected');
+  const unloadButton = el('button', { class:'secondary', onclick: async () => {
+    const names = selectedQueueNames();
+    if (!names.length) return toast('Select at least one model to unload.', false);
+    const r = await queueModelUnloadMany(names, { parallel: queueParallel.checked, queueScope: 'quick_tag_unload' });
+    await pollModelRuntimeLive({ force:true }).catch(()=>null);
+    toast(`Queued ${r.count || (r.queued || []).length || names.length} unload job(s).`);
+  } }, 'Queue Unload Selected');
   return card(opts.title || 'Quick Tag / Rating Model Run', [
-    el('p', { class: 'muted' }, opts.description || 'Run local/downloaded image taggers or rating classifiers directly on the current item(s). Results are stored as predictions; enable Apply to add emitted labels as tags.'),
-    el('div', { class: 'row' }, [model, el('label', {}, ['threshold', threshold]), el('label', {}, ['top-k', topK]), el('label', {}, ['device', device]), el('label', {}, [apply, ' Apply emitted labels as tags'])]),
-    modelLifecycleStrip(selectedModel(), true),
-    el('button', { class: 'primary', disabled: modelBusy(selectedModel(), ['download', 'load']), onclick: async () => {
-      try {
-        const mediaIds = ids();
-        if (modelBusy(selectedModel(), ['download', 'load'])) throw new Error('Selected model is downloading or loading. Wait for the status circle to finish before running inference.');
-        if (!mediaIds.length) throw new Error('No media selected for model run.');
-        const r = await api('/api/models/run', { method: 'POST', body: {
-          media_ids: mediaIds,
-          model_name: model.value,
-          task: defaultTaskForModelName(model.value),
-          threshold: Number(threshold.value || 0.35),
-          device: device.value || 'auto',
-          apply_tags: apply.checked,
-          options: { top_k: Number(topK.value || 200), max_tags: Number(topK.value || 200), threshold: Number(threshold.value || 0.35) }
-        } });
-        state.lastModelRunJob = r.job_id;
-        toast(`Queued ${model.value} job ${r.job_id}. Staying on this page; use Open Last Model Job if you need full logs.`);
-        await refreshAll();
-        await refreshCompletedModelJobById(r.job_id);
-        render();
-      } catch (err) { toast(err.message, false); }
-    } }, 'Run Selected Tag/Rating Model')
-  ]);
+    el('p', { class: 'muted' }, opts.description || 'Run local/downloaded image taggers or rating classifiers directly on the current item(s). Results are stored as persistent model prediction scores; enable Apply to add only labels at or above the selected threshold.'),
+    el('div', { class: 'row' }, [model, el('label', {}, ['threshold', threshold]), el('label', {}, ['top-k', topK]), el('label', {}, [apply, ' Apply emitted labels as tags'])]),
+    el('div', { class: 'quick-tag-gpu-controls row wrap' }, [el('span', { class:'muted tiny' }, 'Placement:'), el('label', {}, ['mode ', deviceMode]), ...(gpuChecks.length ? gpuChecks : [el('span', { class:'muted tiny' }, 'No CUDA devices reported yet')]), el('label', {}, ['shard ', shard]), el('label', { title:'When enabled, inference uses the device/shard placement of already-loaded model instances instead of the currently selected CUDA/CPU controls.' }, [useLoadedPlacement, ' use loaded placement/device'])]),
+    el('div', { class: 'model-dropdown-legend muted tiny' }, [el('span', { class: 'legend-dot loaded' }, 'loaded/ready'), el('span', { class: 'legend-dot downloaded' }, 'downloaded'), el('span', { class: 'legend-dot missing' }, 'not downloaded')]),
+    hydra.wrap,
+    lifecycleMount,
+    el('details', { class: 'details-card quick-model-queue-controls', open: Boolean(state.quickModelQueueSelection?.length) }, [
+      el('summary', {}, 'Queue multiple quick tag/rating models'),
+      el('p', { class: 'muted tiny' }, 'Ctrl/Cmd-click toggles models, Shift-click selects ranges, and Ctrl/Cmd+A selects all. Download, load, unload, and inference statuses patch live per model without waiting for the whole queue to finish.'),
+      queueSelect,
+      el('div', { class: 'row tight wrap' }, [el('label', { title:'When enabled, submit all selected queue requests at once. When disabled, submit them one by one but keep every queued row visible.' }, [queueParallel, ' submit queue requests in parallel']), downloadButton, loadButton, unloadButton, queueButton])
+    ]),
+    el('div', { class: 'muted tiny', 'data-model-resource-summary': 'quick' }, systemRamLine(state.modelResource)),
+    modelJobQueuePanel({ scope: 'quick', title: 'Quick Tag Model Queue', mediaIds: ids(), quickOnly: true, includeRecent: true, modelNames: [...new Set([model.value, ...(state.quickModelQueueSelection || [])].filter(Boolean))], emptyText: 'No active quick tag/rating model jobs for this image/selection.' }),
+    previewPanel,
+    runButton
+  ].filter(Boolean));
 }
-
 
 function quickCurationModelRunCard(options = {}) {
   const title = options.title || 'Quick Tag / Rating Model Run';
-  const description = options.description || 'Run downloaded/local taggers and rating classifiers directly on the current target set. JTP-3 outputs tags; e6 visual ratings outputs rating classes.';
+  const description = options.description || 'Run downloaded/local taggers and rating classifiers directly on the current target set. Hydra 3.5, JTP-3, and legacy EVA/EfficientNet taggers output tags; e6 visual ratings outputs rating classes.';
   const getMediaIds = options.getMediaIds || (() => [...state.selected]);
   const filter = m => {
     const caps = new Set(m.capabilities || []);
     return caps.has('tag') || caps.has('rating') || caps.has('multilabel') || caps.has('classify') || ['tagger','rating','classifier'].includes(m.kind);
   };
   const model = el('select', {}, modelOptions(filter));
-  const preferredCuration = state.models.filter(filter).find(m => m.name === 'redrocket-jtp-3') || state.models.filter(filter).find(m => m.name === 'redrocket-e6-visual-ratings');
+  const preferredCuration = state.models.filter(filter).find(m => m.name === 'redrocket-hydra-3-5') || state.models.filter(filter).find(m => m.name === 'redrocket-jtp-3') || state.models.filter(filter).find(m => m.name === 'redrocket-e6-visual-ratings');
   rememberSelect('curationModelSelection', model, preferredCuration?.name || '', true);
   const selectedModel = () => state.models.find(m => m.name === model.value) || { name: model.value, label: model.value };
-  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: String(state.settings.classifier_threshold ?? 0.35) });
+  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: String(defaultClassifierThreshold()) });
   const topK = el('input', { type: 'number', min: '1', max: '1000', value: '75', title: 'Maximum labels/tags to keep from the model output' });
   const applyTags = el('input', { type: 'checkbox' });
+  const hydra = hydraModelOptionsControls();
   const rt = modelRuntimeControls();
   return card(title, [
     el('p', { class: 'muted' }, description),
     el('div', { class: 'muted tiny' }, `Target: ${(getMediaIds() || []).length} media item(s)`),
     el('div', { class: 'row' }, [model, el('label', {}, ['Threshold', threshold]), el('label', {}, ['Top-K', topK]), el('label', {}, [applyTags, ' Apply predicted tags/ratings'])]),
+    hydra.wrap,
     modelLifecycleStrip(selectedModel(), true),
     el('div', { class: 'row' }, [rt.device, rt.gpuIds, rt.shard, rt.dtype, rt.quant, rt.runtime, rt.parallel]),
     rt.maxMemory,
@@ -5042,7 +7834,7 @@ function quickCurationModelRunCard(options = {}) {
         const mediaIds = [...new Set((getMediaIds() || []).map(Number).filter(Boolean))];
         if (!mediaIds.length) throw new Error('No target media selected.');
         const selected = state.models.find(m => m.name === model.value) || {};
-        const task = model.value === 'redrocket-jtp-3' ? 'tag' : (selected.kind === 'rating' ? 'rating' : (selected.kind === 'captioner' ? 'caption' : 'tag'));
+        const task = (model.value === 'redrocket-jtp-3' || model.value === 'redrocket-hydra-3-5') ? 'tag' : (selected.kind === 'rating' ? 'rating' : (selected.kind === 'captioner' ? 'caption' : 'tag'));
         setOptimisticModelStage(model.value, 'load', modelLoaded(model.value) ? 'completed' : 'running', modelLoaded(model.value) ? 1 : 0.03, modelLoaded(model.value) ? 'Model already loaded for tag selection' : 'Auto-loading selected model for tag selection');
         setOptimisticModelStage(model.value, 'inference', 'running', 0.01, 'Tag-selection request sent');
         updateLiveStatusDom();
@@ -5051,18 +7843,19 @@ function quickCurationModelRunCard(options = {}) {
           media_ids: mediaIds,
           model_name: model.value,
           task,
-          threshold: Number(threshold.value || 0.35),
+          threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD),
           apply_tags: applyTags.checked,
           apply_caption: false,
           ...runtimeBodyFromControls(rt),
           parallel_workers: Number(rt.parallel.value || 1),
-          options: { tag_profile: state.tagProfile, top_k: Number(topK.value || 75) }
+          options: { tag_profile: state.tagProfile, tag_text_mode: activeTagTextMode(), order_strategy: state.orderingStrategy || 'booru', apply_model_tag_aliases: true, apply_model_tag_implications: true, top_k: Number(topK.value || 75), max_tags: Number(topK.value || 75), ...hydra.options() }
         };
         const r = await api('/api/models/run', { method: 'POST', body });
         state.lastModelRunJob = r.job_id;
+        watchModelInferenceJob(r.job_id, mediaIds);
         toast(`Model job ${r.job_id} queued. Staying on this page.`);
-        await refreshAll();
-        await refreshCompletedModelJobById(r.job_id);
+        await waitForModelInferenceJob(r.job_id, mediaIds, { maxMs: 10 * 60 * 1000 });
+        await refreshModelStatuses(false).catch(() => {});
         render();
       } catch (err) { toast(err.message, false); }
     } }, 'Run Tag/Rating Model')
@@ -5104,7 +7897,7 @@ function orchestratorPlannerCard(contextLabel = 'assistant') {
       el('button', { class: 'secondary', onclick: async () => { try { state.assistantConfig = await api('/api/models/assistant-config', { method: 'PUT', body: { orchestrator_model_name: orchestrator.value, assistant_allow_orchestration: true } }); state.settings.orchestrator_model_name = state.assistantConfig.orchestrator_model_name; state.settings.assistant_allow_orchestration = true; toast(`${orchestrator.value} assigned as orchestrator`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Assign Selected Orchestrator'),
       el('button', { class: 'primary', onclick: async () => { try { const targetNames = [...modelPick.selectedOptions].map(o => o.value); const taskNames = [...tasks.selectedOptions].map(o => o.value); state.orchestratorPlan = await api('/api/models/orchestrator/plan', { method: 'POST', body: { orchestrator_model_name: orchestrator.value, target_model_names: targetNames, tasks: taskNames, context: contextLabel, media_ids: selectedMediaIds(), device_ids: parseGpuIds(gpuIds.value), sharding_strategy: shard.value, torch_dtype: dtype.value, quantization: quant.value, require_user_approval: true, max_models: 16 } }); toast(`Planner returned ${state.orchestratorPlan.recommendations?.length || 0} recommendation(s)`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Recommend Models + GPUs'),
       el('label', {}, [approved, ' I reviewed and approve queueing runnable recommendations']),
-      el('button', { class: 'danger', disabled: !recommendations.length, onclick: async () => { try { if (!approved.checked) throw new Error('Check user approval before queueing orchestrator-planned model runs.'); const runs = (state.orchestratorPlan?.recommendations || []).filter(r => r.can_load !== false && r.queue_supported !== false).map(r => ({ model_name: r.model_name, task: taskForOrchestratorRecommendation(r), media_ids: selectedMediaIds(), threshold: state.settings.classifier_threshold || 0.35, apply_tags: false, apply_caption: false, device: 'auto', device_ids: (r.placement?.device_ids || r.placement?.selected_device_ids || []).map(Number).filter(Number.isFinite), sharding_strategy: r.placement?.sharding_strategy || shard.value || 'none', torch_dtype: dtype.value || 'auto', quantization: quant.value || 'none', runtime_engine: state.settings.default_model_runtime_engine || 'transformers', tensor_parallel_size: Math.max(1, (r.placement?.device_ids || []).length || 1), options: { orchestrated_by: orchestrator.value, tag_profile: state.tagProfile } })); if (!runs.length) throw new Error('No runnable recommendations are available to queue.'); const queued = await api('/api/models/orchestrator/queue-runs', { method: 'POST', body: { orchestrator_model_name: orchestrator.value, user_approved: true, runs } }); toast(`Queued ${queued.count} orchestrator-approved model run(s)`); await refreshAll(); setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Queue Approved Recommendations')
+      el('button', { class: 'danger', disabled: !recommendations.length, onclick: async () => { try { if (!approved.checked) throw new Error('Check user approval before queueing orchestrator-planned model runs.'); const runs = (state.orchestratorPlan?.recommendations || []).filter(r => r.can_load !== false && r.queue_supported !== false).map(r => ({ model_name: r.model_name, task: taskForOrchestratorRecommendation(r), media_ids: selectedMediaIds(), threshold: defaultClassifierThreshold(), apply_tags: false, apply_caption: false, device: 'auto', device_ids: (r.placement?.device_ids || r.placement?.selected_device_ids || []).map(Number).filter(Number.isFinite), sharding_strategy: r.placement?.sharding_strategy || shard.value || 'none', torch_dtype: dtype.value || 'auto', quantization: quant.value || 'none', runtime_engine: state.settings.default_model_runtime_engine || 'transformers', tensor_parallel_size: Math.max(1, (r.placement?.device_ids || []).length || 1), options: { orchestrated_by: orchestrator.value, tag_profile: state.tagProfile } })); if (!runs.length) throw new Error('No runnable recommendations are available to queue.'); const queued = await api('/api/models/orchestrator/queue-runs', { method: 'POST', body: { orchestrator_model_name: orchestrator.value, user_approved: true, runs } }); for (const row of (queued.queued || [])) { if (row.job_id) { const modelName = row.model_name; setOptimisticModelStage(modelName, 'inference', 'queued', 0, `Queued by orchestrator ${orchestrator.value}`); watchModelInferenceJob(row.job_id, selectedMediaIds()); } } state.jobs = await api('/api/jobs', { cache:'no-store' }).catch(() => state.jobs); await pollModelRuntimeLive({ force:true }).catch(() => null); toast(`Queued ${queued.count} orchestrator-approved model run(s). Watch Agent Tools or Jobs for live progress.`); updateLiveStatusDom(); } catch (err) { toast(err.message, false); } } }, 'Queue Approved Recommendations')
     ]),
     recommendations.length ? el('div', { class: 'orchestrator-recommendations' }, recommendations.map(rec => { const info = modelCategoryDisplay(rec); const errors = rec.errors || []; return el('div', { class: `orchestrator-rec ${errors.length ? 'blocked' : 'ok'}`, style: `--model-category-color:${info.color};` }, [el('strong', {}, `${rec.label || rec.model_name} · ${rec.kind || 'model'}`), el('div', { class: 'muted tiny' }, rec.recommendation || ''), el('div', { class: 'tiny' }, `GPU(s): ${(rec.placement?.device_ids || rec.placement?.selected_device_ids || []).map(x => 'cuda:' + x).join(', ') || 'none/API/CPU'} · can load: ${rec.can_load !== false}`), errors.length ? el('div', { class: 'bad tiny' }, errors.join(' ')) : null].filter(Boolean)); })) : (state.orchestratorPlan ? el('pre', { class: 'log' }, JSON.stringify(state.orchestratorPlan, null, 2)) : null)
   ].filter(Boolean));
@@ -5143,8 +7936,11 @@ function inlineOrchestratorControls(modelSelect, contextLabel = 'assistant') {
 
 
 function inlineSelectedModelRuntimeControls(modelSelect, rt, contextLabel = 'assistant') {
-  const m = (state.models || []).find(row => row.name === modelSelect.value) || { name: modelSelect.value, label: modelSelect.value, capabilities: [] };
-  if (!m?.name) return null;
+  const selectedName = (typeof modelSelect === 'string' ? modelSelect : String(modelSelect?.value || '')).trim();
+  const fallbackName = selectedName || state.assistantConfig?.assistant_model_name || state.settings?.assistant_model_name || state.graphEditorAssistantModel || 'dataset-assistant';
+  const m = (state.models || []).find(row => row.name === selectedName || row.name === fallbackName) || { name: fallbackName, label: fallbackName, capabilities: [], kind: 'assistant', provider: 'local/configured' };
+  rt = rt || modelRuntimeControls();
+  if (!m?.name || !rt) return null;
   const downloadActive = stageActive(m, 'download');
   const loadActive = stageActive(m, 'load');
   const inferenceActive = stageActive(m, 'inference');
@@ -5167,7 +7963,7 @@ function inlineSelectedModelRuntimeControls(modelSelect, rt, contextLabel = 'ass
       el('button', { class: 'secondary small', disabled: !m.download_supported || downloadActive || loadActive, onclick: async () => { await queueModelDownload(m, false); } }, m.downloaded ? 'Queue Update' : 'Queue Download'),
       el('button', { class: 'primary small', disabled: downloadActive || loadActive || isLoaded, onclick: async () => { await queueModelLoad(m, placementControls); } }, isLoaded ? 'Loaded' : 'Load Into Memory'),
       el('button', { class: 'secondary small', disabled: loadActive || inferenceActive, onclick: async () => { try { await api('/api/models/offload-cpu', { method: 'POST', body: { model_name: m.name } }); await refreshAll(); toast(`Moved ${m.label || m.name} to CPU RAM where supported`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Offload CPU'),
-      el('button', { class: 'secondary small', disabled: loadActive || inferenceActive, onclick: async () => { try { const r = await api('/api/models/unload', { method: 'POST', body: { model_name: m.name } }); await refreshAll(); toast(r.job_id ? `Unload queued as job ${r.job_id}` : (r.message || `No loaded adapter for ${m.label || m.name}`)); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Unload'),
+      el('button', { class: 'secondary small', disabled: loadActive || inferenceActive, onclick: async () => { try { await queueModelUnload(m); } catch (err) { toast(err.message, false); } } }, 'Unload'),
       el('button', { class: 'secondary small', onclick: async () => { try { state.modelPlacementPlans[m.name] = await api('/api/models/placement/plan', { method: 'POST', body: placementControls.body() }); toast('Placement check updated'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Check VRAM')
     ]),
     state.modelPlacementPlans?.[m.name] ? el('div', { class: `tiny ${state.modelPlacementPlans[m.name].errors?.length ? 'bad-text' : 'ok-text'}` }, planStatusText(state.modelPlacementPlans[m.name])) : null
@@ -5399,7 +8195,7 @@ function agentDebugLogsPanel(compact = false) {
 }
 
 function agentToolsView() {
-  const model = el('select', {}, agentToolModelOptions());
+  const model = el('select', { class: 'model-category-select', 'data-model-live-options': '1' }, agentToolModelOptions());
   const preferred = (state.models || []).find(m => m.name === state.agentModelSelection) || (state.models || []).find(m => m.name === state.assistantConfig?.orchestrator_model_name) || (state.models || []).find(m => m.name === 'dataset-assistant') || (state.models || [])[0];
   rememberSelect('agentModelSelection', model, preferred?.name || 'dataset-assistant', false);
   model.addEventListener('change', () => { state.agentModelSelection = model.value || ''; primeModelLifecycleForSelection(model.value); updateLiveStatusDom(); });
@@ -5420,6 +8216,17 @@ function agentToolsView() {
   const useProfile = el('input', { type: 'checkbox', checked: Boolean(state.agentUseExistingProfile), onchange: e => { state.agentUseExistingProfile = e.target.checked; } });
   const plan = state.agentPlan?.plan || null;
   const lastJob = state.agentLastResult?.job_id ? (state.jobs || []).find(j => Number(j.id) === Number(state.agentLastResult.job_id)) : null;
+  const agentQueueSelect = el('select', { multiple: 'multiple', size: 9, class: 'model-category-select', 'data-model-live-options': '1', title: 'All loaded/downloaded/missing model states update live here while model jobs run.' }, sortedModels(state.models).map(modelOptionNode));
+  const rememberedAgentQueue = new Set((state.agentModelQueueSelection || []).filter(Boolean));
+  [...agentQueueSelect.options].forEach(o => { if (rememberedAgentQueue.has(o.value)) o.selected = true; });
+  agentQueueSelect.addEventListener('change', () => { state.agentModelQueueSelection = [...agentQueueSelect.selectedOptions].map(o => o.value); });
+  const agentQueueTask = el('select', { onchange: e => { state.agentModelQueueTask = e.target.value; } }, ['tag','caption','classify','rating','embed','segment','caption_split'].map(x => el('option', { value: x }, x)));
+  agentQueueTask.value = state.agentModelQueueTask || 'tag';
+  const agentQueueParallel = el('input', { type: 'checkbox', checked: state.agentModelQueueParallel !== false, onchange: e => { state.agentModelQueueParallel = e.target.checked; } });
+  const agentQueueApplyTags = el('input', { type: 'checkbox', checked: false });
+  const agentQueueApplyCaption = el('input', { type: 'checkbox', checked: false });
+  const agentQueueMedia = el('input', { value: selectedMediaIds().join(','), placeholder: 'media ids, comma-separated; blank uses selected media', style: 'min-width:260px' });
+  const agentQueueThreshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: defaultClassifierThreshold(), style: 'width:90px' });
   return el('div', { class: 'grid' }, [
     card('Agent Tools: Function-Calling Runtime for the Assistant/Orchestrator', [
       el('p', { class: 'muted' }, 'This implements the standard tool pipeline: tool definitions → structured JSON/tool-call proposal → user approval → secure local execution → result/log relay back through jobs. It is available here and inside assistant panels on Tag Editor, Compare, Batch Tags, Code Assistant, and Assistant.'),
@@ -5427,6 +8234,30 @@ function agentToolsView() {
       modelLifecycleStrip(selectedModel(), true),
       inlineSelectedModelRuntimeControls(model, rt, 'agent-tools'),
       state.agentStatus ? el('pre', { class: 'log compact' }, JSON.stringify({ workspace: state.agentStatus.workspace, allowed_roots: state.agentStatus.allowed_roots, sandbox_mode: state.agentStatus.sandbox_mode, docker_available: state.agentStatus.docker_available, require_user_approval: state.agentStatus.require_user_approval, enable_approved_coa_execution: state.agentStatus.enable_approved_coa_execution, tool_binaries: state.agentStatus.tool_binaries, smoke_test: state.agentStatus.smoke_test }, null, 2)) : null
+    ]),
+    card('Live Model Queue / Agent-Orchestrated Model Jobs', [
+      el('p', { class: 'muted' }, 'This is the global model-job queue visible to the assistant/orchestrator. It includes model load/download/inference jobs from user actions, quick tagging, graph workflows, and approved agent plans. Status updates patch in place without changing tabs.'),
+      el('div', { class: 'muted tiny', 'data-model-resource-summary': 'agent' }, systemRamLine(state.modelResource)),
+      modelJobQueuePanel({ scope: 'agent', title: 'All Model/Agent Job Queue', mediaIds: null, quickOnly: false, emptyText: 'No active model jobs. Queue model runs below or through an approved orchestrator plan.' }),
+      el('details', { class: 'details-card' }, [
+        el('summary', {}, 'Queue explicit model runs from Agent Tools'),
+        el('p', { class: 'muted tiny' }, 'Use this for direct testing or for a user-approved assistant/supervisor plan. For LLM/VLM/GLM rows, choose the task that matches the adapter capability. Completed jobs are removed from the active queue list but remain available in Jobs.'),
+        agentQueueSelect,
+        el('div', { class: 'row tight' }, [agentQueueTask, el('label', {}, ['threshold ', agentQueueThreshold]), el('label', {}, ['media ', agentQueueMedia])]),
+        el('div', { class: 'row tight' }, [el('label', {}, [agentQueueParallel, ' enqueue in parallel']), el('label', {}, [agentQueueApplyTags, ' apply tags']), el('label', {}, [agentQueueApplyCaption, ' apply caption'])]),
+        el('button', { class: 'primary', onclick: async () => { try {
+          const names = [...agentQueueSelect.selectedOptions].map(o => o.value);
+          if (!names.length) throw new Error('Select at least one model to queue.');
+          const parsedIds = String(agentQueueMedia.value || '').split(/[,;\s]+/).map(x => Number(x)).filter(Number.isFinite);
+          const mediaIds = parsedIds.length ? parsedIds : selectedMediaIds();
+          if (!mediaIds.length) throw new Error('Select media or enter media ids before queueing model inference.');
+          state.agentModelQueueSelection = names;
+          const body = { media_ids: mediaIds, task: agentQueueTask.value || 'tag', threshold: Number(agentQueueThreshold.value || DEFAULT_CLASSIFIER_THRESHOLD), apply_tags: agentQueueApplyTags.checked, apply_caption: agentQueueApplyCaption.checked, ...runtimeBodyFromControls(rt), options: { tag_profile: state.tagProfile, tag_text_mode: activeTagTextMode(), order_strategy: state.orderingStrategy || 'booru', queued_by: model.value || 'dataset-assistant', queued_surface: 'Agent Tools', user_approved: true } };
+          await queueModelInferenceJobs(names, body, { parallel: agentQueueParallel.checked, queueScope: 'agent_tools' });
+          await pollModelRuntimeLive({ force: true }).catch(() => null);
+          toast(`Queued ${names.length} model job(s) from Agent Tools.`);
+        } catch (err) { toast(err.message, false); } } }, 'Queue Selected Model Runs')
+      ])
     ]),
     card('Plan First', [el('p', { class: 'muted tiny' }, 'The planner now explicitly decides whether the task needs no tool, an app/GUI action, external local tools, model delegation, or a mixed COA. No-tool tasks should answer normally instead of fabricating actions.'), goal, context, el('div', { class: 'row' }, [
       el('button', { class: 'primary', onclick: async () => { try { const r = await api('/api/agent-tools/plan', { method: 'POST', body: { goal: goal.value, context: context.value, model_name: model.value || 'dataset-assistant', surface: 'Agent Tools', ...runtimeBodyFromControls(rt), options: { max_new_tokens: 2048, auto_continue_incomplete: true, ...reasoningOptionsFromControls(null, { min_chat_max_new_tokens: 2048 }) } } }); state.agentPlan = r; state.agentConversationId = r.conversation_id || state.agentConversationId; toast('Tool-use assessment/plan generated'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Assess / Generate Plan If Needed'),
@@ -5465,11 +8296,12 @@ function remoteDevicesView() {
   const apiPort = el('input', { type: 'number', value: draft.worker_api_port || 7865, oninput: e => { state.remoteDeviceDraft.worker_api_port = Number(e.target.value || 7865); } });
   const platform = el('select', { onchange: e => { state.remoteDeviceDraft.platform = e.target.value; } }, ['linux','windows','macos','unknown'].map(v => el('option', { value: v }, v)));
   platform.value = draft.platform || 'linux';
-  const workerMode = el('select', { onchange: e => { state.remoteDeviceDraft.worker_mode = e.target.value; } }, [['full','full app'], ['lite','lite / low-memory'], ['downloader-only','downloader-only worker']].map(([v,l]) => el('option', { value: v }, l)));
+  const workerMode = el('select', { onchange: e => { state.remoteDeviceDraft.worker_mode = e.target.value; } }, [['full','full app'], ['lite','lite / low-memory'], ['downloader-only','downloader-only worker'], ['model-worker','model-worker / model inference'], ['hydra-tagger','Hydra tagger service']].map(([v,l]) => el('option', { value: v }, l)));
   workerMode.value = draft.worker_mode || 'full';
   const enabled = el('input', { type: 'checkbox', checked: draft.enabled !== false, onchange: e => { state.remoteDeviceDraft.enabled = e.target.checked; } });
   const allowShell = el('input', { type: 'checkbox', checked: Boolean(draft.allow_remote_shell), onchange: e => { state.remoteDeviceDraft.allow_remote_shell = e.target.checked; } });
   const allowScp = el('input', { type: 'checkbox', checked: draft.allow_scp !== false, onchange: e => { state.remoteDeviceDraft.allow_scp = e.target.checked; } });
+  const capsInput = el('input', { value: (draft.capabilities || []).join(', '), placeholder: 'capabilities: downloader, model, hydra, inference', style: 'min-width:360px', oninput: e => { state.remoteDeviceDraft.capabilities = e.target.value.split(',').map(x => x.trim()).filter(Boolean); } });
   const notes = el('textarea', { rows: 2, value: draft.notes || '', placeholder: 'notes/capabilities, e.g. Jetson Orin Nano, low RAM, downloads only', oninput: e => { state.remoteDeviceDraft.notes = e.target.value; } });
   const selected = remoteDeviceSelect({ onchange: e => { const n = nodes.find(x => x.name === e.target.value); if (n) { state.remoteDeviceDraft = { ...n }; render(true, true); } } });
   const selectedForAction = remoteDeviceSelect({ onchange: e => { state.remoteActionNode = e.target.value; } });
@@ -5498,7 +8330,7 @@ function remoteDevicesView() {
     ])))
   ]);
   const upsertPayload = () => ({
-    name: name.value.trim(), host: host.value.trim(), username: username.value.trim(), port: Number(port.value || 22), base_url: baseUrl.value.trim(), ssh_key_path: keyPath.value.trim(), remote_root: remoteRoot.value.trim() || '~/DataCurationToolRemote', remote_project_path: remoteProject.value.trim(), remote_output_dir: remoteOutput.value.trim(), conda_env: condaEnv.value.trim(), python_command: pythonCmd.value.trim() || 'python', worker_api_port: Number(apiPort.value || 7865), platform: platform.value, worker_mode: workerMode.value, enabled: enabled.checked, allow_remote_shell: allowShell.checked, allow_scp: allowScp.checked, notes: notes.value.trim(), role: 'worker', capabilities: []
+    name: name.value.trim(), host: host.value.trim(), username: username.value.trim(), port: Number(port.value || 22), base_url: baseUrl.value.trim(), ssh_key_path: keyPath.value.trim(), remote_root: remoteRoot.value.trim() || '~/DataCurationToolRemote', remote_project_path: remoteProject.value.trim(), remote_output_dir: remoteOutput.value.trim(), conda_env: condaEnv.value.trim(), python_command: pythonCmd.value.trim() || 'python', worker_api_port: Number(apiPort.value || 7865), platform: platform.value, worker_mode: workerMode.value, enabled: enabled.checked, allow_remote_shell: allowShell.checked, allow_scp: allowScp.checked, notes: notes.value.trim(), role: 'worker', capabilities: capsInput.value.split(',').map(x => x.trim()).filter(Boolean)
   });
   return el('div', { class: 'grid' }, [
     card('Remote Devices / Dispatch Workers', [
@@ -5511,6 +8343,7 @@ function remoteDevicesView() {
       el('div', { class: 'row' }, [host, username, el('label', {}, ['port ', port]), baseUrl]),
       el('div', { class: 'row' }, [keyPath, remoteRoot, remoteProject]),
       el('div', { class: 'row' }, [remoteOutput, condaEnv, pythonCmd, el('label', {}, ['API port ', apiPort])]),
+      capsInput,
       el('div', { class: 'row' }, [el('label', {}, [allowShell, ' allow approved SSH shell commands']), el('label', {}, [allowScp, ' allow approved SCP transfer/merge'])]),
       notes,
       el('div', { class: 'row' }, [
@@ -5527,6 +8360,12 @@ function remoteDevicesView() {
         el('button', { class: 'primary', onclick: async () => { try { if (!selectedForAction.value) throw new Error('Select a remote device first.'); state.distributedOutput = await api('/api/distributed/start-tool', { method: 'POST', body: { name: selectedForAction.value, user_approved: approved.checked, worker_mode: workerMode.value || 'full' } }); toast('Remote worker start command sent'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Start Tool on Device')
       ])
     ]),
+
+    card('Hydra 3.5 Remote Service', [
+      el('p', { class: 'muted tiny' }, 'Start RedRocket Hydra service.py on a selected remote device. Then paste the endpoint into Hydra model options as hydra_service_url so tagging runs off-device.'),
+      el('div', { class: 'row' }, [selectedForAction, el('label', {}, ['port ', el('input', { type: 'number', value: state.remoteHydraPort || 8080, min: 1, max: 65535, oninput: e => { state.remoteHydraPort = Number(e.target.value || 8080); } })]), el('label', {}, ['device ', el('input', { value: state.remoteHydraDevice || 'cuda', style: 'width:100px', oninput: e => { state.remoteHydraDevice = e.target.value; } })]), el('label', {}, ['batch ', el('input', { type: 'number', value: state.remoteHydraBatch || 1, min: 1, max: 128, style: 'width:70px', oninput: e => { state.remoteHydraBatch = Number(e.target.value || 1); } })])]),
+      el('div', { class: 'row' }, [el('input', { value: state.remoteHydraRepoPath || '', placeholder: 'remote Hydra repo path; blank uses ~/DataCurationToolRemote/models/RedRocket_Hydra', style: 'min-width:520px', oninput: e => { state.remoteHydraRepoPath = e.target.value; } }), el('button', { class: 'primary', onclick: async () => { try { if (!selectedForAction.value) throw new Error('Select a remote device first.'); state.distributedOutput = await api('/api/distributed/start-hydra-service', { method: 'POST', body: { name: selectedForAction.value, user_approved: approved.checked, port: Number(state.remoteHydraPort || 8080), hydra_repo_path: state.remoteHydraRepoPath || '', device: state.remoteHydraDevice || 'cuda', batch_size: Number(state.remoteHydraBatch || 1), seqlen: 1024, varlen: false } }); toast('Hydra service start command sent'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Start Hydra Service')])
+    ]),
     card('SCP Upload / Download / Merge-back', [
       el('p', { class: 'muted tiny' }, 'Use SCP to copy a project/package to a configured device, retrieve outputs, or merge remote worker outputs back into this main node.'),
       el('div', { class: 'row' }, [scpLocal, scpRemote, el('label', {}, [approvedScp, ' approve SCP action'])]),
@@ -5535,6 +8374,29 @@ function remoteDevicesView() {
         el('button', { class: 'secondary', onclick: async () => { try { if (!selectedForAction.value) throw new Error('Select a remote device first.'); state.distributedOutput = await api('/api/distributed/scp-download', { method: 'POST', body: { name: selectedForAction.value, local_path: scpLocal.value, remote_path: scpRemote.value, recursive: true, user_approved: approvedScp.checked } }); toast('SCP download finished'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Download Remote → Local')
       ]),
       el('div', { class: 'row' }, [mergeRemote, mergeRunId, el('button', { class: 'primary', onclick: async () => { try { const names = selectedForAction.value ? [selectedForAction.value] : []; state.distributedOutput = await api('/api/distributed/merge-back', { method: 'POST', body: { node_names: names, remote_path: mergeRemote.value.trim() || null, run_id: mergeRunId.value.trim() || null, user_approved: approvedScp.checked } }); toast('Merge-back finished'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Merge Back Outputs')])
+    ]),
+
+    card('Remote Model Run Dispatch', [
+      el('p', { class: 'muted tiny' }, 'Split model/tagger inference across configured worker URLs. Useful for Hydra/JTP/e6 tagging on devices that should use their own GPUs/CPU/RAM settings.'),
+      (() => {
+        const mdl = el('select', {}, modelOptions(curationModelFilter)); mdl.value = 'redrocket-hydra-3-5';
+        const idsBox = el('textarea', { rows: 2, style: 'width:100%', placeholder: 'media ids, comma/newline separated', value: state.remoteModelMediaIds || '', oninput: e => { state.remoteModelMediaIds = e.target.value; } });
+        const workers = el('select', { multiple: 'multiple', size: '4' }, remoteWorkerOptions());
+        const includeLocal = el('input', { type: 'checkbox', checked: false });
+        const applyTags = el('input', { type: 'checkbox', checked: true });
+        const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: DEFAULT_CLASSIFIER_THRESHOLD, style: 'width:90px' });
+        const topK = el('input', { type: 'number', min: '1', max: '1000', value: 250, style: 'width:90px' });
+        const runBody = () => ({ model_name: mdl.value || 'redrocket-hydra-3-5', task: defaultTaskForModelName(mdl.value), media_ids: idsBox.value.split(/[\s,;]+/).map(x => Number(x)).filter(Boolean), threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD), apply_tags: applyTags.checked, options: { top_k: Number(topK.value || 250), max_tags: Number(topK.value || 250), hydra_metric: state.hydraMetric || 'f1.0@0.1', hydra_implications: state.hydraImplications || 'inherit', hydra_service_url: state.hydraServiceUrl || '' } });
+        return el('div', {}, [
+          el('div', { class: 'row' }, [mdl, el('label', {}, ['threshold ', threshold]), el('label', {}, ['top_k ', topK]), el('label', {}, [applyTags, ' apply tags']), el('label', {}, [includeLocal, ' include local shard'])]),
+          idsBox,
+          workers,
+          el('div', { class: 'row' }, [
+            el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/distributed/model-run-plan', { method: 'POST', body: { payload: runBody(), node_names: selectedRemoteWorkerNames(workers), include_local: includeLocal.checked } }); state.distributedOutput = r; toast(`Planned ${r.worker_count || 0} model shard(s)`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Plan Model Shards'),
+            el('button', { class: 'primary', onclick: async () => { try { const r = await api('/api/distributed/model-run-dispatch', { method: 'POST', body: { payload: runBody(), node_names: selectedRemoteWorkerNames(workers), include_local: includeLocal.checked, parallel: true } }); state.distributedOutput = r; toast(`Dispatched model run to ${(r.remote_results || []).length} remote worker(s)`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Dispatch Model Run')
+          ])
+        ]);
+      })()
     ]),
     card('Latest Remote / Dispatch Result', [state.distributedOutput ? el('pre', { class: 'log full-log' }, JSON.stringify(state.distributedOutput, null, 2)) : el('p', { class: 'muted' }, 'No remote action result yet.')])
   ]);
@@ -5572,7 +8434,7 @@ function mcpToolsView() {
   })) : el('p', { class: 'muted' }, 'MCP status has not loaded yet.');
   return el('div', { class: 'grid' }, [
     card('Creative Tool MCP Control Plane', [
-      el('p', { class: 'muted' }, 'Blender, Krita, Audacity, OBS Studio, and ComfyUI are enabled by default when the app detects the executable or endpoint. Missing tools remain listed with manual steps so setup is explicit.'),
+      el('p', { class: 'muted' }, 'Blender, Krita, Audacity, OBS Studio, ComfyUI, ZBrush, slicers, trainers, Hydra, and local internet browsers are enabled by default when detected. Missing tools remain listed with manual steps so setup is explicit.'),
       summary,
       el('div', { class: 'row' }, [
         el('button', { class: 'secondary', onclick: async () => { try { state.mcpToolStatus = await api('/api/mcp-tools/status'); toast('MCP tool discovery refreshed'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Refresh Discovery'),
@@ -5599,7 +8461,7 @@ function modelTagSelectionCard(options = {}) {
   const targetLabel = opts.targetLabel || (() => `${getMediaIds().length} selected item(s)`);
   const tagSelectionModels = sortedTagSelectionModels(state.models.filter(m => { const caps = m.capabilities || []; return caps.includes('chat') || caps.includes('vlm') || caps.includes('tag') || caps.includes('auto_tag') || caps.includes('classify') || caps.includes('rating') || caps.includes('caption'); }));
   const model = el('select', { class: 'model-category-select', title: 'Models are sorted: local VLMs, local LLMs, tag/caption/classifier models, then API/cloud models. Hover an option to see its category.' }, tagSelectionModels.map(modelOptionNode));
-  const preferredSelection = tagSelectionModels.find(m => m.name === state.assistantConfig?.orchestrator_model_name) || tagSelectionModels.find(m => m.kind === 'vlm' && !modelIsApi(m)) || tagSelectionModels.find(m => m.name === 'gemma-4-e4b-it') || tagSelectionModels.find(m => m.name === 'redrocket-jtp-3') || tagSelectionModels.find(m => m.name === 'dataset-assistant');
+  const preferredSelection = tagSelectionModels.find(m => m.name === state.assistantConfig?.orchestrator_model_name) || tagSelectionModels.find(m => m.kind === 'vlm' && !modelIsApi(m)) || tagSelectionModels.find(m => m.name === 'gemma-4-e4b-it') || tagSelectionModels.find(m => m.name === 'redrocket-hydra-3-5') || tagSelectionModels.find(m => m.name === 'redrocket-jtp-3') || tagSelectionModels.find(m => m.name === 'dataset-assistant');
   rememberSelect('tagSelectionModelSelection', model, preferredSelection?.name || '', false);
   model.addEventListener('change', () => {
     state.tagSelectionModelSelection = model.value || '';
@@ -5610,7 +8472,7 @@ function modelTagSelectionCard(options = {}) {
   });
   const selectedModel = () => state.models.find(m => m.name === model.value) || { name: model.value, label: model.value };
   const criteria = el('textarea', { placeholder: 'Examples: select unknown tags; select character tags; suggest missing visual tags; prune tags that are not visible; or use highlighted manual chips only', 'data-form-key': `${title}-criteria` }, opts.defaultCriteria || 'select unknown tags');
-  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: String(opts.threshold || state.settings.classifier_threshold || 0.35), title: 'Threshold used when the selected model is a tagger/classifier/rating model.' });
+  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: String(opts.threshold || defaultClassifierThreshold()), title: 'Threshold used when the selected model is a tagger/classifier/rating model. Default is 0.70.' });
   const topK = el('input', { type: 'number', min: '1', max: '1000', value: String(opts.topK || 80), title: 'Maximum labels requested from classifier/tagger/VLM models.' });
   const operation = el('select', {}, ['preview', 'remove', 'keep_only', 'set', 'add'].map(x => el('option', { value: x }, x)));
   const cats = el('select', { multiple: 'multiple', size: opts.categorySize || '7' }, categories().map(c => el('option', { value: c.key }, c.label || c.key)));
@@ -5618,24 +8480,32 @@ function modelTagSelectionCard(options = {}) {
   const allCategories = el('input', { type: 'checkbox', checked: opts.allCategoriesDefault !== false, title: 'Bypass the category multi-select and let the model consider every tag category in the active profile.' });
   const chatApplyTags = el('input', { type: 'checkbox', title: 'Apply tags from a tags:/JSON response to the target media.' });
   const chatApplyCaption = el('input', { type: 'checkbox', title: 'Apply caption from a caption:/JSON response to the target media.' });
-  const chatAgentTools = el('input', { type: 'checkbox', checked: Boolean(state.tagSelectionAgentToolsChatEnabled || state.settings?.agent_tools_enable_approved_coa_execution), title: 'Tell the selected assistant model that approved local tools are available and parse its COA/tool calls.' });
+  const chatApplyTagEdits = el('input', { type: 'checkbox', checked: true, title: 'Allow assistant JSON keep/remove/add/final_tags output to update the active tag list. Useful for VLM tag pruning.' });
+  const chatTagEditMode = el('select', { title: 'How to interpret assistant tag-edit JSON when applying edits.' }, ['auto','remove','prune','keep_only','set'].map(x => el('option', { value: x }, x)));
+  chatTagEditMode.value = 'auto';
+  const chatAgentTools = el('input', { type: 'checkbox', checked: state.tagSelectionAgentToolsChatEnabled !== false && state.settings?.tag_selection_agent_tools_default !== false, title: 'Tell the selected assistant model that approved local tools are available and parse its COA/tool calls.' });
   chatAgentTools.addEventListener('change', e => { state.tagSelectionAgentToolsChatEnabled = e.target.checked; state.agentCoaExecutionEnabled = e.target.checked || state.agentCoaExecutionEnabled; });
   const refreshCategoryMode = () => { cats.disabled = Boolean(allCategories.checked || manualOnly.checked); };
   allCategories.addEventListener('change', refreshCategoryMode);
   manualOnly.addEventListener('change', refreshCategoryMode);
   refreshCategoryMode();
   const rt = modelRuntimeControls();
+  const hydraSelection = hydraModelOptionsControls();
   const reasoning = assistantReasoningControls('assistant');
   const manualCandidateSummary = () => `${[...new Set((getCandidateTags() || []).map(normalizeTag).filter(Boolean))].length} highlighted/manual candidate tag(s)`;
   const runConversationAboutTarget = async (promptText = null, chatOptions = {}) => {
     const mediaIds = [...new Set((getMediaIds() || []).map(Number).filter(Boolean))];
     if (!mediaIds.length) throw new Error('No media selected for assistant conversation.');
     const selectedName = model.value || 'dataset-assistant';
-    const finalPrompt = String(promptText || '').trim() || criteria.value || 'Talk with me about the selected image/data and its tags.';
+    let finalPrompt = String(promptText || '').trim() || criteria.value || 'Talk with me about the selected image/data and its tags.';
+    if (chatApplyTagEdits.checked) {
+      finalPrompt += '\n\nWhen asked to prune/edit tags, inspect the media and existing tags. Return concise JSON with keep_tags, remove_tags, add_tags, final_tags, caption, confidence, and reason. Only keep tags that are visible/media-evidenced and compatible with the active LoRA/dataset rules.';
+    }
     setOptimisticModelStage(selectedName, 'load', modelLoaded(selectedName) ? 'completed' : 'running', modelLoaded(selectedName) ? 1 : 0.03, modelLoaded(selectedName) ? 'Model already loaded for chat' : 'Auto-loading selected assistant/chat model');
     setOptimisticModelStage(selectedName, 'inference', 'running', 0.01, 'Assistant conversation request sent');
     updateLiveStatusDom();
-    let statusPoll = setInterval(async () => { try { await refreshModelStatuses(false); updateLiveStatusDom(); } catch (_) {} }, 850);
+    let statusPoll = setInterval(async () => { try { await refreshModelStatuses(false); updateLiveStatusDom(); patchContextBudgetPanels('tagSelection'); } catch (_) {} }, 850);
+    let stopLiveBudgetTicker = null;
     try {
       const body = {
         model_name: selectedName,
@@ -5657,9 +8527,25 @@ function modelTagSelectionCard(options = {}) {
           agent_tools_chat: Boolean(chatAgentTools.checked),
           agent_tools_execute_coa_enabled: Boolean(chatAgentTools.checked || state.agentCoaExecutionEnabled || state.settings?.agent_tools_enable_approved_coa_execution),
           tag_profile: state.tagProfile,
+          assistant_apply_tag_edits: Boolean(chatApplyTagEdits.checked),
+          assistant_tag_edit_mode: chatTagEditMode.value || 'auto',
+          assistant_tag_edit_allow_add: true,
+          include_lora_rule_context: true,
+          lora_target_model: state.datasetPipelineTarget || 'sdxl',
+          lora_adapter_family: state.datasetPipelineAdapter || 'lora',
+          lora_dataset_goal: state.datasetPipelineGoal || 'character',
+          lora_trigger_token: state.datasetPipelineTrigger || '',
+          lora_style_trigger_token: state.datasetPipelineStyleTrigger || '',
+          lora_additional_notes: state.datasetPipelineNotes || '',
           ...reasoningOptionsFromControls(reasoning)
         }
       };
+      const liveOptions = { ...(body.options || {}), ...body };
+      stopLiveBudgetTicker = startLiveContextBudgetTicker('tagSelection', selectedName, finalPrompt, body, liveOptions);
+      // Insert the live token/context progress circle immediately. Subsequent
+      // ticks patch it in place, so the chat UI gets feedback while the model is
+      // still generating instead of only after the response returns.
+      renderNowPreservingState(false);
       const r = await api('/api/models/chat', { method: 'POST', body });
       state.tagSelectionChatConversationId = r.conversation_id || state.tagSelectionChatConversationId;
       state.tagSelectionChatMessages = r.history || state.tagSelectionChatMessages || [];
@@ -5682,6 +8568,14 @@ function modelTagSelectionCard(options = {}) {
               conversation_id: r.conversation_id
             };
             toast(`Parsed ${parsed.tool_calls.length} executable COA/tool call(s) from assistant response`);
+            if (state.agentUserApproved && state.agentCoaExecutionEnabled) {
+              try {
+                const run = await runApprovedCoaPlan(state.agentSurfacePlans[draftKey], 'Tag Editor assistant COA/model-queue plan');
+                if (run?.job_id) toast(`Approved assistant tool/model queue plan started as job #${run.job_id}`);
+              } catch (runErr) {
+                toast(`Assistant COA was parsed but not auto-run: ${runErr.message}`, false);
+              }
+            }
           }
         } catch (_) {}
       }
@@ -5694,8 +8588,10 @@ function modelTagSelectionCard(options = {}) {
       toast(err.message, false);
     } finally {
       clearInterval(statusPoll);
+      if (stopLiveBudgetTicker) stopLiveBudgetTicker();
       await refreshModelStatuses(false).catch(() => {});
       updateLiveStatusDom();
+      patchContextBudgetPanels('tagSelection');
     }
   };
   const sendQueuedTagSelectionChat = async (text, meta = {}) => {
@@ -5732,6 +8628,7 @@ function modelTagSelectionCard(options = {}) {
     inlineOrchestratorControls(model, 'tag-selection'),
     el('div', { class: 'row' }, [model, operation, cats, el('label', {}, ['threshold', threshold]), el('label', {}, ['top-k', topK]), el('label', {}, [allCategories, ' all categories']), el('label', {}, [manualOnly, ' highlighted/manual only'])]),
     modelLifecycleStrip(selectedModel(), true),
+    hydraSelection.wrap,
     inlineSelectedModelRuntimeControls(model, rt, 'tag-selection'),
     assistantReasoningPanel(reasoning, 'Think longer / visible plan controls'),
     agentToolsInlinePanel(`tag-selection-${title}`, title, getMediaIds, model, rt),
@@ -5741,6 +8638,8 @@ function modelTagSelectionCard(options = {}) {
       el('div', { class: 'row tight' }, [
         el('label', {}, [chatApplyTags, ' apply tags from response']),
         el('label', {}, [chatApplyCaption, ' apply caption from response']),
+        el('label', { title: 'When enabled, assistant JSON keep/remove/add/final_tags output is applied directly to the current Tag Editor tag list.' }, [chatApplyTagEdits, ' apply assistant tag edits/pruning']),
+        el('label', { class: 'field-inline', title: 'How assistant tag-edit JSON should be interpreted when it updates the active tag list.' }, ['tag edit mode ', chatTagEditMode]),
         el('label', { title: 'Adds the executable tool-call contract to chat prompts and parses COA actions from responses.' }, [chatAgentTools, ' enable approved local tools/COA when needed']),
         el('button', { class: 'secondary small', onclick: () => { state.tagSelectionChatConversationId = null; state.tagSelectionChatMessages = []; state.tagSelectionChatState = {}; state.lastTagSelectionChat = null; state.lastTagSelectionChatError = null; render(true, true); } }, 'New Conversation'),
         state.tagSelectionChatConversationId ? el('button', { class: 'secondary small', onclick: async () => { try { await loadScopedChatConversation(state.tagSelectionChatConversationId, 'tagSelection'); toast('Tag Editor conversation refreshed'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Refresh History') : null,
@@ -5764,7 +8663,8 @@ function modelTagSelectionCard(options = {}) {
           active_tags: state.activeMedia ? ensureDraft(state.activeMedia) : [],
           active_caption: state.activeMedia?.caption || '',
           criteria: criteria.value || '',
-          selected_model: model.value || ''
+          selected_model: model.value || '',
+          dataset_pipeline_rules: { target_model: state.datasetPipelineTarget || 'sdxl', adapter_family: state.datasetPipelineAdapter || 'lora', dataset_goal: state.datasetPipelineGoal || 'character', trigger_token: state.datasetPipelineTrigger || '', style_trigger_token: state.datasetPipelineStyleTrigger || '', notes: state.datasetPipelineNotes || '' }
         }),
         composer: {
           draftKey: 'tagSelectionChatDraft',
@@ -5809,7 +8709,7 @@ function modelTagSelectionCard(options = {}) {
           candidate_tags_by_media: manualTagsByMedia,
           operation: operation.value,
           ...runtimeBodyFromControls(rt),
-          options: { threshold: Number(threshold.value || 0.35), top_k: Number(topK.value || 80), manual_only: manualOnly.checked, all_categories: allCategories.checked, validate_existing_tags: Boolean(opts.validateExistingTagsDefault), max_new_tokens: Math.max(Number(state.settings.model_max_new_tokens || 0), 1024), min_tag_task_max_new_tokens: 1024, max_tag_continuation_rounds: 3, tag_profile: state.tagProfile, ...reasoningOptionsFromControls(reasoning) }
+          options: { threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD), top_k: Number(topK.value || 80), manual_only: manualOnly.checked, all_categories: allCategories.checked, validate_existing_tags: Boolean(opts.validateExistingTagsDefault), max_new_tokens: Math.max(Number(state.settings.model_max_new_tokens || 0), 1024), min_tag_task_max_new_tokens: 1024, max_tag_continuation_rounds: 3, tag_profile: state.tagProfile, ...hydraSelection.options(), ...reasoningOptionsFromControls(reasoning) }
         };
         const selectedName = body.model_name || 'dataset-assistant';
         setOptimisticModelStage(selectedName, 'load', modelLoaded(selectedName) ? 'completed' : 'running', modelLoaded(selectedName) ? 1 : 0.03, modelLoaded(selectedName) ? 'Model already loaded for tag selection' : 'Model may auto-load for tag selection');
@@ -5872,7 +8772,7 @@ function curationModelFilter(m) {
   return caps.has('tag') || caps.has('auto_tag') || caps.has('rating') || caps.has('classify') || caps.has('caption') || caps.has('image_classification');
 }
 function defaultTaskForModelName(name) {
-  if (name === 'redrocket-jtp-3') return 'tag';
+  if (name === 'redrocket-jtp-3' || name === 'redrocket-hydra-3-5') return 'tag';
   const m = state.models.find(x => x.name === name) || {};
   const caps = new Set(m.capabilities || []);
   if ((m.kind || '') === 'rating' || caps.has('rating')) return 'rating';
@@ -5884,21 +8784,23 @@ function modelPredictionRunCard(options = {}) {
   const opts = typeof options === 'function' ? { getMediaIds: options } : options;
   const getMediaIds = opts.getMediaIds || (() => [...state.selected]);
   const title = opts.title || 'Run Tagging / Rating / Caption Model';
-  const description = opts.description || 'Run downloaded/local/API-supported curation models on the target media. RedRocket JTP-3 and e6 visual ratings appear here when present in the model catalog.';
+  const description = opts.description || 'Run downloaded/local/API-supported curation models on the target media. RedRocket Hydra 3.5, JTP-3, legacy EVA/EfficientNet taggers, and e6 visual ratings appear here when present in the model catalog.';
   const model = el('select', {}, modelOptions(curationModelFilter));
-  rememberSelect('predictionModelSelection', model, '', false);
+  rememberSelect('predictionModelSelection', model, 'redrocket-hydra-3-5', true);
   const task = el('select', {}, ['tag', 'rating', 'classify', 'caption'].map(x => el('option', { value: x }, x)));
   model.onchange = () => { state.predictionModelSelection = model.value || ''; task.value = defaultTaskForModelName(model.value); };
   task.value = defaultTaskForModelName(model.value);
-  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: state.settings.classifier_threshold || 0.35 });
+  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: defaultClassifierThreshold() });
   const topK = el('input', { type: 'number', min: '1', max: '1000', step: '1', value: 250, title: 'Max labels/tags returned where the adapter supports it.' });
   const applyTags = el('input', { type: 'checkbox', checked: opts.applyTagsDefault !== false });
   const applyCaption = el('input', { type: 'checkbox', checked: false });
   const rt = modelRuntimeControls();
+  const hydraPrediction = hydraModelOptionsControls();
   return card(title, [
     el('p', { class: 'muted' }, description),
     el('div', { class: 'muted tiny' }, `Target: ${opts.targetLabel ? opts.targetLabel() : `${getMediaIds().length} selected item(s)`}`),
     el('div', { class: 'row' }, [model, task, el('label', {}, ['threshold', threshold]), el('label', {}, ['top_k / max tags', topK])]),
+    hydraPrediction.wrap,
     el('div', { class: 'row' }, [rt.device, rt.gpuIds, rt.shard, rt.dtype, rt.quant]),
     rt.maxMemory,
     el('div', { class: 'row' }, [el('label', {}, [applyTags, ' Apply predicted tags/classes/ratings']), el('label', {}, [applyCaption, ' Apply predicted caption'])]),
@@ -5909,14 +8811,14 @@ function modelPredictionRunCard(options = {}) {
         if (!model.value) throw new Error('Select a curation model first.');
         const body = {
           model_name: model.value,
-          task: model.value === 'redrocket-jtp-3' ? 'tag' : task.value,
+          task: (model.value === 'redrocket-jtp-3' || model.value === 'redrocket-hydra-3-5') ? 'tag' : task.value,
           media_ids: mediaIds,
-          threshold: Number(threshold.value || 0.35),
+          threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD),
           apply_tags: applyTags.checked,
           apply_caption: applyCaption.checked,
           ...runtimeBodyFromControls(rt),
           parallel_workers: Number(rt.parallel.value || 1),
-          options: { top_k: Number(topK.value || 250), max_tags: Number(topK.value || 250), tag_profile: state.tagProfile }
+          options: { top_k: Number(topK.value || 250), max_tags: Number(topK.value || 250), tag_profile: state.tagProfile, ...hydraPrediction.options() }
         };
         const r = await api('/api/models/run', { method: 'POST', body });
         toast(`Queued ${model.value} as job ${r.job_id}. Staying here; open Jobs only if you need full logs.`);
@@ -6077,6 +8979,7 @@ function compareView() {
         el('button', { class: 'secondary', onclick: () => cycleCompare('right', 1) }, 'Right ▶')
       ])
     ]),
+    attentionOverlayControls([left, right], { title:'Compare Pair Attention Heatmaps', compact:true, description:'Create matching heatmap overlays for the current left/right pair without leaving the comparer.' }),
     el('div', { class: 'grid cols-2' }, [compareSide(left, 'left', right), compareSide(right, 'right', left)]),
     el('div', { class: 'row' }, [
       el('button', { class: 'secondary', onclick: async () => moveSelectedTags(left, right, 'left', false) }, 'Add Selected Left → Right'),
@@ -6111,7 +9014,7 @@ function compareSide(item, side, otherItem) {
   const selected = state.compareSelected[side];
   const otherTags = new Set(otherItem?.tags || []);
   return card(`${side === 'left' ? 'Left' : 'Right'} #${item.id}`, [
-    mediaPreviewElement(item, 'preview'),
+    attentionOverlayPreview(item, 'preview'),
     el('div', { class: 'muted tiny path' }, item.relative_path || item.path),
     el('div', { class: 'row' }, [
       el('button', { class: 'secondary small', onclick: () => { for (const t of item.tags) selected.add(t); render(); } }, 'Select All Tags'),
@@ -6348,12 +9251,12 @@ function assistantCapableModelFilter(m) {
 }
 
 function assistantView() {
-  const assistantModels = sortedTagSelectionModels(state.models.filter(assistantCapableModelFilter));
+  const assistantModels = sortedTagSelectionModels((state.models || []).filter(assistantCapableModelFilter));
   const configuredAssistant = state.assistantConfig?.assistant_model_name || state.settings.assistant_model_name || 'dataset-assistant';
   const configuredOrchestrator = state.assistantConfig?.orchestrator_model_name || state.settings.orchestrator_model_name || configuredAssistant || 'dataset-assistant';
   const model = el('select', { class: 'model-category-select', title: 'Assistant-capable models are category-colored. Hover options for category/provider details.' }, assistantModels.map(modelOptionNode));
   rememberSelect('assistantModelSelection', model, configuredAssistant, true);
-  const selectedModel = () => state.models.find(m => m.name === model.value) || { name: model.value, label: model.value, capabilities: [] };
+  const selectedModel = () => (state.models || []).find(m => m.name === model.value) || { name: model.value || 'dataset-assistant', label: model.value || 'dataset-assistant', capabilities: [], kind: 'assistant', provider: 'local/configured' };
   const defaultAssistant = el('select', { class: 'model-category-select' }, assistantModels.map(modelOptionNode));
   setSelectValue(defaultAssistant, configuredAssistant);
   const defaultOrchestrator = el('select', { class: 'model-category-select' }, assistantModels.map(modelOptionNode));
@@ -6451,7 +9354,17 @@ function assistantView() {
               ...runtimeBodyFromControls(rt),
               options,
             };
+            const chatItem = { text: prompt.value, prompt: prompt.value, queued_at: new Date().toISOString(), started_at: new Date().toISOString() };
+            state.chatSending = true;
+            state.chatCurrent = chatItem;
+            const stopLiveBudgetTicker = startLiveContextBudgetTicker('assistant', body.model_name, prompt.value, body, { ...(options || {}), ...body });
+            patchGlobalAssistantOverlays();
+            patchContextBudgetPanels('assistant');
             const r = await api('/api/models/chat', { method: 'POST', body });
+            if (stopLiveBudgetTicker) stopLiveBudgetTicker();
+            state.chatSending = false;
+            state.chatCurrent = null;
+            patchGlobalAssistantOverlays();
             state.chatConversationId = r.conversation_id;
             state.chatMessages = r.history || [...state.chatMessages, { role: 'user', content: prompt.value }, { role: 'assistant', content: r.response }];
             if (assistantAgentTools.checked && r.response) {
@@ -6466,6 +9379,14 @@ function assistantView() {
                     conversation_id: r.conversation_id
                   };
                   toast(`Parsed ${parsed.tool_calls.length} executable COA/tool call(s) from assistant response`);
+            if (state.agentUserApproved && state.agentCoaExecutionEnabled) {
+              try {
+                const run = await runApprovedCoaPlan(state.agentSurfacePlans[draftKey], 'Tag Editor assistant COA/model-queue plan');
+                if (run?.job_id) toast(`Approved assistant tool/model queue plan started as job #${run.job_id}`);
+              } catch (runErr) {
+                toast(`Assistant COA was parsed but not auto-run: ${runErr.message}`, false);
+              }
+            }
                 }
               } catch (_) {}
             }
@@ -6473,7 +9394,7 @@ function assistantView() {
             if (r.applied?.media_ids?.length) await refreshMediaRows(r.applied.media_ids);
             toast(`Assistant response from ${r.model_name}`);
             render();
-          } catch (err) { toast(err.message, false); }
+          } catch (err) { state.chatSending = false; state.chatCurrent = null; if (state.liveContextBudgetTickers?.assistant) { clearInterval(state.liveContextBudgetTickers.assistant); delete state.liveContextBudgetTickers.assistant; } patchGlobalAssistantOverlays(); setLiveContextBudget('assistant', null); toast(err.message, false); }
         } }, 'Send to Assistant')
       ]),
       lastVoiceOutputPanel(),
@@ -6734,6 +9655,7 @@ function settingValueOr(key, fallback) {
   return nonBlank(state.settings?.[key], fallback);
 }
 function runtimeBodyFromControls(rt, overrides = {}) {
+  rt = rt || {};
   return {
     device: selectValueOr(rt.device, 'auto'),
     device_ids: parseGpuIds(rt.gpuIds?.value),
@@ -6765,6 +9687,7 @@ function assistantReasoningDefaults(scope = 'assistant') {
   const effortKey = scope === 'code' ? 'codeReasoningEffort' : 'assistantReasoningEffort';
   const showKey = scope === 'code' ? 'codeShowVisiblePlan' : 'assistantShowVisiblePlan';
   const liveKey = scope === 'code' ? 'codeShowLiveActionNotes' : 'assistantShowLiveActionNotes';
+  const chainKey = scope === 'code' ? 'codeShowLiveChainOfThought' : 'assistantShowLiveChainOfThought';
   const passKey = scope === 'code' ? 'codePlanningPasses' : 'assistantPlanningPasses';
   const planTokenKey = scope === 'code' ? 'codePlanMaxTokens' : 'assistantPlanMaxTokens';
   const chatTokenKey = scope === 'code' ? 'codeMinChatTokens' : 'assistantMinChatTokens';
@@ -6773,6 +9696,7 @@ function assistantReasoningDefaults(scope = 'assistant') {
     effort: state[effortKey] || s.assistant_reasoning_effort || 'medium',
     showPlan: state[showKey] !== false && s.assistant_show_visible_plan !== false,
     showLiveActionNotes: (state[scope === 'code' ? 'codeShowLiveActionNotes' : 'assistantShowLiveActionNotes'] !== false) && s.assistant_show_live_action_notes !== false,
+    showLiveChainOfThought: (state[scope === 'code' ? 'codeShowLiveChainOfThought' : 'assistantShowLiveChainOfThought'] !== false) && s.assistant_show_live_chain_of_thought !== false && s.assistant_show_live_reasoning_trace !== false,
     passes: state[passKey] || s.assistant_planning_passes || 1,
     planTokens: state[planTokenKey] || s.assistant_plan_max_tokens || 768,
     chatTokens: state[chatTokenKey] || (scope === 'code' ? (s.assistant_deep_chat_tokens || 4096) : (s.assistant_min_chat_tokens || 1024))
@@ -6784,20 +9708,22 @@ function assistantReasoningControls(scope = 'assistant') {
   const effortKey = scope === 'code' ? 'codeReasoningEffort' : 'assistantReasoningEffort';
   const showKey = scope === 'code' ? 'codeShowVisiblePlan' : 'assistantShowVisiblePlan';
   const liveKey = scope === 'code' ? 'codeShowLiveActionNotes' : 'assistantShowLiveActionNotes';
+  const chainKey = scope === 'code' ? 'codeShowLiveChainOfThought' : 'assistantShowLiveChainOfThought';
   const passKey = scope === 'code' ? 'codePlanningPasses' : 'assistantPlanningPasses';
   const planTokenKey = scope === 'code' ? 'codePlanMaxTokens' : 'assistantPlanMaxTokens';
   const chatTokenKey = scope === 'code' ? 'codeMinChatTokens' : 'assistantMinChatTokens';
   const mode = el('select', { title: 'How much extra planning/continuation budget to use before the final answer.' }, ['off','fast','balanced','deep'].map(x => el('option', { value: x }, x))); mode.value = d.mode;
   const effort = el('select', { title: 'Reasoning effort hint for providers/runtimes that support it; local models use plan-before-answer prompting.' }, ['none','low','medium','high','max'].map(x => el('option', { value: x }, x))); effort.value = d.effort;
   const showPlan = el('input', { type: 'checkbox', checked: d.showPlan, title: 'Show a concise visible plan/action-notes panel. This is not hidden chain-of-thought.' });
-  const showLive = el('input', { type: 'checkbox', checked: d.showLiveActionNotes !== false, title: 'Show a temporary live action-notes overlay while a response/tool run is active. This is generated status, not hidden chain-of-thought.' });
+  const showLive = el('input', { type: 'checkbox', checked: d.showLiveActionNotes !== false, title: 'Show a temporary live action-notes overlay while a response/tool run is active.' });
+  const showChain = el('input', { type: 'checkbox', checked: d.showLiveChainOfThought !== false, title: 'Show a separate live chain-of-thought-style reasoning trace overlay. Provider/private hidden reasoning cannot be extracted; this displays the model/app visible trace.' });
   const passes = el('input', { type: 'number', min: '0', max: '3', value: d.passes, title: 'Number of visible planning passes before final response.' });
   const planTokens = el('input', { type: 'number', min: '128', max: '4096', value: d.planTokens, title: 'Token budget for the visible plan.' });
   const chatTokens = el('input', { type: 'number', min: '256', max: '16384', value: d.chatTokens, title: 'Minimum token budget for final chat response.' });
-  const remember = () => { state[modeKey] = mode.value; state[effortKey] = effort.value; state[showKey] = showPlan.checked; state[liveKey] = showLive.checked; state[passKey] = passes.value; state[planTokenKey] = planTokens.value; state[chatTokenKey] = chatTokens.value; };
-  [mode, effort, showPlan, showLive, passes, planTokens, chatTokens].forEach(ctrl => ctrl.addEventListener('change', remember));
+  const remember = () => { state[modeKey] = mode.value; state[effortKey] = effort.value; state[showKey] = showPlan.checked; state[liveKey] = showLive.checked; state[chainKey] = showChain.checked; state[passKey] = passes.value; state[planTokenKey] = planTokens.value; state[chatTokenKey] = chatTokens.value; };
+  [mode, effort, showPlan, showLive, showChain, passes, planTokens, chatTokens].forEach(ctrl => ctrl.addEventListener('change', remember));
   planTokens.addEventListener('input', remember); chatTokens.addEventListener('input', remember); passes.addEventListener('input', remember);
-  return { mode, effort, showPlan, showLive, passes, planTokens, chatTokens, scope };
+  return { mode, effort, showPlan, showLive, showChain, passes, planTokens, chatTokens, scope };
 }
 function reasoningOptionsFromControls(ctrl = null, overrides = {}) {
   const d = ctrl ? {
@@ -6805,6 +9731,7 @@ function reasoningOptionsFromControls(ctrl = null, overrides = {}) {
     effort: ctrl.effort.value,
     showPlan: ctrl.showPlan.checked,
     showLiveActionNotes: ctrl.showLive ? ctrl.showLive.checked : true,
+    showLiveChainOfThought: ctrl.showChain ? ctrl.showChain.checked : true,
     passes: Number(ctrl.passes.value || 0),
     planTokens: Number(ctrl.planTokens.value || 768),
     chatTokens: Number(ctrl.chatTokens.value || 1024)
@@ -6814,24 +9741,32 @@ function reasoningOptionsFromControls(ctrl = null, overrides = {}) {
     reasoning_effort: d.effort || 'medium',
     show_visible_plan: d.showPlan !== false,
     show_live_action_notes: d.showLiveActionNotes !== false,
+    show_live_chain_of_thought: d.showLiveChainOfThought !== false,
+    show_live_reasoning_trace: d.showLiveChainOfThought !== false,
     plan_before_answer: d.showPlan !== false && d.mode !== 'off',
     planning_passes: Number(d.passes || 0),
     plan_max_new_tokens: Number(d.planTokens || 768),
     min_chat_max_new_tokens: Number(d.chatTokens || 1024),
     think_longer: d.mode !== 'off',
     assistant_reasoning: d.mode !== 'off',
+    auto_condense_context: true,
+    auto_condense_context_threshold: 0.72,
+    live_token_budget: true,
+    visible_reasoning_trace_default: true,
+    visible_chain_of_thought_default: true,
     ...overrides
   };
 }
 function assistantReasoningPanel(ctrl, label = 'Reasoning / planning controls') {
-  return el('details', { class: 'reasoning-controls', open: false }, [
-    el('summary', {}, label),
-    el('p', { class: 'muted tiny' }, 'Think-longer mode performs an optional visible planning pass and raises token/continuation budgets. It shows user-facing plan/action notes, not provider/private hidden chain-of-thought.'),
+  return el('details', { class: 'reasoning-controls', open: true }, [
+    el('summary', {}, `${label} · visible trace on`),
+    el('p', { class: 'muted tiny' }, 'Visible planning/action notes are enabled by default. Live action notes and a separate chain-of-thought-style reasoning trace overlay are also enabled by default; this is not provider/private hidden chain-of-thought; provider/private hidden chain-of-thought is not extracted, and the overlay displays the app/model visible trace.'),
     el('div', { class: 'row tight' }, [
       el('label', {}, ['mode ', ctrl.mode]),
       el('label', {}, ['effort ', ctrl.effort]),
       el('label', {}, [ctrl.showPlan, ' show visible plan']),
       el('label', {}, [ctrl.showLive, ' live action-notes overlay']),
+      el('label', {}, [ctrl.showChain, ' live chain-of-thought overlay']),
       el('label', {}, ['plan passes ', ctrl.passes]),
       el('label', {}, ['plan tokens ', ctrl.planTokens]),
       el('label', {}, ['final min tokens ', ctrl.chatTokens])
@@ -6840,11 +9775,13 @@ function assistantReasoningPanel(ctrl, label = 'Reasoning / planning controls') 
 }
 function visiblePlanPanel(result, title = 'Visible plan / action notes') {
   const plan = result?.visible_plan || result?.reasoning?.visible_plan || '';
+  const trace = result?.visible_chain_of_thought || result?.visible_reasoning_trace || result?.reasoning?.visible_reasoning_trace || '';
   const notes = result?.action_notes || [];
-  if (!plan && !(notes || []).length && !result?.reasoning) return null;
+  if (!plan && !trace && !(notes || []).length && !result?.reasoning) return null;
   return el('details', { class: 'visible-plan-panel', open: Boolean(plan) }, [
     el('summary', {}, title),
     el('p', { class: 'muted tiny' }, 'This is a model-generated, user-visible planning summary. It is separate from the final answer and is not hidden/private chain-of-thought.'),
+    trace ? el('details', { open: true }, [el('summary', {}, 'Visible chain-of-thought / reasoning trace'), el('pre', { class: 'log compact reasoning-trace-log' }, trace)]) : null,
     plan ? el('pre', { class: 'log compact' }, plan) : null,
     (notes || []).length ? el('ul', {}, notes.map(n => el('li', {}, n))) : null,
     result?.reasoning ? el('details', {}, [el('summary', {}, 'Reasoning/planning metadata'), el('pre', { class: 'log compact' }, JSON.stringify(result.reasoning, null, 2))]) : null
@@ -6891,11 +9828,37 @@ function modelLoadPrefs(name, m) {
   if (!state.modelLoadPrefs[name]) state.modelLoadPrefs[name] = defaultModelLoadPrefs(m);
   return state.modelLoadPrefs[name];
 }
+function normalizedModelDeviceSelection(deviceValue = 'auto', deviceIdsValue = []) {
+  let device = String(deviceValue || 'auto').trim().toLowerCase() || 'auto';
+  let ids = Array.isArray(deviceIdsValue) ? deviceIdsValue : parseGpuIds(deviceIdsValue);
+  ids = [...new Set(ids.map(Number).filter(id => Number.isInteger(id) && id >= 0))];
+  if (device === 'cpu' || device === 'mps') return { device, device_ids: [] };
+  const explicit = device.match(/^cuda:(\d+)$/);
+  if (explicit) {
+    const explicitId = Number(explicit[1]);
+    if (ids.length && !ids.includes(explicitId)) {
+      throw new Error(`GPU selection conflict: device is cuda:${explicitId}, but selected GPU IDs are ${ids.join(', ')}. Use matching values so the model cannot be placed on the wrong GPU.`);
+    }
+    if (!ids.length) ids = [explicitId];
+    return { device:`cuda:${explicitId}`, device_ids:ids };
+  }
+  if (ids.length) {
+    // Make the first selected GPU explicit. The backend still receives every
+    // selected id for supported sharding, but single-GPU adapters cannot
+    // accidentally fall back to another default device.
+    device = `cuda:${ids[0]}`;
+  }
+  return { device, device_ids:ids };
+}
+function normalizeModelPlacementBody(body = {}) {
+  const selection = normalizedModelDeviceSelection(body.device || 'auto', body.device_ids || []);
+  return { ...body, ...selection };
+}
 function placementBodyForModel(m, prefs) {
+  const selection = normalizedModelDeviceSelection(prefs.device || 'auto', parseGpuIds(prefs.gpuIds));
   return {
     model_name: m.name,
-    device: prefs.device || 'auto',
-    device_ids: parseGpuIds(prefs.gpuIds),
+    ...selection,
     sharding_strategy: prefs.shard || 'none',
     max_memory: parseMaxMemory(prefs.maxMemory),
     torch_dtype: prefs.dtype || 'auto',
@@ -6917,10 +9880,17 @@ function planStatusText(plan) {
 function modelPlacementSummary(m) {
   const placement = modelPlacementFor(m);
   if (!placement) return el('div', { class: 'muted tiny' }, 'Placement: not loaded/reserved yet.');
-  const ids = (placement.device_ids || []).map(x => `cuda:${x}`).join(', ') || placement.device || 'CPU/API';
+  const selectedIds = placement.device_ids || [];
+  const ids = selectedIds.map(x => `cuda:${x}`).join(', ') || placement.device || 'CPU/API';
   const perGpu = placement.per_gpu_reserved_gb || placement.per_device_gb || {};
   const reserves = Object.keys(perGpu).length ? Object.entries(perGpu).map(([k,v]) => `cuda:${String(k).replace('cuda:', '')}≈${v}GB`).join(', ') : '';
-  return el('div', { class: 'muted tiny model-placement-summary' }, `Placement: ${placement.state || (m.loaded ? 'loaded' : 'planned')} on ${ids}${placement.sharding_strategy ? ` · shard=${placement.sharding_strategy}` : ''}${placement.estimated_vram_gb ? ` · est ${placement.estimated_vram_gb}GB` : ''}${reserves ? ` · ${reserves}` : ''}`);
+  const actual = String(placement.actual_runtime_device || placement.result_device || '').trim();
+  const requested = String(placement.device || (selectedIds.length === 1 ? `cuda:${selectedIds[0]}` : '')).trim().toLowerCase();
+  const actualLower = actual.toLowerCase();
+  const singleDeviceMismatch = Boolean(actual && selectedIds.length <= 1 && requested.startsWith('cuda:') && actualLower !== requested);
+  const actualText = actual ? ` · actual=${actual}` : '';
+  const mismatchText = singleDeviceMismatch ? ' · DEVICE MISMATCH' : '';
+  return el('div', { class: `muted tiny model-placement-summary ${singleDeviceMismatch ? 'bad-text' : ''}` }, `Placement: ${placement.state || (m.loaded ? 'loaded' : 'planned')} on ${ids}${placement.sharding_strategy ? ` · shard=${placement.sharding_strategy}` : ''}${placement.estimated_vram_gb ? ` · est ${placement.estimated_vram_gb}GB` : ''}${reserves ? ` · ${reserves}` : ''}${actualText}${mismatchText}`);
 }
 function modelLoadControls(m) {
   const prefs = modelLoadPrefs(m.name, m);
@@ -6977,17 +9947,20 @@ function modelResourcePanel() {
   const devices = resources.devices || [];
   const loaded = resources.loaded_models || [];
   const loading = resources.loading_reservations || resources.pending_models || [];
-  return el('div', { class: 'resource-panel' }, [
+  return el('div', { class: 'resource-panel', 'data-model-resource-panel': '1' }, [
     devices.length ? el('div', { class: 'device-grid' }, devices.map(d => el('div', { class: 'device-card' }, [
       el('strong', {}, d.id || `cuda:${d.index}`),
       el('span', { class: 'muted tiny' }, `${d.name || ''}${d.nvidia_smi_index !== undefined ? ` · nvidia-smi ${d.nvidia_smi_index}` : ''}${d.pci_bus_id ? ` · PCI ${d.pci_bus_id}` : ''}`),
       d.uuid ? el('span', { class: 'muted tiny', title: d.uuid }, `UUID ${String(d.uuid).slice(0, 24)}…`) : null,
       el('span', { class: 'tiny' }, `physical total ${Number(d.physical_total_memory_gb || d.total_memory_gb || 0).toFixed(2)}GB · planning budget ${Number(d.usable_memory_gb || 0).toFixed(2)}GB`),
+      el('span', { class: 'tiny model-resource-actual' }, `actual used ${Number(d.actual_used_memory_gb ?? d.used_memory_gb ?? d.driver_used_memory_gb ?? 0).toFixed(2)}GB · actual free ${Number(d.actual_free_memory_gb ?? d.free_memory_gb ?? d.driver_free_memory_gb ?? 0).toFixed(2)}GB · source ${d.actual_memory_source || d.memory_source || 'runtime'}`),
+      (d.torch_allocated_gb !== undefined || d.torch_reserved_gb !== undefined) ? el('span', { class: 'muted tiny' }, `torch allocated ${Number(d.torch_allocated_gb || 0).toFixed(2)}GB · torch reserved ${Number(d.torch_reserved_gb || 0).toFixed(2)}GB`) : null,
       el('span', { class: 'tiny' }, `app reserved ${Number(d.app_reserved_gb || d.tracked_loaded_gb || 0).toFixed(2)}GB · planning available ${Number(d.estimated_available_gb || d.tracked_available_gb || 0).toFixed(2)}GB`),
       d.app_available_gb !== undefined ? el('span', { class: 'muted tiny' }, `app-budget available ${Number(d.app_available_gb || 0).toFixed(2)}GB · basis ${d.availability_basis || 'unknown'}`) : null,
       d.free_memory_gb !== undefined && d.free_memory_gb !== null ? el('span', { class: d.driver_free_memory_warning ? 'bad tiny' : 'muted tiny' }, `driver free ${Number(d.free_memory_gb || 0).toFixed(2)}GB${d.driver_free_memory_warning ? ' (driver-reported free is lower than app reservation budget)' : ''}`) : null,
       (d.reservations || []).length ? el('div', { class: 'tiny' }, (d.reservations || []).map(r => `${r.model_name}:${r.reserved_gb}GB`).join(' · ')) : null
     ].filter(Boolean)))) : el('p', { class: 'muted' }, 'No CUDA GPUs detected by the app. CPU/cloud model loads remain available.'),
+    el('div', { class: 'muted tiny', 'data-model-resource-summary': '1' }, systemRamLine(resources)),
     loaded.length ? el('div', { class: 'muted tiny' }, `Loaded: ${loaded.map(x => `${x.model_name || x.label || 'model'}${x.device ? ' on ' + x.device : ''}`).join(' · ')}`) : el('div', { class: 'muted tiny' }, 'No models are currently loaded in RAM/VRAM.'),
     loading.length ? el('div', { class: 'muted tiny' }, `Loading/reserved: ${loading.map(x => x.model_name || x.label).join(' · ')}`) : null,
     resources.cuda_visible_devices ? el('div', { class: 'muted tiny' }, `CUDA_VISIBLE_DEVICES=${resources.cuda_visible_devices}`) : null,
@@ -6995,6 +9968,416 @@ function modelResourcePanel() {
     (resources.warnings || []).length ? el('div', { class: 'muted tiny' }, `Warnings: ${(resources.warnings || []).join(' ')}`) : null
   ].filter(Boolean));
 }
+
+function systemRamLine(resources = state.modelResource || {}) {
+  const ram = resources.system_ram || {};
+  if (!ram || !ram.ok) return 'System RAM: unavailable';
+  const total = Number(ram.total_gb || 0);
+  const used = Number(ram.used_gb || 0);
+  const avail = Number(ram.available_gb || 0);
+  const pct = Number.isFinite(Number(ram.percent)) ? `${Number(ram.percent).toFixed(1)}%` : 'unknown %';
+  return `System RAM: ${used.toFixed(2)}GB used / ${total.toFixed(2)}GB total · ${avail.toFixed(2)}GB available · ${pct}`;
+}
+function updateModelResourceDom() {
+  const root = document.getElementById('app');
+  if (!root) return;
+  root.querySelectorAll('[data-model-resource-panel]').forEach(node => {
+    try { node.replaceWith(modelResourcePanel()); } catch (err) { console.warn('resource panel patch failed', err); }
+  });
+  root.querySelectorAll('[data-model-resource-summary]').forEach(node => {
+    const devices = state.modelResource?.devices || [];
+    const loaded = state.modelResource?.loaded_models || [];
+    const parts = devices.map(d => `${d.id || 'cuda'} actual ${Number(d.actual_used_memory_gb ?? d.used_memory_gb ?? d.driver_used_memory_gb ?? 0).toFixed(2)}/${Number(d.physical_total_memory_gb || d.total_memory_gb || 0).toFixed(2)}GB used · app reserved ${Number(d.app_reserved_gb || d.tracked_loaded_gb || 0).toFixed(2)}GB`);
+    node.textContent = `${parts.join(' · ') || 'No CUDA devices detected'} · ${systemRamLine()} · loaded models: ${loaded.length}`;
+  });
+}
+
+function quickModelQueueDomSelectedValues(select = null) {
+  if (!select) return [];
+  const out = [];
+  const add = value => {
+    const name = String(value || '').trim();
+    if (name && !out.includes(name)) out.push(name);
+  };
+  // Native selectedOptions are the source of truth.  The dataset flag is kept
+  // as a compatibility mirror because some live status patches refresh option
+  // text/classes without replacing the select; queue buttons must still see
+  // every highlighted row, not only the final clicked row.
+  [...select.options].forEach(o => {
+    if (o.selected || o.dataset.queueSelected === '1' || o.getAttribute('aria-selected') === 'true') add(o.value);
+  });
+  return out;
+}
+function quickModelQueueStateValues(select = null) {
+  const out = [];
+  const add = value => {
+    const name = String(value || '').trim();
+    if (name && !out.includes(name)) out.push(name);
+  };
+  if (select) {
+    quickModelQueueDomSelectedValues(select).forEach(add);
+    try {
+      const saved = JSON.parse(select.dataset.selectedValues || '[]');
+      for (const value of saved || []) add(value);
+    } catch (_) {}
+  }
+  for (const value of (state.quickModelQueueSelection || [])) add(value);
+  return out;
+}
+function persistQuickModelQueueSelection(select = null, values = null) {
+  const rawValues = values !== null && values !== undefined ? values : (select ? quickModelQueueDomSelectedValues(select) : (state.quickModelQueueSelection || []));
+  const next = [...new Set((rawValues || []).map(x => String(x || '').trim()).filter(Boolean))];
+  state.quickModelQueueSelection = next;
+  if (select) {
+    const selectedSet = new Set(next);
+    [...select.options].forEach(option => {
+      const on = selectedSet.has(String(option.value || ''));
+      option.selected = on;
+      option.dataset.queueSelected = on ? '1' : '0';
+    });
+    select.dataset.selectedValues = JSON.stringify(next);
+    select.dataset.selectionCount = String(next.length);
+  }
+  return next;
+}
+function quickQueueSelectedNames(select = null, fallbackModel = '') {
+  let values = [];
+  if (select) {
+    values = quickModelQueueDomSelectedValues(select);
+    if (!values.length) values = quickModelQueueStateValues(select);
+  } else {
+    values = quickModelQueueStateValues(select);
+  }
+  if (values.length) return persistQuickModelQueueSelection(select, values);
+  const fallback = String(fallbackModel || state.quickModelSelection || '').trim();
+  return fallback ? [fallback] : [];
+}
+function loadedPlacementForQuickModel(name) {
+  const placement = modelPlacementFor(name);
+  if (placement && (placement.device || (placement.device_ids || []).length)) return placement;
+  const loaded = (state.modelResource?.loaded_models || []).find(row => String(row.model_name || row.name || '') === String(name || ''));
+  return loaded || null;
+}
+
+// Legacy test/compatibility marker: option.selected = priorValues.has is now keep = priorValues.has.
+// Legacy test/compatibility marker: state.quickModelQueueSelection = restored via persistQuickModelQueueSelection.
+function refreshModelOptionsInPlace() {
+  const root = document.getElementById('app');
+  if (!root) return;
+  const selects = root.querySelectorAll('select.model-category-select, select.quick-model-status-select, select[data-model-live-options="1"]');
+  selects.forEach(select => {
+    const isMulti = Boolean(select.multiple);
+    const priorValue = select.value;
+    const priorScrollTop = select.scrollTop || 0;
+    const priorValues = new Set(isMulti
+      ? (select.classList.contains('quick-model-queue-select') ? quickModelQueueStateValues(select) : [...select.selectedOptions].map(o => String(o.value || '')))
+      : []);
+    [...select.options].forEach(option => {
+      const row = (state.models || []).find(m => String(m.name || '') === String(option.value || ''));
+      if (!row) return;
+      const fresh = modelOptionNode(row);
+      option.className = fresh.className || '';
+      option.title = fresh.title || '';
+      option.textContent = fresh.textContent || option.textContent;
+      const styleText = fresh.getAttribute ? fresh.getAttribute('style') : '';
+      if (styleText !== null && styleText !== undefined) option.setAttribute('style', styleText);
+      if (isMulti) {
+        const keep = priorValues.has(String(option.value || ''));
+        option.selected = keep;
+        if (select.classList.contains('quick-model-queue-select')) option.dataset.queueSelected = keep ? '1' : '0';
+      }
+    });
+    if (isMulti) {
+      if (select.classList.contains('quick-model-queue-select')) persistQuickModelQueueSelection(select, [...priorValues]);
+    } else if (priorValue && selectHasValue(select, priorValue)) {
+      select.value = priorValue;
+    }
+    if (priorScrollTop) requestAnimationFrame(() => { try { select.scrollTop = priorScrollTop; } catch (_) {} });
+  });
+}
+
+function enableRangeMultiSelect(select, stateKey = '') {
+  if (!select || select.dataset.rangeMultiSelectBound === '1') return select;
+  select.dataset.rangeMultiSelectBound = '1';
+  const persist = () => {
+    // Let the browser own native multiple-select behavior. Earlier versions
+    // intercepted mousedown and synthesized selection manually; on some
+    // Windows/Firefox builds that prevented Ctrl-click deselection and left only
+    // the last clicked option queued. Persist the actual DOM-selected option set.
+    const values = select.classList.contains('quick-model-queue-select')
+      ? persistQuickModelQueueSelection(select, quickModelQueueDomSelectedValues(select))
+      : [...select.selectedOptions].map(o => o.value);
+    if (stateKey) state[stateKey] = values;
+    select.dataset.selectionCount = String(values.length || 0);
+    markControlInteraction(select, 90000);
+    updateLiveStatusDom();
+  };
+  select.addEventListener('pointerdown', () => { markControlInteraction(select, 90000); }, { passive:true });
+  select.addEventListener('keydown', ev => {
+    if ((ev.ctrlKey || ev.metaKey) && String(ev.key || '').toLowerCase() === 'a') {
+      ev.preventDefault();
+      [...select.options].forEach(o => { o.selected = true; });
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      persist();
+      return;
+    }
+    setTimeout(persist, 0);
+  });
+  select.addEventListener('change', persist);
+  select.addEventListener('input', persist);
+  select.addEventListener('click', () => setTimeout(persist, 0));
+  select.addEventListener('mouseup', () => setTimeout(persist, 0));
+  select.addEventListener('blur', persist);
+  return select;
+}
+function isModelJobType(job) {
+  const type = String(job?.type || '').toLowerCase();
+  return type.startsWith('model_') || type.startsWith('agent_model_') || type.includes('model_download') || type.includes('annotation_model') || type === 'model_run' || type === 'model_tag_selection';
+}
+function activeOrRecentModelJobs(limit = 80) {
+  const rows = (state.jobs || []).filter(isModelJobType);
+  const active = rows.filter(j => ['queued','running','paused','unloading'].includes(String(j.status || '').toLowerCase()));
+  const recent = rows.filter(j => !active.includes(j)).sort((a,b) => Number(b.id || 0) - Number(a.id || 0)).slice(0, Math.max(0, limit - active.length));
+  return [...active.sort((a,b) => Number(a.id || 0) - Number(b.id || 0)), ...recent];
+}
+function isQuickTagCapableModelName(name) {
+  const m = (state.models || []).find(row => String(row.name || '') === String(name || '')) || {};
+  const caps = new Set((m.capabilities || []).map(x => String(x).toLowerCase()));
+  const kind = String(m.kind || '').toLowerCase();
+  return caps.has('tag') || caps.has('rating') || caps.has('classify') || caps.has('multilabel') || ['tagger','classifier','rating','rating_classifier'].includes(kind);
+}
+function jobCreatedMs(job) {
+  const raw = job?.created_at || job?.started_at || job?.updated_at || '';
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+function jobElapsedSeconds(job) {
+  const end = ['completed','failed','cancelled','canceled'].includes(String(job?.status || '').toLowerCase()) && job?.finished_at ? Date.parse(job.finished_at) : Date.now();
+  const start = jobCreatedMs(job);
+  return Math.max(0, (Number.isFinite(end) ? end : Date.now()) - start) / 1000;
+}
+function estimateJobEtaSeconds(job) {
+  const status = String(job?.status || '').toLowerCase();
+  if (!['queued','running','paused','unloading'].includes(status)) return 0;
+  const progress = Math.max(0, Math.min(1, Number(job?.progress || 0)));
+  if (progress <= 0.005) return null;
+  const elapsed = jobElapsedSeconds(job);
+  return Math.max(0, elapsed * (1 - progress) / progress);
+}
+function affectedMediaIdsFromParams(params = {}) {
+  const ids = [];
+  if (Array.isArray(params.media_ids)) ids.push(...params.media_ids);
+  if (params.media_id !== undefined && params.media_id !== null) ids.push(params.media_id);
+  return [...new Set(ids.map(x => Number(x)).filter(Number.isFinite))];
+}
+function jobModelName(job) {
+  const params = job?.params || job?.parameters || {};
+  return String(params.model_name || params.modelName || job?.model_name || job?.modelName || '').trim();
+}
+function modelJobActionKind(job) {
+  const type = String(job?.type || '').toLowerCase();
+  if (type.includes('download')) return 'download';
+  if (type.includes('unload')) return 'unload';
+  if (type.includes('load')) return 'load';
+  if (type.includes('inference') || type.includes('run') || type.includes('tag_selection')) return 'inference';
+  return type.replace(/^model_/, '') || 'model';
+}
+function modelQueueRecentEnough(job, maxAgeMs = 120000) {
+  const status = String(job?.status || '').toLowerCase();
+  if (['queued','running','paused','unloading'].includes(status)) return true;
+  const ts = Date.parse(job?.finished_at || job?.updated_at || job?.created_at || '');
+  return Number.isFinite(ts) ? (Date.now() - ts) <= maxAgeMs : true;
+}
+function modelQueueRows({ mediaIds = null, quickOnly = false, activeOnly = true, includeRecent = false, modelNames = [], recentMaxAgeMs = 120000 } = {}) {
+  const wanted = mediaIds ? new Set((mediaIds || []).map(Number).filter(Number.isFinite).map(String)) : null;
+  const wantedModels = new Set((modelNames || []).map(x => String(x || '').trim()).filter(Boolean));
+  let rows = (state.jobs || []).filter(j => {
+    if (!isModelJobType(j)) return false;
+    const status = String(j.status || '').toLowerCase();
+    if (activeOnly && !['queued','running','paused','unloading'].includes(status)) return false;
+    if (!activeOnly && includeRecent && !modelQueueRecentEnough(j, recentMaxAgeMs)) return false;
+    if (!activeOnly && !includeRecent && ['completed','failed','cancelled','canceled'].includes(status)) return false;
+    const params = j.params || {};
+    const modelName = jobModelName(j);
+    const action = modelJobActionKind(j);
+    if (quickOnly) {
+      const selectedQuickModel = wantedModels.size && wantedModels.has(modelName);
+      const quickCapable = isQuickTagCapableModelName(modelName);
+      if (!selectedQuickModel && !quickCapable) return false;
+    }
+    if (wanted && wanted.size && action === 'inference') {
+      const ids = affectedMediaIdsFromParams(params).map(String);
+      if (ids.length && !ids.some(id => wanted.has(id))) return false;
+    }
+    return true;
+  });
+  rows.sort((a,b) => {
+    const activeRank = status => ['queued','running','paused','unloading'].includes(String(status || '').toLowerCase()) ? 0 : 1;
+    const ar = activeRank(a.status), br = activeRank(b.status);
+    if (ar !== br) return ar - br;
+    return Number(a.id || 0) - Number(b.id || 0);
+  });
+  return rows;
+}
+function queueProgressAggregate(rows = []) {
+  const active = rows.filter(j => ['queued','running','paused','unloading'].includes(String(j.status || '').toLowerCase()));
+  if (!active.length) return { progress: 0, percent: 0, active: 0, eta_seconds: 0, elapsed_seconds: 0 };
+  const progress = active.reduce((acc, j) => acc + Math.max(0, Math.min(1, Number(j.progress || 0))), 0) / active.length;
+  const etaVals = active.map(estimateJobEtaSeconds).filter(x => Number.isFinite(Number(x)) && Number(x) > 0).map(Number);
+  const elapsed = Math.max(0, ...active.map(jobElapsedSeconds));
+  return { progress, percent: Math.round(progress * 100), active: active.length, eta_seconds: etaVals.length ? Math.max(...etaVals) : null, elapsed_seconds: elapsed };
+}
+function modelQueueJobRow(job) {
+  const params = job.params || {};
+  const modelName = jobModelName(job) || 'model';
+  const model = (state.models || []).find(m => String(m.name || '') === String(modelName)) || { name: modelName, label: modelName };
+  const status = String(job.status || '').toLowerCase();
+  const pct = Math.round(Math.max(0, Math.min(1, Number(job.progress || 0))) * 100);
+  const eta = estimateJobEtaSeconds(job);
+  const task = modelJobActionKind(job) + (params.task && modelJobActionKind(job) === 'inference' ? ` · ${params.task}` : '');
+  const msg = job.error ? String(job.error).slice(0, 220) : (job.message || '');
+  return el('div', { class: `model-queue-row ${status}`, 'data-model-queue-job-id': String(job.id || '') }, [
+    el('div', { class: 'model-queue-title' }, [
+      el('strong', {}, `${model.label || modelName}`),
+      el('span', { class: `badge ${status === 'completed' ? 'ok' : status === 'failed' ? 'bad' : ''}`, 'data-job-status-id': String(job.id || '') }, status || 'unknown'),
+      el('span', { class: 'muted tiny' }, `#${job.id || '?'} · ${task}`)
+    ]),
+    el('div', { class: 'model-queue-bar' }, el('span', { style: `width:${pct}%`, 'data-job-progress-id': String(job.id || '') })),
+    el('div', { class: 'muted tiny model-queue-meta' }, [
+      el('span', {}, `${pct}%`),
+      el('span', {}, `elapsed ${formatDuration(jobElapsedSeconds(job))}`),
+      el('span', {}, `ETA ${formatDuration(eta)}`),
+      el('span', { 'data-job-message-id': String(job.id || '') }, msg)
+    ])
+  ]);
+}
+// Backward compatibility label: Quick Tag Inference Queue now appears as Quick Tag Model Queue because it includes download/load/unload/inference jobs.
+function modelJobQueuePanel({ scope = 'all', title = 'Live Model Job Queue', mediaIds = null, quickOnly = false, includeRecent = false, modelNames = [], emptyText = 'No active model jobs.' } = {}) {
+  const rows = modelQueueRows({ mediaIds, quickOnly, activeOnly: !includeRecent, includeRecent, modelNames, recentMaxAgeMs: scope === 'quick' ? 12000 : 120000 });
+  const activeRows = rows.filter(j => ['queued','running','paused','unloading'].includes(String(j.status || '').toLowerCase()));
+  const aggregate = queueProgressAggregate(rows);
+  const pct = aggregate.percent;
+  const displayRows = includeRecent ? rows : activeRows;
+  return el('div', { class: `model-job-queue-panel ${scope}`, 'data-inference-queue-panel': scope, 'data-quick-only': quickOnly ? '1' : '0', 'data-media-ids': mediaIds ? (mediaIds || []).join(',') : '', 'data-model-names': (modelNames || []).join(','), 'data-include-recent': includeRecent ? '1' : '0' }, [
+    el('div', { class: 'row tight' }, [
+      el('div', { class: 'progress-ring queue-ring', style: `--pct:${pct}%`, 'data-queue-progress-ring': scope }, el('span', { 'data-queue-progress-percent': scope }, `${pct}%`)),
+      el('div', {}, [
+        el('strong', {}, title),
+        el('div', { class: 'muted tiny', 'data-queue-progress-summary': scope }, `${activeRows.length} active · elapsed ${formatDuration(aggregate.elapsed_seconds)} · ETA ${formatDuration(aggregate.eta_seconds)}`)
+      ])
+    ]),
+    displayRows.length ? el('div', { class: 'model-queue-list' }, displayRows.map(modelQueueJobRow)) : el('div', { class: 'muted tiny' }, emptyText)
+  ]);
+}
+function updateInferenceQueueDom() {
+  const root = document.getElementById('app');
+  if (!root) return;
+  root.querySelectorAll('[data-inference-queue-panel]').forEach(node => {
+    try {
+      const scope = node.dataset.inferenceQueuePanel || 'all';
+      const quickOnly = node.dataset.quickOnly === '1';
+      const mediaIds = (node.dataset.mediaIds || '').split(',').map(x => Number(x)).filter(Number.isFinite);
+      let modelNames = (node.dataset.modelNames || '').split(',').map(x => x.trim()).filter(Boolean);
+      if (scope === 'quick') modelNames = [...new Set([state.quickModelSelection, ...(state.quickModelQueueSelection || []), ...modelNames].filter(Boolean))];
+      node.dataset.modelNames = modelNames.join(',');
+      const list = node.querySelector('.model-queue-list');
+      const priorScrollTop = list ? list.scrollTop : 0;
+      const replacement = modelJobQueuePanel({ scope, title: scope === 'quick' ? 'Quick Tag Model Queue' : 'All Model/Agent Job Queue', mediaIds: mediaIds.length ? mediaIds : null, quickOnly, modelNames, includeRecent: scope === 'quick' });
+      node.replaceWith(replacement);
+      if (priorScrollTop) requestAnimationFrame(() => { const nextList = replacement.querySelector('.model-queue-list'); if (nextList) nextList.scrollTop = priorScrollTop; });
+    } catch (err) { console.warn('queue panel patch failed', err); }
+  });
+}
+async function queueModelInferenceJobs(models, baseBody = {}, { parallel = true, queueScope = 'quick' } = {}) {
+  const names = [...new Set((models || []).map(x => String(x || '').trim()).filter(Boolean))];
+  if (!names.length) throw new Error('Select at least one model to queue.');
+  const bodyForName = (name) => typeof baseBody === 'function' ? (baseBody(name) || {}) : { ...(baseBody || {}) };
+  const runBodies = names.map(name => {
+    const row = (state.models || []).find(m => m.name === name) || {};
+    const base = bodyForName(name);
+    const options = { ...(base.options || {}), queued_from: queueScope, model_kind: row.kind || base.options?.model_kind || '' };
+    const taskValue = options.quick_tag_surface ? defaultTaskForModelName(name) : (base.task || defaultTaskForModelName(name));
+    return { ...base, model_name: name, task: taskValue, options };
+  });
+  const placeholders = new Map();
+  for (const body of runBodies) {
+    setOptimisticModelStage(body.model_name, 'inference', 'queued', 0.0, `${queueScope} inference queued`);
+    const ph = queuePlaceholderJob('model_inference', body.model_name, `${queueScope} inference queued`, body, 0.0);
+    placeholders.set(body.model_name, ph.id);
+  }
+  updateLiveStatusDom();
+  let queued = [];
+  const queueOne = async (body) => {
+    const r = await api('/api/models/run', { method: 'POST', body });
+    return { model_name: body.model_name, job_id: r.job_id, task: body.task };
+  };
+  try {
+    if (parallel) {
+      const batch = await api('/api/models/queue-runs', { method: 'POST', body: { runs: runBodies, queue_source: queueScope, user_approved: true } });
+      queued = (batch.queued || []).map(row => ({ model_name: row.model_name, job_id: row.job_id, task: row.task }));
+    } else {
+      for (const body of runBodies) queued.push(await queueOne(body));
+    }
+  } catch (err) {
+    if (parallel) queued = await Promise.all(runBodies.map(queueOne));
+    else {
+      queued = [];
+      for (const body of runBodies) queued.push(await queueOne(body));
+    }
+  }
+  for (const row of queued) {
+    const body = runBodies.find(x => x.model_name === row.model_name) || {};
+    const jobId = row.job_id;
+    if (!jobId) continue;
+    const optimistic = { id: jobId, type: 'model_inference', status: 'queued', progress: 0, message: 'Queued', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), params: body };
+    upsertJobRow(optimistic, placeholders.get(row.model_name));
+    state.lastModelRunJob = jobId;
+    setOptimisticModelStage(row.model_name, 'inference', 'queued', 0.0, `${queueScope} inference queued`);
+    watchModelInferenceJob(jobId, body.media_ids || []);
+  }
+  updateLiveStatusDom();
+  return queued;
+}
+async function pollModelRuntimeLive({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && state.modelRuntimePollBusy) return;
+  const relevantTabs = new Set(['Models','Tag Editor','Batch Tags','Compare','Prediction Analytics','Assistant','Orchestrate','Agent Tools','Agentic Graph Chat','Jobs']);
+  const activeModelJobs = (state.jobs || []).some(j => isModelJobType(j) && ['queued','running','paused','unloading'].includes(String(j.status || '').toLowerCase()));
+  if (!force && !activeModelJobs && !relevantTabs.has(state.tab)) return;
+  if (!force && now - Number(state.modelRuntimePollLastAt || 0) < (activeModelJobs ? 900 : 2200)) return;
+  state.modelRuntimePollBusy = true;
+  state.modelRuntimePollLastAt = now;
+  try {
+    const beforeSignature = state.lastModelRuntimeSignature || modelRuntimeSignature();
+    const [jobs, statuses, resource] = await Promise.all([
+      api('/api/jobs', { cache: 'no-store' }).catch(() => state.jobs),
+      api('/api/models/status', { cache: 'no-store' }).catch(() => state.modelStatuses),
+      api('/api/models/resource-status', { cache: 'no-store' }).catch(() => state.modelResource),
+    ]);
+    if (jobs) {
+      // Preserve client-side placeholder rows for queue requests that have not
+      // yet returned a backend job id. Without this merge, the live poller can
+      // briefly replace state.jobs with the server list and make multi-selected
+      // queued rows vanish from the Quick Tag queue until each POST returns.
+      const serverJobs = Array.isArray(jobs) ? jobs : [];
+      const serverIds = new Set(serverJobs.map(j => String(j.id)));
+      const pendingTemps = (state.jobs || []).filter(j => j && j.temporary && !serverIds.has(String(j.id)));
+      state.jobs = [...pendingTemps, ...serverJobs];
+    }
+    if (statuses) state.modelStatuses = statuses;
+    if (resource) state.modelResource = resource;
+    else if (!state.modelResource && state.modelStatuses?.placement) state.modelResource = state.modelStatuses.placement;
+    syncCatalogLoadedStatusFromStatuses();
+    const afterSignature = modelRuntimeSignature();
+    const changed = beforeSignature !== afterSignature;
+    state.lastModelRuntimeSignature = afterSignature;
+    updateLiveStatusDom();
+    if (changed && state.tab === 'Models') patchModelsTabLive({ reorder: true });
+  } finally {
+    state.modelRuntimePollBusy = false;
+  }
+}
+
 function modelRuntimeControls() {
   const device = el('input', { value: (state.settings.preferred_devices || ['auto'])[0] || 'auto', placeholder: 'auto, cpu, cuda:0' });
   const gpuIds = el('input', { value: (state.settings.default_model_device_ids || [0]).join(','), placeholder: 'GPU ids: 0,1,2' });
@@ -7117,7 +10500,7 @@ function orchestrationView() {
   const kind = el('select', {}, ['tag', 'classify', 'caption', 'vlm_check', 'llm_review', 'tag_select'].map(x => el('option', { value: x }, x)));
   const policy = el('select', {}, ['auto', 'cpu', 'single_gpu', 'multi_gpu', 'custom'].map(x => el('option', { value: x }, x)));
   const devices = el('input', { placeholder: 'devices: auto or cuda:0,cuda:1', value: (state.settings.preferred_devices || ['auto']).join(',') });
-  const threshold = el('input', { type: 'number', step: '0.05', min: '0', max: '1', value: state.settings.classifier_threshold || 0.35 });
+  const threshold = el('input', { type: 'number', step: '0.05', min: '0', max: '1', value: defaultClassifierThreshold() });
   const dry = el('input', { type: 'checkbox', checked: true });
   const applyTags = el('input', { type: 'checkbox' });
   const applyCaps = el('input', { type: 'checkbox' });
@@ -7135,7 +10518,7 @@ function orchestrationView() {
         try {
           let body = null; const chosen = state.orchestrationTemplates.find(t => t.key === template.value);
           if (chosen) { body = JSON.parse(JSON.stringify(chosen.request)); body.media_ids = [...state.selected]; body.dataset_id = searchDataset.value ? Number(searchDataset.value) : body.dataset_id; body.profile_key = state.tagProfile; body.dry_run = dry.checked; body.apply_tags = applyTags.checked; body.apply_captions = applyCaps.checked; body.device_policy = policy.value; body.devices = devices.value.split(',').map(x => x.trim()).filter(Boolean); }
-          else { body = { name: 'Manual orchestration run', goal: goal.value, dataset_id: searchDataset.value ? Number(searchDataset.value) : null, media_ids: [...state.selected], profile_key: state.tagProfile, device_policy: policy.value, devices: devices.value.split(',').map(x => x.trim()).filter(Boolean), dry_run: dry.checked, apply_tags: applyTags.checked, apply_captions: applyCaps.checked, steps: [{ kind: kind.value, model_name: model.value, task: kind.value, prompt: prompt.value, threshold: Number(threshold.value || 0.35), apply: applyTags.checked || applyCaps.checked, options: { temperature: state.settings.model_temperature, max_new_tokens: state.settings.model_max_new_tokens } }] }; }
+          else { body = { name: 'Manual orchestration run', goal: goal.value, dataset_id: searchDataset.value ? Number(searchDataset.value) : null, media_ids: [...state.selected], profile_key: state.tagProfile, device_policy: policy.value, devices: devices.value.split(',').map(x => x.trim()).filter(Boolean), dry_run: dry.checked, apply_tags: applyTags.checked, apply_captions: applyCaps.checked, steps: [{ kind: kind.value, model_name: model.value, task: kind.value, prompt: prompt.value, threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD), apply: applyTags.checked || applyCaps.checked, options: { temperature: state.settings.model_temperature, max_new_tokens: state.settings.model_max_new_tokens } }] }; }
           const r = await api('/api/orchestration/run', { method: 'POST', body }); toast(`Orchestration job ${r.job_id} queued`); setTab('Jobs');
         } catch (err) { toast(err.message, false); }
       } }, 'Run Orchestration')
@@ -7194,7 +10577,7 @@ function customModelCatalogCard() {
             recommended_backend: backend.value.trim() || 'auto'
           };
           const r = await api('/api/models/custom', { method: 'POST', body: payload });
-          state.models = r.models || await api('/api/models');
+          state.models = r.models || await api('/api/models?force=true');
           state.customModelForm = { name: '', label: '', category: '', provider: 'huggingface', repo_id: '', local_path: '', description: '', capabilities: '', size_gb: '', vram_gb: '', precision: 'checkpoint-defined', modality: 'image/text', recommended_backend: 'auto' };
           await refreshModelStatuses();
           toast(`Custom model added: ${r.model?.label || r.model?.name}`);
@@ -7292,7 +10675,7 @@ function externalModelRootsCard() {
         } catch (err) { toast(err.message, false); }
       } }, 'Save Roots + Rescan'),
       el('button', { class: 'secondary', onclick: async () => {
-        try { const r = await api('/api/models/rescan', { method: 'POST', body: {} }); await refreshAll(); toast(`Model rescan complete: ${r.count || 0} model(s) reconciled.`); render(true, true); } catch (err) { toast(err.message, false); }
+        try { const r = await api('/api/models/rescan', { method: 'POST', body: {} }); await refreshModelsPanel({ force: true }); toast(`Model rescan complete: ${r.count || 0} model(s) reconciled.`); render(true, true); } catch (err) { toast(err.message, false); }
       } }, 'Rescan Models')
     ]),
     el('p', { class: 'muted tiny' }, `Current in-install model cache: ${state.settings.model_cache_dir || 'models/hf'}. Symlink targets are shown on model cards when detected.`)
@@ -7319,6 +10702,110 @@ function cloudModelRuntimeDefaultsCard() {
   ]);
 }
 
+async function refreshIntegrityClassifiers(force = false) {
+  if (!force && Array.isArray(state.integrityProfiles)) return state.integrityProfiles;
+  try {
+    const r = await api('/api/integrity-classifiers/profiles');
+    state.integrityProfiles = r.profiles || [];
+    if (!state.integritySelectedProfile && state.integrityProfiles.length) state.integritySelectedProfile = state.integrityProfiles[0].id;
+  } catch (err) { console.warn('integrity classifier profile refresh failed', err); state.integrityProfiles ||= []; }
+  return state.integrityProfiles || [];
+}
+function integrityProfileOptions() {
+  const profiles = state.integrityProfiles || [];
+  return profiles.length ? profiles.map(p => el('option', { value:p.id }, `${p.name || p.id}${p.label_count ? ' · ' + p.label_count + ' labels' : ''}${p.model_exists ? '' : ' · model missing'}`)) : [el('option', { value:'' }, 'No integrity classifier profiles registered')];
+}
+function integrityProfileSelect() {
+  if (!Array.isArray(state.integrityProfiles)) setTimeout(() => refreshIntegrityClassifiers(true).then(() => renderNowPreservingState(false)), 0);
+  const sel = el('select', { onchange:e=>{ state.integritySelectedProfile = e.target.value; } }, integrityProfileOptions());
+  sel.value = state.integritySelectedProfile || (state.integrityProfiles || [])[0]?.id || '';
+  return sel;
+}
+async function watchIntegrityJob(jobId, mediaIds = []) {
+  const id = Number(jobId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const started = Date.now();
+  let job = null;
+  while (Date.now() - started < 30 * 60 * 1000) {
+    job = await api(`/api/jobs/${id}`).catch(() => job);
+    if (job) {
+      state.jobs = [job, ...(state.jobs || []).filter(j => Number(j.id) !== id)];
+      updateLiveStatusDom();
+      const status = String(job.status || '').toLowerCase();
+      if (['completed','failed','cancelled','canceled'].includes(status)) break;
+    }
+    await sleep(900);
+  }
+  if (job && String(job.status || '').toLowerCase() === 'completed') {
+    state.integrityLastResult = job.result || job;
+    invalidateTagScoreCache(mediaIds);
+    await Promise.all((mediaIds || []).slice(0, 80).map(id => requestTagScores(id, []).catch(() => null)));
+    await refreshMediaRows(mediaIds);
+    toast(`Integrity classifier job ${id} completed.`);
+    renderNowPreservingState('hard');
+  } else if (job && String(job.status || '').toLowerCase() === 'failed') {
+    toast(job.error || `Integrity classifier job ${id} failed.`, false);
+  }
+  return job;
+}
+function integrityRunCard(mediaIdsProvider, title = 'Nightshade / Glaze / Poisoned-Data Integrity Check') {
+  if (!Array.isArray(state.integrityProfiles)) setTimeout(() => refreshIntegrityClassifiers(true).then(() => renderNowPreservingState(false)), 0);
+  const profile = integrityProfileSelect();
+  const threshold = el('input', { type:'number', min:'0.001', max:'1', step:'0.01', value:String(state.integrityThreshold || 0.70), style:'width:90px', onchange:e=>{ const n=stableThresholdValue(e.target.value, 0.70); state.integrityThreshold=n; e.target.value=String(n); } });
+  const device = el('select', { onchange:e=>{ state.integrityDevice=e.target.value; } }, ['auto','cpu', ...((state.modelResource?.devices || []).map((d,idx)=>`cuda:${String(d.id ?? d.device_id ?? idx).replace(/^cuda:/,'')}`))].map(x=>el('option',{value:x},x)));
+  device.value = state.integrityDevice || 'auto';
+  const applyTags = el('input', { type:'checkbox', checked:Boolean(state.integrityApplyTags), onchange:e=>{ state.integrityApplyTags=e.target.checked; } });
+  state.integrityVideo ||= { enabled:true, preset:'highest_quality', sampling_rate_fps:1, max_frames:48, frame_format:'png', compression_percent:100 };
+  const videoEnabled = el('input', { type:'checkbox', checked: state.integrityVideo.enabled !== false, onchange:e=>{ state.integrityVideo.enabled=e.target.checked; } });
+  const videoPreset = el('select', { onchange:e=>{ state.integrityVideo.preset=e.target.value; if(e.target.value==='highest_quality'){ videoFormat.value='png'; videoCompression.value='100'; } } }, ['highest_quality','balanced','fast_preview','custom'].map(x=>el('option',{value:x},x.replace(/_/g,' '))));
+  videoPreset.value = state.integrityVideo.preset || 'highest_quality';
+  const videoRate = el('input', { type:'number', min:'0.05', max:'60', step:'0.05', value:String(state.integrityVideo.sampling_rate_fps ?? 1), style:'width:80px', onchange:e=>{ state.integrityVideo.sampling_rate_fps=Number(e.target.value||1); } });
+  const videoMaxFrames = el('input', { type:'number', min:'1', max:'10000', value:String(state.integrityVideo.max_frames ?? 48), style:'width:90px', onchange:e=>{ state.integrityVideo.max_frames=Number(e.target.value||48); } });
+  const videoFormat = el('select', { onchange:e=>{ state.integrityVideo.frame_format=e.target.value; } }, ['png','webp','jpg'].map(x=>el('option',{value:x},x.toUpperCase())));
+  videoFormat.value = state.integrityVideo.frame_format || 'png';
+  const videoCompression = el('input', { type:'number', min:'1', max:'100', value:String(state.integrityVideo.compression_percent ?? 100), style:'width:80px', onchange:e=>{ state.integrityVideo.compression_percent=Number(e.target.value||100); } });
+  const result = state.integrityLastResult;
+  return card(title, [
+    el('p', { class:'muted' }, 'Run user-registered EfficientNet/EfficientNetV2 binary or multiclass classifiers for Nightshade, Glaze, and other adversarial-data integrity checks. Results are stored as prediction metadata so you can audit later without rerunning the model. Video files are sampled into frames and aggregated per media item.'),
+    el('div', { class:'row wrap' }, [profile, el('label',{},['threshold ', threshold]), el('label',{},['device ', device]), el('label',{},[applyTags, ' apply detected integrity tags'])]),
+    el('details', { class:'details-card', open:false }, [el('summary',{},'Video sampling / extraction options'), el('div',{class:'row wrap'},[el('label',{},[videoEnabled,' enable video sampling']), el('label',{},['preset ', videoPreset]), el('label',{},['fps ', videoRate]), el('label',{},['max frames ', videoMaxFrames]), el('label',{},['frame type ', videoFormat]), el('label',{},['quality/compression % ', videoCompression])]), el('p',{class:'muted tiny'},'Highest quality uses PNG frames at 100% quality. Balanced/Fast can use WebP/JPEG with stronger compression. The classifier runs on sampled frames and the report stores frame-level and aggregate scores.')]),
+    el('div', { class:'row' }, [
+      el('button', { class:'secondary', onclick: async()=>{ await refreshIntegrityClassifiers(true); toast(`Loaded ${(state.integrityProfiles||[]).length} integrity classifier profile(s).`); renderNowPreservingState(false); } }, 'Refresh Profiles'),
+      el('button', { class:'primary', disabled: !(state.integrityProfiles || []).length, onclick: async()=>{ try { const ids=[...new Set((mediaIdsProvider()||[]).map(Number).filter(Boolean))]; if(!ids.length) throw new Error('Select/open at least one media item first.'); const body={ profile_id: profile.value || state.integritySelectedProfile || '', media_ids:ids, threshold:Number(threshold.value||0.70), device:device.value||'auto', apply_tags:applyTags.checked, tag_profile:state.tagProfile, order_strategy:state.orderingStrategy||'retain', video_sampling:{ enabled:videoEnabled.checked, preset:videoPreset.value, sampling_rate_fps:Number(videoRate.value||1), max_frames:Number(videoMaxFrames.value||48), frame_format:videoFormat.value, compression_percent:Number(videoCompression.value||100) } }; const r=await api('/api/integrity-classifiers/run',{method:'POST',body}); state.jobDetailId=r.job_id; state.jobs=[{id:r.job_id,type:'integrity_classifier',status:'queued',progress:0,message:'Queued integrity classifier',params:body},...(state.jobs||[])]; toast(`Integrity classifier queued as job ${r.job_id}.`); watchIntegrityJob(r.job_id, ids); } catch(err){ toast(err.message,false); } } }, 'Queue Integrity Check')
+    ]),
+    result ? el('details', { class:'details-card', open:false }, [el('summary',{},`Last integrity result · ${(result.results||[]).length || result.processed || 0} checked`), el('pre',{class:'log compact'},JSON.stringify(result,null,2))]) : null
+  ].filter(Boolean));
+}
+function integrityClassifierModelCard() {
+  if (!Array.isArray(state.integrityProfiles)) setTimeout(() => refreshIntegrityClassifiers(true).then(() => renderNowPreservingState(false)), 0);
+  const f = state.integrityForm || (state.integrityForm = {});
+  const name = el('input', { value:f.name || 'Nightshade / Glaze integrity classifier', placeholder:'profile name', oninput:e=>f.name=e.target.value, style:'min-width:260px' });
+  const modelPath = el('input', { value:f.model_path || '', placeholder:'model file or folder (.onnx/.pt/.pth/.h5/.keras)', oninput:e=>f.model_path=e.target.value, style:'min-width:420px' });
+  const labelsPath = el('input', { value:f.labels_path || '', placeholder:'labels file (.txt/.csv/.json)', oninput:e=>f.labels_path=e.target.value, style:'min-width:340px' });
+  const arch = el('select', { onchange:e=>f.architecture=e.target.value }, ['efficientnetv2','efficientnetv2_s','efficientnetv2_m','efficientnetv2_l','efficientnet_b0','efficientnet_b4','efficientnet_b7','custom'].map(x=>el('option',{value:x},x)));
+  arch.value = f.architecture || 'efficientnetv2';
+  const task = el('select', { onchange:e=>f.task=e.target.value }, ['multilabel','binary','multiclass'].map(x=>el('option',{value:x},x)));
+  task.value = f.task || 'multilabel';
+  const size = el('input', { type:'number', min:'32', max:'2048', value:String(f.input_size || 224), style:'width:90px', onchange:e=>f.input_size=Number(e.target.value||224) });
+  const norm = el('select', { onchange:e=>f.normalization=e.target.value }, ['imagenet','half','none'].map(x=>el('option',{value:x},x)));
+  norm.value = f.normalization || 'imagenet';
+  const threshold = el('input', { type:'number', min:'0.001', max:'1', step:'0.01', value:String(f.threshold || 0.70), style:'width:90px', onchange:e=>f.threshold=stableThresholdValue(e.target.value,0.70) });
+  const profiles = state.integrityProfiles || [];
+  return card('Custom Nightshade / Glaze / Data-Poison Integrity Classifiers', [
+    el('p', { class:'muted' }, 'Register local EfficientNet/EfficientNetV2 binary or multiclass classifiers and their label ordering for dataset integrity checks. These profiles are isolated from the main tagger registry so they cannot break existing working taggers.'),
+    el('div', { class:'row wrap' }, [name, arch, task, el('label',{},['input ', size]), el('label',{},['norm ', norm]), el('label',{},['threshold ', threshold])]),
+    el('div', { class:'row wrap' }, [modelPath, el('button',{class:'secondary',onclick:async()=>{ const picked=await pickFilePath(modelPath,'Select integrity classifier model file'); if(picked){ f.model_path=picked; modelPath.value=picked; } }},'Browse Model File...'), el('button',{class:'secondary',onclick:async()=>{ const picked=await pickFolder(modelPath,'Select integrity classifier model folder'); if(picked){ f.model_path=picked; modelPath.value=picked; } }},'Browse Model Folder...')]),
+    el('div', { class:'row wrap' }, [labelsPath, el('button',{class:'secondary',onclick:async()=>{ const picked=await pickFilePath(labelsPath,'Select labels file for integrity classifier'); if(picked){ f.labels_path=picked; labelsPath.value=picked; } }},'Browse Labels...')]),
+    el('div', { class:'row' }, [
+      el('button',{class:'secondary',onclick:async()=>{ try{ const r=await api('/api/integrity-classifiers/inspect-folder',{method:'POST',body:{folder:modelPath.value}}); state.integrityLastInspect=r; toast(r.ok ? `Found ${(r.models||[]).length} model file(s), ${(r.labels||[]).length} label file(s).` : (r.error||'Inspect failed'), Boolean(r.ok)); renderNowPreservingState(false); }catch(err){toast(err.message,false);} }},'Inspect Folder'),
+      el('button',{class:'primary',onclick:async()=>{ try{ const body={...f,name:name.value,model_path:modelPath.value,labels_path:labelsPath.value,architecture:arch.value,task:task.value,input_size:Number(size.value||224),normalization:norm.value,threshold:Number(threshold.value||0.70)}; const r=await api('/api/integrity-classifiers/profiles',{method:'POST',body}); state.integrityProfiles=r.profiles||[]; state.integritySelectedProfile=r.profile?.id||state.integritySelectedProfile; toast('Integrity classifier profile saved.'); renderNowPreservingState(false); }catch(err){toast(err.message,false);} }},'Save Integrity Classifier Profile')
+    ]),
+    profiles.length ? el('div',{class:'model-table compact'},profiles.map(p=>el('div',{class:'model-row'},[el('strong',{},p.name||p.id), el('span',{class:'badge'},p.architecture||'arch'), el('span',{class:p.model_exists?'badge ok':'badge bad'},p.model_exists?'model found':'model missing'), el('span',{class:p.labels_exists?'badge ok':'badge bad'},p.labels_exists?`${p.label_count||0} labels`:'labels missing'), el('button',{class:'secondary small',onclick:async()=>{ try{ await api(`/api/integrity-classifiers/profiles/${encodeURIComponent(p.id)}`,{method:'DELETE'}); await refreshIntegrityClassifiers(true); renderNowPreservingState(false); }catch(err){toast(err.message,false);} }},'Delete')]))):el('p',{class:'muted'},'No integrity classifier profiles registered yet.'),
+    state.integrityLastInspect ? el('details',{class:'details-card'},[el('summary',{},'Last folder inspect'),el('pre',{class:'log compact'},JSON.stringify(state.integrityLastInspect,null,2))]):null
+  ].filter(Boolean));
+}
+
+
 function modelsView() {
   const model = el('select', {}, modelOptions());
   const modelsLive = el('input', { type: 'checkbox', checked: state.modelsAutoRefresh !== false, onchange: e => { state.modelsAutoRefresh = e.target.checked; } });
@@ -7326,7 +10813,7 @@ function modelsView() {
   const selectedModel = () => state.models.find(m => m.name === model.value) || { name: model.value, label: model.value };
   const selectedBusy = () => modelBusy(selectedModel(), ['download', 'load']);
   const task = el('select', {}, ['tag', 'caption', 'classify', 'rating', 'embed', 'segment', 'caption_split'].map(x => el('option', { value: x }, x)));
-  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.05', value: state.settings.classifier_threshold || 0.35 });
+  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.05', value: defaultClassifierThreshold() });
   const applyTags = el('input', { type: 'checkbox' });
   const applyCaption = el('input', { type: 'checkbox' });
   const rt = modelRuntimeControls();
@@ -7359,7 +10846,7 @@ function modelsView() {
               media_ids: [...state.selected],
               model_name: model.value,
               task: task.value,
-              threshold: Number(threshold.value || 0.35),
+              threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD),
               ...runtimeBodyFromControls(rt),
               parallel_workers: Number(rt.parallel.value || 1),
               apply_tags: applyTags.checked,
@@ -7369,6 +10856,7 @@ function modelsView() {
             const r = await api('/api/models/run', { method: 'POST', body });
             state.lastModelRunJob = r.job_id;
             state.jobDetailId = r.job_id;
+            watchModelInferenceJob(r.job_id, [...state.selected]);
             await refreshAll();
             toast(`Model job ${r.job_id} queued`);
             await refreshCompletedModelJobById(r.job_id);
@@ -7378,9 +10866,10 @@ function modelsView() {
       ])
     ]),
     customModelCatalogCard(),
+    integrityClassifierModelCard(),
     card('Download / Install Models', [
       el('p', { class: 'muted' }, 'Downloadable Hugging Face models are listed by category with approximate weight size, VRAM, modality, backend, and sharding metadata. Download uses the configured HF token and model cache directory. Load Into Memory is separate so compatibility/load failures show before inference.'),
-      el('div', { class: 'row' }, [el('label', {}, [modelsLive, ' Live status refresh']), kindFilter, el('span', { class: 'badge' }, state.modelKindFilter ? `Showing ${state.modelKindFilter} models only` : 'Showing all categories'), modelDownloadModeControl(), el('span', { class: 'badge', title: 'This controls the parallel_downloads value sent to model download jobs.' }, `Download mode: ${modelDownloadModeLabel()}`), el('button', { class: 'secondary', onclick: async () => { const keep = state.modelKindFilter; await refreshAll(); state.modelKindFilter = keep; render(true, true); } }, 'Refresh Filtered Model List'), el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/models/unload', { method: 'POST', body: {} }); await refreshAll(); toast(r.job_id ? `Unload queued as job ${r.job_id}` : (r.message || 'No loaded models to unload.')); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Unload Loaded Models')]),
+      el('div', { class: 'row' }, [el('label', {}, [modelsLive, ' Live status refresh']), kindFilter, el('span', { class: 'badge' }, state.modelKindFilter ? `Showing ${state.modelKindFilter} models only` : 'Showing all categories'), modelDownloadModeControl(), el('span', { class: 'badge', title: 'This controls the parallel_downloads value sent to model download jobs.' }, `Download mode: ${modelDownloadModeLabel()}`), el('button', { class: 'secondary', onclick: async () => { const keep = state.modelKindFilter; await refreshModelsPanel({ force: true }); state.modelKindFilter = keep; render(true, true); } }, 'Refresh Filtered Model List'), el('button', { class: 'secondary', title: 'Rescan current/external model roots and mark migrated local model files as downloaded without fetching anything.', onclick: async () => { try { const r = await api('/api/models/rescan', { method: 'POST' }); await refreshModelsPanel({ force: true }); toast(`Reconciled ${r.count || 0} migrated/local model row(s) without downloading.`); renderNowPreservingState(false); } catch (err) { toast(err.message, false); } } }, 'Rescan / Reconcile Migrated Models'), el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/models/unload', { method: 'POST', body: {} }); await refreshModelsPanel({ force: true }); toast(r.job_id ? `Unload queued as job ${r.job_id}` : (r.message || 'No loaded models to unload.')); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Unload Loaded Models')]),
       el('p', { class: 'muted tiny' }, 'Use Serial queue when large downloads are fragile or you plan to pause/switch VPN/Wi-Fi. Use Parallel transfers only when you want the downloader to split bandwidth across multiple files.'),
       modelDownloadQueueSummaryPanel(),
       modelCatalog()
@@ -7420,7 +10909,7 @@ function modelDownloadQueueSummaryPanel() {
 function modelCatalog() {
   const filtered = sortedModelsForModelsTab(state.models).filter(m => !state.modelKindFilter || m.kind === state.modelKindFilter);
   if (!filtered.length) return el('p', { class: 'muted' }, 'No models match the current category filter.');
-  return el('div', { class: 'model-scroll' }, filtered.map(modelCard));
+  return el('div', { class: 'model-scroll', 'data-scroll-key': 'models-download-catalog-scroll', 'data-model-catalog-scroll': '1' }, filtered.map(modelCard));
 }
 function modelCard(m) {
   const lifecycle = modelLifecycle(m);
@@ -7430,11 +10919,12 @@ function modelCard(m) {
   const downloadActive = stageActive(m, 'download');
   const loadActive = stageActive(m, 'load');
   const inferenceActive = stageActive(m, 'inference');
-  const cannotLoad = downloadActive || loadActive;
+  const missingDownloadForLoad = Boolean(m.download_supported && !m.downloaded && !m.cloud);
+  const cannotLoad = downloadActive || loadActive || missingDownloadForLoad;
   const placementControls = modelLoadControls(m);
   const activeForCatalog = modelCatalogActive(m);
   const catInfo = modelCategoryDisplay(m);
-  return el('div', { class: `model-card ${isUserCustomModel(m) ? 'user-custom-model' : ''} ${activeForCatalog && !isUserCustomModel(m) ? 'active-model-card' : ''}`, style: modelActiveHighlightStyle(m) }, [
+  return el('div', { class: `model-card ${isUserCustomModel(m) ? 'user-custom-model' : ''} ${activeForCatalog && !isUserCustomModel(m) ? 'active-model-card' : ''}`, style: modelActiveHighlightStyle(m), 'data-model-card-name': m.name || '' }, [
     el('div', { class: 'model-main' }, [
       el('div', { class: 'model-title' }, m.label || m.name),
       el('div', { class: 'muted tiny' }, repo),
@@ -7471,61 +10961,187 @@ function modelCard(m) {
     el('div', { class: 'model-actions' }, [
       el('button', { class: 'secondary small', disabled: !m.download_supported || downloadActive || loadActive, title: downloadActive ? 'Download already running.' : '', onclick: () => queueModelDownload(m, true) }, 'Dry-run Size Check'),
       el('button', { class: 'primary small', disabled: !m.download_supported || downloadActive || loadActive, title: downloadActive ? 'Download already running.' : '', onclick: () => queueModelDownload(m, false) }, m.downloaded ? 'Queue Update' : 'Queue Download'),
-      el('button', { class: 'primary small', disabled: cannotLoad || isLoaded, title: isLoaded ? 'Already loaded in memory. Use Unload before loading it again.' : (cannotLoad ? 'Wait for the active download/load/unload operation to finish.' : '') , onclick: () => queueModelLoad(m, placementControls) }, isLoaded ? 'Loaded' : 'Load Into Memory'),
-      el('button', { class: 'secondary small', disabled: loadActive || inferenceActive, onclick: async () => { try { const r = await api('/api/models/offload-cpu', { method: 'POST', body: { model_name: m.name } }); await refreshAll(); toast(`Moved ${m.label || m.name} to CPU RAM where supported`); render(); } catch (err) { toast(err.message, false); } } }, 'Offload to CPU RAM'),
-      el('button', { class: 'secondary small', disabled: loadActive || inferenceActive, onclick: async () => { try { const r = await api('/api/models/unload', { method: 'POST', body: { model_name: m.name } }); await refreshAll(); toast(r.job_id ? `Unload queued as job ${r.job_id}` : (r.message || `No loaded adapter for ${m.label || m.name}`)); render(); } catch (err) { toast(err.message, false); } } }, 'Unload'),
-      isUserCustomModel(m) ? el('button', { class: 'danger small', disabled: isLoaded || loadActive || inferenceActive, onclick: async () => { try { await api(`/api/models/custom/${encodeURIComponent(m.name)}`, { method: 'DELETE' }); state.models = await api('/api/models'); toast(`Removed custom catalog row ${m.label || m.name}`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Remove Custom Row') : null
+      el('button', { class: 'primary small', disabled: cannotLoad || isLoaded, title: isLoaded ? 'Already loaded in memory. Use Unload before loading it again.' : (missingDownloadForLoad ? 'Download or migrate/rescan this model first. Load will not auto-download weights.' : (cannotLoad ? 'Wait for the active download/load/unload operation to finish.' : '')) , onclick: () => queueModelLoad(m, placementControls) }, isLoaded ? 'Loaded' : 'Load Into Memory'),
+      el('button', { class: 'secondary small', disabled: loadActive || inferenceActive, onclick: async () => { try { const r = await api('/api/models/offload-cpu', { method: 'POST', body: { model_name: m.name } }); await refreshModelsPanel({ force: false, renderAfter: false }); toast(`Moved ${m.label || m.name} to CPU RAM where supported`); renderNowPreservingState(false); } catch (err) { toast(err.message, false); } } }, 'Offload to CPU RAM'),
+      el('button', { class: 'secondary small', disabled: loadActive || inferenceActive, onclick: async () => { try { await queueModelUnload(m); } catch (err) { toast(err.message, false); } } }, 'Unload'),
+      isUserCustomModel(m) ? el('button', { class: 'danger small', disabled: isLoaded || loadActive || inferenceActive, onclick: async () => { try { await api(`/api/models/custom/${encodeURIComponent(m.name)}`, { method: 'DELETE' }); state.models = await api('/api/models?force=true'); toast(`Removed custom catalog row ${m.label || m.name}`); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Remove Custom Row') : null
     ].filter(Boolean))
   ]);
 }
 // Compatibility audit marker: Model download'} queued as job ${r.job_id} using ${modelDownloadModeLabel()}.`);
     render();
-async function queueModelDownload(m, dryRun = false) {
+async function queueModelDownload(m, dryRun = false, opts = {}) {
+  let placeholder = null;
   try {
     if (!m.download_supported) throw new Error('This registry row is not downloadable yet.');
     if (stageActive(m, 'download')) throw new Error(`${m.label || m.name} is already downloading.`);
-    const r = await api('/api/models/download', { method: 'POST', body: { model_name: m.name, dry_run: dryRun, parallel_downloads: modelDownloadWorkerCount() } });
+    const name = m.name || m.model_name || '';
+    setOptimisticModelStage(name, 'download', 'queued', 0.01, dryRun ? 'Download dry-run queued' : 'Model download queued');
+    placeholder = queuePlaceholderJob('model_download', name, dryRun ? 'Download dry-run queued' : 'Model download queued', { model_name:name, dry_run:dryRun }, 0.01);
+    updateLiveStatusDom();
+    const r = await api('/api/models/download', { method: 'POST', body: { model_name: name, dry_run: dryRun, parallel_downloads: modelDownloadWorkerCount() } });
     state.lastModelRunJob = r.job_id;
     state.jobDetailId = r.job_id;
-    await refreshAll();
+    upsertJobRow({ id:r.job_id, type:'model_download', status:'queued', progress:0.02, message: dryRun ? `Download dry-run job #${r.job_id} queued` : `Download job #${r.job_id} queued`, params:{ model_name:name, dry_run:dryRun }, created_at:new Date().toISOString() }, placeholder?.id);
+    setOptimisticModelStage(name, 'download', 'queued', 0.02, dryRun ? `Download dry-run job #${r.job_id} queued` : `Download job #${r.job_id} queued`);
+    watchModelDownloadJob(r.job_id, name);
+    await refreshModelStatuses(false).catch(() => null);
+    updateLiveStatusDom();
     const rem = r.size_estimate?.estimated_remaining_gb;
     toast(`${dryRun ? 'Download dry-run' : 'Model download'} queued as job ${r.job_id} using ${modelDownloadModeLabel()}${rem !== null && rem !== undefined ? ` · ~${Number(rem).toFixed(2)}GB remaining` : ''}.`);
-    render();
+    if (!opts.noRender) renderNowPreservingState(false);
   } catch (err) { toast(err.message, false); }
 }
 async function queueModelLoad(m, placementControls = null) {
+  const name = m?.name || m?.model_name || '';
+  let placeholder = null;
   try {
     if (modelLoaded(m)) {
-      await refreshAll();
-      toast(`${m.label || m.name} is already loaded in memory; no duplicate load job was queued.`);
-      render();
-      return;
+      await refreshModelsPanel({ force:false, renderAfter:false });
+      toast(`${m.label || name} is already loaded in memory; no duplicate load job was queued.`);
+      updateLiveStatusDom();
+      return null;
     }
-    if (stageActive(m, 'download')) throw new Error(`${m.label || m.name} is still downloading. Wait for the download status circle to finish before loading.`);
-    if (stageActive(m, 'load')) throw new Error(`${m.label || m.name} is already loading.`);
-    const body = placementControls && typeof placementControls.body === 'function' ? placementControls.body() : defaultRuntimeBody({ model_name: m.name, options: { tag_profile: state.tagProfile } });
-    body.model_name = m.name;
-    body.options = { ...(body.options || {}), tag_profile: state.tagProfile };
-    const plan = await api('/api/models/placement/plan', { method: 'POST', body });
-    state.modelPlacementPlans[m.name] = plan;
-    if (plan?.errors?.length || plan?.can_load === false) {
-      render();
-      throw new Error(plan.errors?.join(' ') || 'Selected GPU placement cannot load this model without exceeding the current VRAM budget.');
-    }
-    const r = await api('/api/models/load', { method: 'POST', body });
+    if (stageActive(m, 'download')) throw new Error(`${m.label || name} is still downloading. Wait for the download status circle to finish before loading.`);
+    if (stageActive(m, 'load')) throw new Error(`${m.label || name} is already loading or unloading.`);
+    if (m.download_supported && !m.downloaded && !m.cloud) throw new Error(`${m.label || name} is not downloaded locally. Use Download/Update or Models > Rescan after migrating local files; Load will not auto-download weights.`);
+
+    const rawBody = placementControls && typeof placementControls.body === 'function'
+      ? placementControls.body()
+      : defaultRuntimeBody({ model_name:name, options:{ tag_profile:state.tagProfile } });
+    const body = normalizeModelPlacementBody({ ...rawBody, model_name:name, options:{ ...(rawBody.options || {}), tag_profile:state.tagProfile } });
+
+    // Queue first. Placement validation and GPU reservation happen inside the
+    // model-load job, so the user sees an immediate job/status instead of
+    // waiting on a synchronous placement preflight for up to several minutes.
+    const optimistic = setOptimisticModelStage(name, 'load', 'queued', 0.01, `Load request queued for ${body.device || 'auto'}`);
+    if (optimistic) optimistic.job_id = null;
+    placeholder = queuePlaceholderJob('model_load', name, `Load request queued for ${body.device || 'auto'}`, body, 0.01);
+    updateLiveStatusDom();
+
+    const r = await api('/api/models/load', { method:'POST', body });
     if (r.job_id) {
       state.lastModelRunJob = r.job_id;
       state.jobDetailId = r.job_id;
+      const row = setOptimisticModelStage(name, 'load', 'queued', 0.02, `Load job #${r.job_id} queued for ${body.device || 'auto'}`);
+      if (row) row.job_id = r.job_id;
+      upsertJobRow({ id:r.job_id, type:'model_load', status:'queued', progress:0.02, message:`Loading ${m.label || name} on ${body.device || 'auto'}`, params:body, created_at:new Date().toISOString() }, placeholder?.id);
+      watchModelLifecycleJob(r.job_id, name, 'load');
+      updateLiveStatusDom();
+      toast(`Model load queued immediately as job ${r.job_id} on ${body.device || 'auto'}.`);
+    } else {
+      removeJobRow(placeholder?.id);
+      await refreshModelsPanel({ force:true, renderAfter:false, immediate:true }).catch(() => null);
+      updateLiveStatusDom();
+      toast(r.message || `${m.label || name} is already loaded in memory.`);
+      if (state.tab === 'Models') renderNowPreservingState(false);
     }
-    await refreshAll();
-    toast(r.job_id ? `Model load queued as job ${r.job_id}. Status circles and Jobs are refreshed without reloading the page.` : (r.message || `${m.label || m.name} is already loaded in memory.`));
-    render();
-  } catch (err) { toast(err.message, false); }
+    return r;
+  } catch (err) {
+    if (placeholder?.id) removeJobRow(placeholder.id);
+    if (name) {
+      const row = setOptimisticModelStage(name, 'load', 'failed', 0, err.message || 'Model load request failed');
+      if (row) row.error = err.message || String(err);
+      updateLiveStatusDom();
+    }
+    toast(err.message, false);
+    return null;
+  }
 }
+
+
+async function queueModelUnloadMany(names = [], opts = {}) {
+  const cleanNames = [...new Set((names || []).map(x => String(x || '').trim()).filter(Boolean))];
+  if (!cleanNames.length) return { queued: [], count: 0 };
+  const placeholders = new Map();
+  for (const name of cleanNames) {
+    const row = setOptimisticModelStage(name, 'load', 'unloading', 0.01, 'Model unload queued');
+    if (row) row.job_id = null;
+    placeholders.set(name, queuePlaceholderJob('model_unload', name, 'Model unload queued', { model_name:name, queue_source: opts.queueScope || 'quick_tag' }, 0.01));
+  }
+  updateLiveStatusDom();
+  let response = null;
+  try {
+    response = await api('/api/models/unload-many', { method:'POST', body:{ model_names: cleanNames, queue_source: opts.queueScope || 'quick_tag', user_approved: true } });
+  } catch (err) {
+    // Older backend fallback: still keep all selected placeholders visible and
+    // submit every selected unload, rather than letting the first failure or the
+    // last clicked item collapse the queue to one visible row.
+    const queued = [];
+    const submit = async (name) => {
+      const r = await api('/api/models/unload', { method:'POST', body:{ model_name:name } });
+      return { model_name:name, job_id:r.job_id, status:r.status || 'queued' };
+    };
+    if (opts.parallel === false) {
+      for (const name of cleanNames) queued.push(await submit(name));
+    } else {
+      queued.push(...await Promise.all(cleanNames.map(submit)));
+    }
+    response = { queued, count: queued.length, queue_source: opts.queueScope || 'quick_tag', fallback: true };
+  }
+  for (const item of (response.queued || [])) {
+    const name = String(item.model_name || item.name || '').trim();
+    const ph = placeholders.get(name);
+    if (item.job_id) {
+      upsertJobRow({ id:item.job_id, type:'model_unload', status:'queued', progress:0.03, message:`Unloading ${name}`, params:{ model_name:name, queue_source: opts.queueScope || 'quick_tag' }, created_at:new Date().toISOString() }, ph?.id);
+      const row = setOptimisticModelStage(name, 'load', 'unloading', 0.03, `Unload job #${item.job_id} queued`);
+      if (row) row.job_id = item.job_id;
+      watchModelLifecycleJob(item.job_id, name, 'unload');
+    } else {
+      removeJobRow(ph?.id);
+      setOptimisticModelStage(name, 'load', 'idle', 0, item.message || 'Model unload no-op');
+    }
+  }
+  updateLiveStatusDom();
+  return response;
+}
+
+
+async function queueModelUnload(modelOrName) {
+  const m = typeof modelOrName === 'string' ? (state.models || []).find(x => x.name === modelOrName) || { name:modelOrName, label:modelOrName } : (modelOrName || {});
+  const name = m.name || m.model_name || '';
+  let placeholder = null;
+  if (!name) throw new Error('No model selected to unload.');
+  try {
+    if (stageActive(m, 'load')) throw new Error(`${m.label || name} is already loading or unloading.`);
+    const optimistic = setOptimisticModelStage(name, 'load', 'unloading', 0.01, 'Model unload queued');
+    if (optimistic) optimistic.job_id = null;
+    placeholder = queuePlaceholderJob('model_unload', name, 'Model unload queued', { model_name:name }, 0.01);
+    updateLiveStatusDom();
+
+    const r = await api('/api/models/unload', { method:'POST', body:{ model_name:name } });
+    if (r.job_id) {
+      state.lastModelRunJob = r.job_id;
+      state.jobDetailId = r.job_id;
+      const row = setOptimisticModelStage(name, 'load', 'unloading', 0.03, `Unload job #${r.job_id} queued`);
+      if (row) row.job_id = r.job_id;
+      upsertJobRow({ id:r.job_id, type:'model_unload', status:'queued', progress:0.03, message:`Unloading ${m.label || name}`, params:{ model_name:name }, created_at:new Date().toISOString() }, placeholder?.id);
+      watchModelLifecycleJob(r.job_id, name, 'unload');
+      updateLiveStatusDom();
+      toast(`Unload queued immediately as job ${r.job_id}`);
+    } else {
+      removeJobRow(placeholder?.id);
+      setOptimisticModelStage(name, 'load', 'idle', 0, r.message || 'Model unload no-op');
+      if (state.modelStatuses?.models?.[name]) state.modelStatuses.models[name].loaded = false;
+      await refreshModelsPanel({ force:true, renderAfter:false, immediate:true }).catch(() => null);
+      updateLiveStatusDom();
+      toast(r.message || `No loaded adapter for ${m.label || name}`);
+      if (state.tab === 'Models') renderNowPreservingState(false);
+    }
+    return r;
+  } catch (err) {
+    if (placeholder?.id) removeJobRow(placeholder.id);
+    const row = setOptimisticModelStage(name, 'load', 'failed', 0, err.message || 'Model unload request failed');
+    if (row) row.error = err.message || String(err);
+    updateLiveStatusDom();
+    throw err;
+  }
+}
+
 
 function modelsTable() {
   const rows = sortedModelsForModelsTab(state.models).filter(m => !state.modelKindFilter || m.kind === state.modelKindFilter);
-  return el('div', { class: 'table-scroll' }, el('table', { class: 'table' }, [
+  return el('div', { class: 'table-scroll', 'data-scroll-key': 'models-raw-registry-scroll' }, el('table', { class: 'table' }, [
     el('thead', {}, el('tr', {}, ['Name', 'Kind', 'Provider', 'Repo/API', 'Size', 'VRAM', 'Backend', 'Shard', 'Downloaded', 'Capabilities'].map(h => el('th', {}, h)))),
     el('tbody', {}, rows.map(m => el('tr', { class: `${isUserCustomModel(m) ? 'user-custom-model-row' : ''}${modelCatalogActive(m) && !isUserCustomModel(m) ? ' active-model-row' : ''}`, style: modelActiveHighlightStyle(m) }, [
       el('td', {}, m.label || m.name), el('td', {}, m.kind), el('td', {}, m.provider), el('td', {}, m.repo_id || m.api_model_id || ''),
@@ -7546,10 +11162,15 @@ function referenceFinderView() {
   const refs = el('textarea', { placeholder: 'Reference image paths, one per line', rows: '4', style: 'width:100%' });
   const folder = el('input', { placeholder: 'Optional folder if not using current dataset/selection', style: 'min-width:360px' });
   const dataset = el('select', {}, datasetOptions());
-  const pipeline = el('select', {}, ['demo_colorhash', 'siglip2_embedding_only', 'owlv2_siglip2'].map(x => el('option', { value: x }, x)));
+  const referencePipelineOptions = ['active_memory_colorhash', 'demo_colorhash', 'clip_embedding_prototype', 'dinov2_embedding_prototype', 'siglip2_embedding_only', 'owlv2_siglip2', 'sam_crop_then_embedding'];
+  const pipeline = el('select', {}, referencePipelineOptions.map(x => el('option', { value: x }, x)));
+  pipeline.value = state.referencePipeline || 'active_memory_colorhash';
+  pipeline.onchange = e => { state.referencePipeline = e.target.value; };
   const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: '0.55' });
   const recursive = el('input', { type: 'checkbox', checked: true });
   const saveAll = el('input', { type: 'checkbox' });
+  const includeMemory = el('input', { type: 'checkbox', checked: state.referenceIncludeMemory !== false, onchange:e=>state.referenceIncludeMemory=e.target.checked });
+  const negativePenalty = el('input', { type: 'number', min: '0', max: '1', step: '0.05', value: state.referenceNegativePenalty || '0.35', style:'width:90px', oninput:e=>state.referenceNegativePenalty=e.target.value });
   const decision = el('select', {}, [el('option', { value: '' }, 'Any decision'), el('option', { value: 'match' }, 'match'), el('option', { value: 'reject' }, 'reject')]);
   const runId = el('input', { type: 'number', placeholder: 'run id', style: 'width:110px' });
   const queryDataset = el('select', {}, datasetOptions());
@@ -7583,16 +11204,19 @@ function referenceFinderView() {
     render();
   };
   return el('div', { class: 'grid' }, [
-    card('Reference Finder: one/few-reference image search', [
-      el('p', { class: 'muted' }, 'Use one or more reference images to find likely matching character/object images. The no-model ColorHash backend is available immediately; OWLv2/SigLIP2 rows are staged for optional model-backed runs.'),
-      el('div', { class: 'row' }, [target, dataset, pipeline, el('label', {}, ['Threshold', threshold]), el('label', {}, [recursive, ' Recursive folder']), el('label', {}, [saveAll, ' Save annotated rejects too'])]),
+    card('Reference Finder: one/few-reference character search', [
+      el('p', { class: 'muted' }, 'Use one or more reference images to find likely matching character/object images without training a new model. Active-memory mode uses saved references plus your verified correct/incorrect results to refine the target profile over time.'),
+      el('div', { class: 'row wrap' }, [target, dataset, pipeline, el('label', {}, ['Threshold', threshold]), el('label', {}, [recursive, ' Recursive folder']), el('label', {}, [saveAll, ' Save annotated rejects too']), el('label', {}, [includeMemory, ' include verified memory']), el('label', {}, ['Negative penalty', negativePenalty])]),
       el('label', { class: 'label' }, ['Reference paths', refs]),
       el('div', { class: 'row' }, [folder, el('button', { class: 'secondary', onclick: async () => await pickFolder(folder, 'Select reference-search folder') }, 'Browse Folder...')]),
       el('div', { class: 'row' }, [
         el('button', { class: 'secondary', onclick: refreshStatus }, 'Refresh Reference Status'),
-        el('button', { class: 'primary', onclick: async () => { try { const body = { target_name: target.value, reference_paths: refs.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean), dataset_id: dataset.value ? Number(dataset.value) : null, media_ids: [...state.selected], folder: folder.value, recursive: recursive.checked, pipeline: pipeline.value, threshold: Number(threshold.value || 0.55), save_all_annotations: saveAll.checked }; const r = await api('/api/reference/run', { method: 'POST', body }); toast(`Reference search job ${r.job_id} queued`); setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Run Reference Search')
+        el('button', { class: 'secondary', onclick: async () => { try { const body = { target_name: target.value, reference_paths: refs.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean), pipeline: pipeline.value, include_verified_positive_memory: includeMemory.checked, include_verified_negative_memory: includeMemory.checked, negative_memory_penalty: Number(negativePenalty.value || 0.35) }; state.referenceOutput = await api('/api/reference/character-profiles/build', { method: 'POST', body }); toast('Character profile refreshed'); render(); } catch (err) { toast(err.message, false); } } }, 'Build / Refresh Character Profile'),
+        el('button', { class: 'primary', onclick: async () => { try { const body = { target_name: target.value, reference_paths: refs.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean), dataset_id: dataset.value ? Number(dataset.value) : null, media_ids: [...state.selected], folder: folder.value, recursive: recursive.checked, pipeline: pipeline.value, threshold: Number(threshold.value || 0.55), save_all_annotations: saveAll.checked, include_verified_memory: includeMemory.checked, negative_memory_penalty: Number(negativePenalty.value || 0.35) }; const r = await api('/api/reference/run', { method: 'POST', body }); toast(`Reference search job ${r.job_id} queued`); setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Run Reference Search'),
+        el('button', { class: 'danger', onclick: async () => { try { const body = { target_name: target.value, reference_paths: refs.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean), dataset_id: dataset.value ? Number(dataset.value) : null, media_ids: [...state.selected], folder: folder.value, recursive: recursive.checked, pipeline: pipeline.value, threshold: Number(threshold.value || 0.55), save_all_annotations: saveAll.checked, include_verified_positive_memory: includeMemory.checked, include_verified_negative_memory: includeMemory.checked, negative_memory_penalty: Number(negativePenalty.value || 0.35) }; const r = await api('/api/reference/character-prune', { method: 'POST', body }); toast(`Character prune job ${r.job_id} queued`); setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Prune By Character Profile')
       ]),
-      state.referenceStatus ? el('pre', { class: 'log' }, JSON.stringify(state.referenceStatus, null, 2)) : null
+      state.referenceStatus ? el('pre', { class: 'log' }, JSON.stringify(state.referenceStatus, null, 2)) : null,
+      state.referenceOutput?.profiles ? el('details', { open:false }, [el('summary', {}, 'Last character profile'), el('pre', { class:'log compact' }, JSON.stringify(state.referenceOutput.profiles, null, 2))]) : null
     ]),
     card('Results + verification memory', [
       el('div', { class: 'row' }, [runId, decision, el('button', { class: 'secondary', onclick: loadResults }, 'Load Results')]),
@@ -7635,13 +11259,80 @@ function referenceFinderView() {
 function referenceResultsTable() {
   const rows = state.referenceResults || [];
   if (!rows.length) return el('p', { class: 'muted' }, 'No results loaded yet.');
-  return el('div', { class: 'table-scroll' }, el('table', { class: 'table' }, [
+  return el('div', { class: 'table-scroll', 'data-scroll-key': 'models-raw-registry-scroll' }, el('table', { class: 'table' }, [
     el('thead', {}, el('tr', {}, ['ID', 'Target', 'Score', 'Decision', 'Verified', 'Path', 'Actions'].map(h => el('th', {}, h)))),
     el('tbody', {}, rows.map(r => el('tr', {}, [
       el('td', {}, r.id), el('td', {}, r.target_name || ''), el('td', {}, Number(r.score_final || 0).toFixed(3)), el('td', {}, r.decision), el('td', {}, r.user_label || ''), el('td', { class: 'path' }, r.path || ''),
       el('td', {}, el('div', { class: 'row compact' }, ['correct', 'incorrect', 'uncertain'].map(label => el('button', { class: 'secondary small', onclick: async () => { try { await api('/api/reference/verify', { method: 'POST', body: { detection_id: r.id, label } }); toast(`Marked ${label}`); state.referenceResults = await api('/api/reference/results?limit=200'); render(); } catch (err) { toast(err.message, false); } } }, label))))
     ])))
   ]));
+}
+
+
+function characterReferenceView() {
+  const branches = state.globalDatasetBranches || [];
+  const target = el('input', { value: state.characterReferenceTarget || '', placeholder: 'character / target name', style: 'min-width:260px', oninput: e => { state.characterReferenceTarget = e.target.value; } });
+  const refs = el('textarea', { rows: '5', style: 'width:100%', placeholder: 'Reference image paths, one per line. These can be headshots, full-body sheets, or clean examples.', oninput: e => { state.characterReferenceRefs = e.target.value; } }, state.characterReferenceRefs || '');
+  const negRefs = el('textarea', { rows: '3', style: 'width:100%', placeholder: 'Optional negative reference paths, one per line. Use visually similar non-targets to reduce false positives.', oninput: e => { state.characterReferenceNegRefs = e.target.value; } }, state.characterReferenceNegRefs || '');
+  const folder = el('input', { value: state.characterReferenceFolder || '', placeholder: 'folder to rank/prune, optional', style: 'min-width:360px', oninput: e => { state.characterReferenceFolder = e.target.value; } });
+  const dataset = el('select', { onchange: e => { state.characterReferenceDataset = e.target.value; } }, datasetOptions());
+  dataset.value = state.characterReferenceDataset || '';
+  const branchSelect = el('select', { onchange: e => { state.characterReferenceBranch = e.target.value; } }, [el('option', { value: '' }, 'No branch'), ...branches.map(b => el('option', { value: String(b.id) }, `${b.name} · ${b.item_count || 0} items`))]);
+  branchSelect.value = state.characterReferenceBranchId || '';
+  branchSelect.onchange = e => { state.characterReferenceBranchId = e.target.value; };
+  const pipeline = el('select', { onchange: e => { state.characterReferencePipeline = e.target.value; } }, ['dino_clip_fallback','dinov2_embedding','clip_siglip_embedding','owlv2_image_guided','grounding_dino_sam_verify'].map(x => el('option', { value: x }, x)));
+  pipeline.value = state.characterReferencePipeline || 'dino_clip_fallback';
+  const crop = el('select', { onchange: e => { state.characterReferenceCrop = e.target.value; } }, ['whole_plus_head','whole_only','headshot_only'].map(x => el('option', { value: x }, x)));
+  crop.value = state.characterReferenceCrop || 'whole_plus_head';
+  const threshold = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: String(state.characterReferenceThreshold ?? 0.62), oninput: e => { state.characterReferenceThreshold = Number(e.target.value || 0.62); } });
+  const maxItems = el('input', { type: 'number', min: '1', max: '50000', value: String(state.characterReferenceMaxItems || 5000), style: 'width:110px', oninput: e => { state.characterReferenceMaxItems = Number(e.target.value || 5000); } });
+  const payloadBase = () => ({
+    target_name: state.characterReferenceTarget || target.value,
+    pipeline: state.characterReferencePipeline || pipeline.value,
+    threshold: Number(state.characterReferenceThreshold ?? threshold.value ?? 0.62),
+    crop_strategy: state.characterReferenceCrop || crop.value || 'whole_plus_head',
+    reference_paths: String(state.characterReferenceRefs || refs.value || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean),
+    negative_paths: String(state.characterReferenceNegRefs || negRefs.value || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean),
+    folder: state.characterReferenceFolder || folder.value || '',
+    dataset_id: dataset.value ? Number(dataset.value) : null,
+    branch_id: state.characterReferenceBranchId ? Number(state.characterReferenceBranchId) : null,
+    media_ids: [...state.selected],
+    recursive: true,
+    max_items: Number(state.characterReferenceMaxItems || maxItems.value || 5000),
+    return_limit: 500
+  });
+  const output = state.characterReferenceOutput;
+  const status = state.characterReferenceStatus;
+  return el('div', { class: 'grid' }, [
+    card('Character Reference: zero/one/few-shot pruning', [
+      el('p', { class: 'muted' }, 'Create a reusable character profile from one or more reference images, then rank a folder, dataset, current selection, or global-dataset branch. This does not require training a new model; optional DINOv2/CLIP/OWLv2/Grounding-DINO backends can be used when installed.'),
+      el('div', { class: 'row wrap' }, [target, pipeline, crop, el('label', {}, ['Threshold ', threshold]), el('label', {}, ['Max ', maxItems])]),
+      el('label', { class: 'label' }, ['Positive reference paths', refs]),
+      el('label', { class: 'label' }, ['Negative reference paths', negRefs]),
+      el('div', { class: 'row wrap' }, [dataset, branchSelect, folder, el('button', { class:'secondary', onclick: async () => await pickFolder(folder, 'Select character-reference search folder') }, 'Browse Folder...')]),
+      el('div', { class: 'row wrap' }, [
+        el('button', { class: 'secondary', onclick: async () => { try { state.characterReferenceStatus = await api('/api/character-reference/status'); state.characterReferenceProfiles = (await api('/api/character-reference/profiles')).items || []; toast('Character reference status refreshed'); render(); } catch (err) { toast(err.message, false); } } }, 'Refresh Status'),
+        el('button', { class: 'secondary', onclick: async () => { try { state.characterReferenceOutput = await api('/api/character-reference/profiles', { method: 'POST', body: payloadBase() }); toast('Character profile saved/rebuilt'); render(); } catch (err) { toast(err.message, false); } } }, 'Save / Rebuild Profile'),
+        el('button', { class: 'primary', onclick: async () => { try { state.characterReferenceOutput = await api('/api/character-reference/rank-now', { method: 'POST', body: payloadBase() }); toast(`Ranked ${state.characterReferenceOutput.scored_count || 0} item(s)`); render(); } catch (err) { toast(err.message, false); } } }, 'Rank Now'),
+        el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/character-reference/rank', { method: 'POST', body: payloadBase() }); toast(`Character reference job ${r.job_id} queued`); setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Queue Rank Job'),
+        el('button', { class: 'secondary', onclick: async () => { try { state.characterReferenceOutput = await api('/api/character-reference/prune-plan', { method: 'POST', body: { ...payloadBase(), run_id: output?.run_id || null } }); toast('Prune plan created'); render(); } catch (err) { toast(err.message, false); } } }, 'Build Prune Plan')
+      ])
+    ]),
+    card('Profile Memory / Active Learning', [
+      el('p', { class: 'muted tiny' }, 'After a rank/prune run, rebuild the profile from high-confidence matches and low-confidence rejects to improve future searches without training a new model.'),
+      el('div', { class:'row wrap' }, [
+        el('button', { class:'secondary', onclick:async()=>{try{if(!output?.run_id)throw new Error('Run a rank first or load a run id.');state.characterReferenceOutput=await api('/api/character-reference/profiles/rebuild-from-run',{method:'POST',body:{target_name:state.characterReferenceTarget||target.value,run_id:output.run_id,accept_threshold:0.72,reject_threshold:0.40}});toast('Profile rebuilt from run memory');render();}catch(err){toast(err.message,false);}}}, 'Learn From Last Run'),
+        el('button', { class:'danger', onclick:async()=>{try{if(!output?.run_id || !state.characterReferenceBranchId)throw new Error('Need a run and selected branch.');state.characterReferenceOutput=await api('/api/character-reference/apply-prune-to-branch',{method:'POST',body:{target_name:state.characterReferenceTarget||target.value,run_id:output.run_id,branch_id:Number(state.characterReferenceBranchId),mode:'exclude_rejects'}});toast('Rejects excluded from branch config');render();}catch(err){toast(err.message,false);}}}, 'Exclude Rejects From Branch')
+      ]),
+      status ? el('pre', { class:'log compact' }, JSON.stringify(status, null, 2)) : el('p', { class:'muted tiny' }, 'Refresh status to see available pipelines and profile counts.')
+    ]),
+    card('Character Reference Output', [
+      output ? el('div', {}, [
+        output.items ? el('table', {}, [el('thead', {}, el('tr', {}, ['Score','Decision','Best crop','Path'].map(h=>el('th',{},h)))), el('tbody', {}, (output.items || []).slice(0,80).map(row => el('tr', {}, [el('td', {}, Number(row.score || 0).toFixed(3)), el('td', {}, row.decision || ''), el('td', {}, row.best_crop || ''), el('td', { class:'path' }, row.path || '')])))]) : null,
+        el('details', { open: !output.items }, [el('summary', {}, 'Full JSON'), el('pre', { class:'log compact' }, JSON.stringify(output, null, 2))])
+      ]) : el('p', { class:'muted' }, 'No character-reference run yet.')
+    ])
+  ]);
 }
 
 function sourceBrowserView() {
@@ -7668,7 +11359,7 @@ function sourceBrowserView() {
 function externalAppsStatusTable() {
   const rows = state.externalApps?.tools || [];
   if (!rows.length) return el('p', { class: 'muted' }, 'Discovery has not run yet. The first Gallery launch also auto-discovers the selected application.');
-  return el('div', { class: 'table-scroll' }, el('table', { class: 'table' }, [
+  return el('div', { class: 'table-scroll', 'data-scroll-key': 'models-raw-registry-scroll' }, el('table', { class: 'table' }, [
     el('thead', {}, el('tr', {}, ['Application','Status','Resolved path','Source'].map(h => el('th', {}, h)))),
     el('tbody', {}, rows.map(row => el('tr', {}, [
       el('td', {}, row.label || row.key),
@@ -7677,6 +11368,20 @@ function externalAppsStatusTable() {
       el('td', { class: 'tiny' }, row.source || '')
     ])))
   ]));
+}
+
+
+function exportCard() {
+  const count = selectedMediaIds().length;
+  return card('Dataset export / handoff shortcuts', [
+    el('p', { class:'muted' }, 'Open the dataset export and multimodal builder surfaces for the currently selected media without leaving the augmentation workflow.'),
+    el('div', { class:'row wrap' }, [
+      el('span', { class:'badge' }, `${count} selected media item(s)`),
+      el('button', { class:'secondary', onclick:()=>setTab('Dataset Pipeline') }, 'Dataset Pipeline Export'),
+      el('button', { class:'secondary', onclick:()=>setTab('Multimodal Dataset Builder') }, 'Multimodal Dataset Builder'),
+      el('button', { class:'secondary', onclick:()=>setTab('Global Dataset') }, 'Global Dataset Branches')
+    ])
+  ]);
 }
 
 function augmentView() {
@@ -7782,7 +11487,7 @@ function remoteDispatchControls(bodyFactory, label = 'download') {
 }
 
 function downloadsView() {
-  const source = el('select', { onchange: e => { if (state.tagProfiles.some(p => p.key === e.target.value)) state.tagProfile = e.target.value; render(); } }, state.downloadSources.map(s => el('option', { value: s.key }, s.label || s.key)));
+  const source = el('select', { onchange: async e => { const key = e.target.value; if (state.tagProfiles.some(p => p.key === key)) await selectTagProfile(key, { autoSync: true, reason: 'download source selection' }); render(); } }, state.downloadSources.map(s => el('option', { value: s.key, title: `${s.tag_sync_strategy || 'manual'} tag sync; expected roles: ${(s.expected_tag_export_roles || []).join(', ') || 'tags'}` }, s.label || s.key)));
   const preferredDirectSource = state.downloadSources.some(s => s.key === state.tagProfile) ? state.tagProfile : (state.downloadSources.some(s => s.key === 'e621') ? 'e621' : (state.downloadSources[0]?.key || 'generic-json'));
   source.value = preferredDirectSource;
   const additionalSources = el('select', { multiple: 'multiple', size: '5', title: 'Optional: select extra sources to run with the same query in the same job.' }, state.downloadSources.map(s => el('option', { value: s.key }, s.label || s.key)));
@@ -7873,7 +11578,7 @@ function downloadsView() {
       ]),
       state.downloadValidation ? el('pre', { class: 'log' }, JSON.stringify(state.downloadValidation, null, 2)) : el('p', { class: 'muted' }, 'No source diagnostics run yet.')
     ]),
-    card('Direct Booru / JSON Download', [el('p', { class: 'muted' }, 'Tag fields use active dictionary autocomplete. Date/order/category controls are folded into the source query where supported. Generic JSON requires an explicit API URL; e621/e926/etc. use built-in endpoints. Fill either logic OR positive/negative tags; logic-only searches are valid.'), el('div', { class: 'row' }, [el('label', {}, ['Primary source', source]), el('label', {}, ['Max items', max]), tagProfileSelect()]), el('label', { class: 'label' }, ['Optional additional sources for the same query', additionalSources]), el('p', { class: 'muted tiny' }, 'Use this to run e621/e926/Danbooru/Gelbooru-style sources in one job. Multi-source direct runs are placed into source-named subfolders to avoid filename collisions. Choose the parallel run mode below when you have the bandwidth and the source rules allow it.'), directApiUrl, ...advancedControls(directCtl), el('label', { class: 'label' }, ['Positive tags', posCtl.wrap]), el('label', { class: 'label' }, ['Negative tags', negCtl.wrap]), el('div', { class: 'row' }, [outDirect, el('button', { class: 'secondary', onclick: async () => await pickFolder(outDirect, 'Select download output folder') }, 'Browse Output...')]), el('label', {}, [authDirect, ' I am authorized to download from this source']), el('div', { class: 'row' }, [directRunMode, el('button', { class: 'primary', onclick: async () => { try { const body = makeDirectDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Direct Download'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makeDirectDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total')]), remoteDispatchControls(makeDirectDownloadBody, 'direct download')]),
+    card('Direct Booru / JSON Download', [el('p', { class: 'muted' }, 'Tag fields use the active source/profile dictionary autocomplete. Selecting a booru source can auto-queue that source’s own tag/category dictionary sync when the local cache is empty or stale. Generic JSON requires an explicit API URL; e621/e926/etc. use built-in endpoints. Fill either logic OR positive/negative tags; logic-only searches are valid.'), el('div', { class: 'row' }, [el('label', {}, ['Primary source', source]), el('label', {}, ['Max items', max]), tagProfileSelect()]), el('label', { class: 'label' }, ['Optional additional sources for the same query', additionalSources]), el('p', { class: 'muted tiny' }, 'Use this to run e621/e926/Danbooru/Gelbooru-style sources in one job. Multi-source direct runs are placed into source-named subfolders to avoid filename collisions. Choose the parallel run mode below when you have the bandwidth and the source rules allow it.'), directApiUrl, ...advancedControls(directCtl), el('label', { class: 'label' }, ['Positive tags', posCtl.wrap]), el('label', { class: 'label' }, ['Negative tags', negCtl.wrap]), el('div', { class: 'row' }, [outDirect, el('button', { class: 'secondary', onclick: async () => await pickFolder(outDirect, 'Select download output folder') }, 'Browse Output...')]), el('label', {}, [authDirect, ' I am authorized to download from this source']), el('div', { class: 'row' }, [directRunMode, el('button', { class: 'primary', onclick: async () => { try { const body = makeDirectDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Direct Download'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makeDirectDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total')]), remoteDispatchControls(makeDirectDownloadBody, 'direct download')]),
     card('Preset Download Runner', [el('div', { class: 'row' }, [preset, out, el('button', { class: 'secondary', onclick: async () => await pickFolder(out, 'Select download output folder') }, 'Browse Output...')]), ...advancedControls(presetCtl), el('label', {}, [auth, ' I am authorized to download from this source']), el('button', { class: 'primary', onclick: async () => { try { const body = makePresetDownloadBody(); const r = await api('/api/downloads/run', { method: 'POST', body }); toast(`Download job ${r.job_id} queued. Staying on Downloads; open Jobs when you want details.`); } catch (err) { toast(err.message, false); } } }, 'Run Presets'), el('button', { class: 'secondary', onclick: async () => { try { await previewPreflight(makePresetDownloadBody()); } catch (err) { toast(err.message, false); } } }, 'Preflight Count / Estimate Total'), remoteDispatchControls(makePresetDownloadBody, 'preset download')]),
     card('Source Config Validation', [
       el('p', { class: 'muted' }, 'Offline fixture validation for every supported source. This checks parser keys, tag extraction, URL extraction, page/limit params, and avoids treating only e621 as validated.'),
@@ -7885,7 +11590,7 @@ function downloadsView() {
 
 function presetsView() {
   const name = el('input', { placeholder: 'Preset name' });
-  const source = el('select', { onchange: e => { if (state.tagProfiles.some(p => p.key === e.target.value)) state.tagProfile = e.target.value; render(); } }, state.downloadSources.map(s => el('option', { value: s.key }, s.label || s.key)));
+  const source = el('select', { onchange: async e => { const key = e.target.value; if (state.tagProfiles.some(p => p.key === key)) await selectTagProfile(key, { autoSync: true, reason: 'preset source selection' }); render(); } }, state.downloadSources.map(s => el('option', { value: s.key, title: `${s.tag_sync_strategy || 'manual'} tag sync; expected roles: ${(s.expected_tag_export_roles || []).join(', ') || 'tags'}` }, s.label || s.key)));
   const posCtl = tagAutocompleteControl({ placeholder: 'positive tags', multiline: true });
   const negCtl = tagAutocompleteControl({ placeholder: 'negative tags', multiline: true });
   const apiUrl = el('input', { placeholder: 'options.api_url for generic-json/custom sources', style: 'width:100%' });
@@ -7919,9 +11624,53 @@ function dictionaryView() {
   const status = state.dictionaryStatus;
   return el('div', { class: 'grid' }, [
     card('Active Booru/Profile Dictionary', [
-      el('div', { class: 'row' }, [tagProfileSelect(), el('button', { class: 'secondary', onclick: async () => { await loadDictionaryStatus(); render(); } }, 'Refresh Status'), el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/tags/dictionary/import-default', { method: 'POST', body: { profile_key: state.tagProfile } }); toast(`Dictionary import job ${r.job_id} queued`); setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Load Default DB Export')]),
+      el('div', { class: 'row' }, [tagProfileSelect(), el('button', { class: 'secondary', onclick: async () => { await loadDictionaryStatus(); render(); } }, 'Refresh Status'), el('button', { class: 'secondary', onclick: async () => { try { const r = await api('/api/tags/dictionary/import-default', { method: 'POST', body: { profile_key: state.tagProfile } }); toast(`Dictionary import job ${r.job_id} queued`); setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Sync Default Tag Dictionary'), el('button', { class: 'primary', title: 'Force an immediate network refresh for the active profile, ignoring the weekly startup gate.', onclick: async () => { try { const r = await api('/api/tags/dictionary/import-default', { method: 'POST', body: { profile_key: state.tagProfile, force_download: true } }); toast(`Forced dictionary update job ${r.job_id} queued`); setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Update Now / Force Refresh')]),
       status ? dictionaryStatusTable(status) : el('p', { class: 'muted' }, 'Press Refresh Status to see dictionary counts.'),
       categoryLegend()
+    ]),
+    card('Tag / Caption Format Translator', [
+      el('p', { class: 'muted' }, 'Translate tags between booru profiles or caption styles. Deterministic alias/exact matching runs first; optionally hand the unresolved mapping packet to a loaded local/cloud LLM/VLM for judgement.'),
+      (() => {
+        const src = el('select', {}, (state.tagProfiles || []).map(p => el('option', { value: p.key }, p.label || p.key)));
+        src.value = state.tagTranslateSource || state.tagProfile || 'e621';
+        src.onchange = e => { state.tagTranslateSource = e.target.value; };
+        const dst = el('select', {}, (state.tagProfiles || []).map(p => el('option', { value: p.key }, p.label || p.key)));
+        dst.value = state.tagTranslateTarget || 'danbooru';
+        dst.onchange = e => { state.tagTranslateTarget = e.target.value; };
+        const fmt = el('select', {}, [['booru_tags','booru tag string'], ['comma_caption','comma caption'], ['natural_caption','natural-language caption'], ['json','JSON packet']].map(([v,l]) => el('option', { value: v }, l)));
+        fmt.value = state.tagTranslateFormat || 'booru_tags';
+        fmt.onchange = e => { state.tagTranslateFormat = e.target.value; };
+        const modelCandidates = sortedModels(state.models || []).filter(m => { const caps = new Set(m.capabilities || []); return caps.has('chat') || caps.has('llm') || caps.has('vlm') || m.kind === 'llm' || m.kind === 'vlm' || m.cloud; });
+        const model = el('select', {}, [el('option', { value: '' }, 'No model / deterministic only'), ...modelCandidates.map(modelOptionNode)]);
+        model.value = state.tagTranslateModel || '';
+        model.onchange = e => { state.tagTranslateModel = e.target.value; };
+        const useModel = el('input', { type: 'checkbox', checked: Boolean(state.tagTranslateUseModel), onchange: e => { state.tagTranslateUseModel = e.target.checked; } });
+        const preserve = el('input', { type: 'checkbox', checked: state.tagTranslatePreserveUnknown !== false, onchange: e => { state.tagTranslatePreserveUnknown = e.target.checked; } });
+        const text = el('textarea', { rows: 4, style: 'width:100%', placeholder: 'Paste tags or a caption/tag string to translate. Commas/newlines separate tags; spaces inside tag names are preserved by the current tag text mode.', value: state.tagTranslateInput || '', oninput: e => { state.tagTranslateInput = e.target.value; } });
+        const run = async () => {
+          const body = {
+            tag_string: text.value,
+            source_profile_key: src.value,
+            target_profile_key: dst.value,
+            output_format: fmt.value,
+            model_name: model.value || null,
+            use_model: Boolean(useModel.checked && model.value),
+            dry_run: true,
+            preserve_unknown: preserve.checked,
+            include_prompt: true,
+            options: { tag_caption_translation: true }
+          };
+          state.tagTranslateOutput = await api('/api/tags/translate-format', { method: 'POST', body });
+          toast('Tag/caption translation packet generated');
+          render();
+        };
+        return el('div', { class: 'grid' }, [
+          text,
+          el('div', { class: 'row' }, [el('label', {}, ['from ', src]), el('label', {}, ['to ', dst]), el('label', {}, ['format ', fmt]), el('label', {}, [preserve, ' preserve unknowns'])]),
+          el('div', { class: 'row' }, [el('label', {}, [useModel, ' ask selected LLM/VLM for unresolved mappings']), model, el('button', { class: 'secondary', onclick: async () => { try { await run(); } catch (err) { toast(err.message, false); } } }, 'Translate / Build Prompt Packet')]),
+          state.tagTranslateOutput ? el('pre', { class: 'log full-log' }, JSON.stringify(state.tagTranslateOutput, null, 2)) : el('p', { class: 'muted tiny' }, 'The output includes deterministic mappings, unknown tags, formatted caption/tag text, and the exact prompt packet for an LLM/VLM if needed.')
+        ]);
+      })()
     ]),
     card('Import Tags from File or URL', [
       el('p', { class: 'muted' }, 'Imports CSV/TSV/DB-export rows into the active profile. Suggestions use the selected profile and are color-coded by category.'),
@@ -7953,13 +11702,173 @@ function dictionaryStatusTable(status) {
       el('span', { class: 'badge' }, `${effectiveRows} effective found`),
       el('span', { class: 'badge' }, `${status.custom_total || 0} custom`),
       el('span', { class: status.stale ? 'badge bad' : 'badge ok' }, status.stale ? 'stale / needs sync' : 'fresh'),
-      el('span', { class: 'muted tiny' }, `latest: ${status.latest_imported_at || 'never'} · ${status.db_export_url || 'No default DB exports URL configured'}`)
+      el('span', { class: 'muted tiny' }, `latest: ${status.latest_imported_at || 'never'} · ${status.db_export_url || status.sync_capabilities?.tag_index_api_url || 'No default sync URL configured'}`),
+      status.sync_capabilities?.supports_tag_index_api ? el('span', { class: 'badge' }, 'tag-index API sync') : null,
+      (status.expected_roles || []).length ? el('span', { class: 'badge' }, `expected: ${(status.expected_roles || []).join(', ')}`) : null
     ]),
     el('table', { class: 'table' }, [el('thead', {}, el('tr', {}, ['Category', 'Count'].map(h => el('th', {}, h)))), el('tbody', {}, (status.by_category || []).map(r => el('tr', {}, [el('td', {}, chip(r.category, r.category)), el('td', {}, r.n)])))])
   ]);
 }
 
 function databaseView() { const sql = el('textarea', {}, 'SELECT * FROM media LIMIT 20'); const out = el('pre', { class: 'log' }, ''); return el('div', { class: 'grid' }, [card('Read-only SQL Console', [sql, el('button', { class: 'primary', onclick: async () => { try { const r = await api('/api/database/query', { method: 'POST', body: { sql: sql.value } }); out.textContent = JSON.stringify(r.rows, null, 2); } catch (err) { out.textContent = err.message; } } }, 'Run Query'), out])]); }
+
+async function loadAttentionCapabilities() {
+  if (!state.attentionCapabilities) state.attentionCapabilities = await api('/api/attention-visualization/capabilities').catch(() => ({ methods: [] }));
+  return state.attentionCapabilities;
+}
+function attentionMethodOptions() {
+  const methods = state.attentionCapabilities?.methods || [
+    { key:'classifier_gradcam', label:'Classifier Grad-CAM / CAM heatmap' },
+    { key:'vit_attention_rollout', label:'ViT/SigLIP attention rollout' },
+    { key:'hydra_cam_attention', label:'Hydra CAM attention / PCA contract' },
+    { key:'diffusion_unet_cross_attention', label:'Diffusion U-Net cross-attention heatmap' },
+    { key:'tsne_embedding_map', label:'t-SNE / embedding similarity map' },
+    { key:'tag_mask_overlay', label:'Tag mask/region overlay' }
+  ];
+  return methods.map(m => el('option', { value:m.key }, m.label || m.key));
+}
+
+function inlineAttentionMethods() {
+  const methods = state.attentionCapabilities?.methods || [
+    { key:'classifier_gradcam', label:'Classifier Grad-CAM / CAM heatmap', output_types:['overlay_png'] },
+    { key:'vit_attention_rollout', label:'ViT/SigLIP attention rollout', output_types:['overlay_png'] },
+    { key:'hydra_cam_attention', label:'Hydra CAM attention / PCA contract', output_types:['overlay_png'] },
+    { key:'diffusion_unet_cross_attention', label:'Diffusion U-Net cross-attention heatmap', output_types:['overlay_png'] },
+    { key:'tag_mask_overlay', label:'Tag mask/region overlay', output_types:['overlay_png'] }
+  ];
+  return methods.filter(m => m && m.key !== 'tsne_embedding_map' && (m.output_types || []).includes('overlay_png'));
+}
+function inlineAttentionMethodOptions() {
+  return inlineAttentionMethods().map(m => el('option', { value:m.key }, m.label || m.key));
+}
+function attentionOverlayArtifactFor(mediaId) {
+  return state.attentionOverlayArtifacts?.[String(mediaId)] || null;
+}
+function attentionOverlayUrlFor(mediaId) {
+  const row = attentionOverlayArtifactFor(mediaId);
+  const url = row?.heatmap_url || row?.overlay_url || '';
+  return url ? `${url}${url.includes('?') ? '&' : '?'}t=${encodeURIComponent(row.created_at || Date.now())}` : '';
+}
+function isImageMediaItem(item) {
+  const ext = String(item?.ext || '').toLowerCase();
+  const type = String(item?.media_type || '').toLowerCase();
+  return type === 'image' || ['.png','.jpg','.jpeg','.webp','.bmp','.tif','.tiff','.avif'].includes(ext);
+}
+async function createAttentionOverlaysForItems(items = []) {
+  const targets = [...new Map((items || []).filter(Boolean).map(item => [String(item.id), item])).values()].filter(isImageMediaItem);
+  if (!targets.length) throw new Error('Attention heatmap overlays currently apply to image media only. Use the Attention Visualizer tab for embedding clusters and non-image visualizations.');
+  state.attentionOverlayBusy = true;
+  state.attentionOverlayLastError = null;
+  if (attentionOverlayInteractionActive()) updateAttentionOverlayDom(); else render(true, true);
+  try {
+    for (const item of targets) {
+      const result = await api('/api/attention-visualization/render', { method:'POST', body:{
+        method: state.attentionOverlayMethod || 'classifier_gradcam',
+        tag: state.attentionOverlayTag || '',
+        prompt: state.attentionOverlayTag || '',
+        model_name: state.attentionOverlayModelName || null,
+        media_ids: [item.id],
+        image_path: item.path || null,
+        tag_profile: state.tagProfile,
+        inline_overlay: true,
+        cam_depth: Number(state.attentionOverlayCamDepth || 1),
+        alpha_scale: Number(state.attentionOverlayAlphaScale || 0.58)
+      }});
+      state.attentionOverlayArtifacts[String(item.id)] = result;
+    }
+    state.attentionOverlayEnabled = true;
+    toast(`Created attention heatmap overlay for ${targets.length} image(s).`);
+  } catch (err) {
+    state.attentionOverlayLastError = state.lastApiError || { error: err.message };
+    toast(err.message, false);
+  } finally {
+    state.attentionOverlayBusy = false;
+    refreshAfterAttentionArtifactChange();
+  }
+}
+function clearAttentionOverlays(items = []) {
+  const ids = (items || []).filter(Boolean).map(item => String(item.id));
+  if (!ids.length) state.attentionOverlayArtifacts = {};
+  else for (const id of ids) delete state.attentionOverlayArtifacts[id];
+  refreshAfterAttentionArtifactChange();
+}
+function attentionOverlayPreview(item, cls = 'preview', opts = {}) {
+  return mediaPreviewElement(item, cls, {
+    ...opts,
+    attentionOverlayUrl: state.attentionOverlayEnabled ? attentionOverlayUrlFor(item?.id) : '',
+    attentionOverlayOpacity: state.attentionOverlayOpacity,
+    attentionOverlayBlendMode: state.attentionOverlayBlendMode
+  });
+}
+function attentionOverlayControls(items = [], opts = {}) {
+  if (!state.attentionCapabilities) loadAttentionCapabilities().then(() => { if (!attentionOverlayInteractionActive()) scheduleRender(); }).catch(() => {});
+  const targets = (items || []).filter(Boolean);
+  const available = inlineAttentionMethods();
+  const method = el('select', preserveAttentionControlAttrs({ title:'Heatmap-capable attention method. Clustering/t-SNE methods stay in the dedicated Attention Visualizer tab.', onchange:e=>{ state.attentionOverlayMethod=e.target.value; markControlInteraction(e.target, 90000); } }), available.length ? inlineAttentionMethodOptions() : attentionMethodOptions());
+  method.value = state.attentionOverlayMethod || 'classifier_gradcam';
+  const model = el('select', preserveAttentionControlAttrs({ title:'Optional model used by model-specific heatmap adapters when available.', onchange:e=>{ state.attentionOverlayModelName=e.target.value; markControlInteraction(e.target, 90000); } }), [el('option', { value:'' }, 'Use selected/loaded compatible model'), ...sortedModels(state.models || []).map(modelOptionNode)]);
+  model.value = state.attentionOverlayModelName || '';
+  const tag = el('input', { class:'attention-heatmap-tag-input', value: state.attentionOverlayTag || '', placeholder:'tag / token / prompt for heatmap', onfocus:e=>markControlInteraction(e.target, 90000), oninput:e=>{ state.attentionOverlayTag=e.target.value; markControlInteraction(e.target, 90000); } });
+  const camDepth = el('input', { type:'number', min:'1', max:'27', step:'1', value:String(state.attentionOverlayCamDepth || 1), title:'Hydra CAM depth: 1 is fastest/most local; larger values are slower and more global.', style:'width:76px', oninput:e=>{ state.attentionOverlayCamDepth=Math.max(1, Math.min(27, Number(e.target.value || 1))); } });
+  const alphaScale = el('input', { type:'range', min:'0.05', max:'1', step:'0.05', value:String(state.attentionOverlayAlphaScale ?? 0.58), title:'CAM heat strength', oninput:e=>{ state.attentionOverlayAlphaScale=Number(e.target.value || 0.58); } });
+  const opacity = el('input', { type:'range', min:'0', max:'1', step:'0.05', value:String(state.attentionOverlayOpacity ?? 0.45), title:'Overlay opacity', oninput:e=>{ state.attentionOverlayOpacity=Number(e.target.value || 0.45); updateAttentionOverlayDom(); } });
+  const blend = el('select', preserveAttentionControlAttrs({ title:'CSS blend mode for the heatmap layer.', onchange:e=>{ state.attentionOverlayBlendMode=e.target.value; markControlInteraction(e.target, 90000); updateAttentionOverlayDom(); } }), ['screen','multiply','overlay','normal','soft-light','hard-light'].map(x=>el('option',{value:x},x)));
+  blend.value = state.attentionOverlayBlendMode || 'screen';
+  const enabled = el('input', { type:'checkbox', checked: state.attentionOverlayEnabled !== false, onchange:e=>{ state.attentionOverlayEnabled=e.target.checked; updateAttentionOverlayDom(); } });
+  const targetCount = targets.filter(isImageMediaItem).length;
+  const title = opts.title || 'Attention Heatmap Overlay';
+  const controls = [
+    el('p', { class:'muted tiny' }, opts.description || 'Create a heatmap artifact and overlay it semi-transparently on the image preview. Projection/clustering visualizations remain in the standalone Attention Visualizer.'),
+    el('div', { class:'row wrap' }, [el('label', {}, [enabled, ' show overlay']), method, model, tag]),
+    el('div', { class:'row wrap' }, [el('label', {}, ['CAM depth ', camDepth]), el('label', {}, ['heat strength ', alphaScale]), el('label', {}, ['opacity ', opacity]), el('label', {}, ['blend ', blend]), el('span', { class:'badge', 'data-attention-overlay-enabled-label':'1' }, state.attentionOverlayEnabled === false ? 'hidden' : 'visible'), el('span', { class:'badge' }, `${targetCount} image target(s)`)]),
+    el('div', { class:'row wrap' }, [
+      el('button', { class:'secondary small', disabled: state.attentionOverlayBusy || !targetCount, onclick: async()=>{ await createAttentionOverlaysForItems(targets); } }, state.attentionOverlayBusy ? 'Creating...' : 'Create / Refresh Heatmap'),
+      el('button', { class:'secondary small', onclick:()=>{ state.attentionOverlayEnabled = !state.attentionOverlayEnabled; updateAttentionOverlayDom(); } }, state.attentionOverlayEnabled === false ? 'Show Overlay' : 'Hide Overlay'),
+      el('button', { class:'danger small', onclick:()=>clearAttentionOverlays(targets) }, 'Clear Heatmap')
+    ]),
+    state.attentionOverlayLastError ? errorLogCard('Attention Overlay Error', state.attentionOverlayLastError) : null
+  ].filter(Boolean);
+  return opts.asCard === false ? el('div', { class:`attention-overlay-controls ${opts.compact ? 'compact' : ''}` }, controls) : card(title, controls);
+}
+function attentionVisualizerView() {
+  if (!state.attentionCapabilities) loadAttentionCapabilities().then(() => { if (!attentionOverlayInteractionActive()) scheduleRender(); }).catch(() => {});
+  let tagCtl = null;
+  tagCtl = tagAutocompleteControl({
+    value: state.attentionTag || '',
+    placeholder: 'tag / token / prompt, e.g. blue eyes',
+    onChange: value => { state.attentionTag = value; },
+    onPick: tag => { state.attentionTag = tag; if (tagCtl?.input) tagCtl.input.value = tag; }
+  });
+  const tagInput = tagCtl.input;
+  const methodSel = el('select', preserveAttentionControlAttrs({ class:'attention-visualizer-method-select', onchange:e=>{ state.attentionMethod=e.target.value; markControlInteraction(e.target, 90000); scheduleRender(); } }), attentionMethodOptions());
+  methodSel.value = state.attentionMethod || 'classifier_gradcam';
+  const modelSel = el('select', preserveAttentionControlAttrs({ class:'attention-visualizer-model-select', onchange:e=>{ state.attentionModelName=e.target.value; markControlInteraction(e.target, 90000); } }), [el('option', { value:'' }, 'Use selected/loaded compatible model'), ...sortedModels(state.models || []).map(modelOptionNode)]);
+  modelSel.value = state.attentionModelName || '';
+  const selected = selectedMediaIds();
+  const activePath = state.activeMedia?.path || '';
+  const runBody = () => ({ method: methodSel.value, tag: tagInput.value, model_name: modelSel.value || null, media_ids: selected.length ? selected : (state.activeMedia?.id ? [state.activeMedia.id] : []), image_path: activePath || null, tag_profile: state.tagProfile });
+  const methods = state.attentionCapabilities?.methods || [];
+  return el('div', { class:'grid attention-visualizer-controls' }, [
+    card('Tag Attention / Heatmap Visualizer', [
+      el('p', { class:'muted' }, 'Restores the old Grad-CAM / U-Net / t-SNE / cross-attention visualization surface. Model-specific adapters can supply true tensors; the fallback writes a review overlay/manifest so the workflow and UI are already available.'),
+      el('div', { class:'row wrap' }, [methodSel, tagCtl.wrap, modelSel]),
+      el('div', { class:'row wrap' }, [
+        el('span', { class:'badge' }, `${selected.length || (state.activeMedia ? 1 : 0)} selected/active media`),
+        el('button', { class:'secondary', onclick:async()=>{try{state.attentionLastResult=await api('/api/attention-visualization/plan',{method:'POST',body:runBody()});toast('Attention visualization plan created'); if (attentionOverlayInteractionActive()) updateAttentionOverlayDom(); else render(true,true);}catch(err){toast(err.message,false);}}}, 'Plan Visualization'),
+        el('button', { class:'primary', onclick:async()=>{try{state.attentionLastResult=await api('/api/attention-visualization/render',{method:'POST',body:runBody()});toast('Attention visualization artifact created'); if (attentionOverlayInteractionActive()) updateAttentionOverlayDom(); else render(true,true);}catch(err){toast(err.message,false);}}}, 'Create Overlay Now'),
+        el('button', { class:'secondary', onclick:async()=>{try{const r=await api('/api/attention-visualization/run',{method:'POST',body:runBody()});toast(`Attention visualization queued as job ${r.job_id}`);state.lastModelRunJob=r.job_id;setTab('Jobs');}catch(err){toast(err.message,false);}}}, 'Queue Visualization Job')
+      ]),
+      state.activeMedia ? el('p', { class:'muted tiny' }, `Active image: ${state.activeMedia.path || state.activeMedia.filename || state.activeMedia.id}`) : el('p', { class:'muted tiny' }, 'Select media in Gallery or Tag Editor first, or provide an active image through another tab.')
+    ]),
+    card('Supported Methods', [
+      methods.length ? el('table', { class:'table' }, [el('thead', {}, el('tr', {}, ['Method','Category','Requires model','Outputs','Description'].map(h=>el('th',{},h)))), el('tbody', {}, methods.map(m=>el('tr', {}, [el('td', {}, m.label || m.key), el('td', {}, m.category || ''), el('td', {}, String(Boolean(m.requires_loaded_model))), el('td', {}, (m.output_types || []).join(', ')), el('td', {}, m.description || '')])))]) : el('p', { class:'muted' }, 'Loading attention visualization capabilities...')
+    ]),
+    state.attentionLastResult ? card('Latest Plan / Result', [
+      state.attentionLastResult.overlay_url ? el('img', { class:'attention-overlay-preview', src:`${state.attentionLastResult.overlay_url}?t=${Date.now()}`, alt:'attention heatmap overlay' }) : null,
+      el('pre', { class:'log full-log' }, JSON.stringify(state.attentionLastResult, null, 2))
+    ].filter(Boolean)) : null
+  ].filter(Boolean));
+}
 
 
 function migrationSourcePathsFromText(text) {
@@ -7986,6 +11895,10 @@ function migrationPayload(ctrl, dryRun = false) {
     dry_run: Boolean(dryRun),
     newest_first: ctrl.newestFirst.checked,
     delete_source_duplicates: ctrl.deleteDupes.checked,
+    skip_internet_refresh: ctrl.skipInternet.checked,
+    parallel_file_transfers: ctrl.parallelTransfers ? ctrl.parallelTransfers.checked : true,
+    file_transfer_workers: ctrl.transferWorkers ? Number(ctrl.transferWorkers.value || 4) : 4,
+    fast_same_volume_moves: ctrl.fastMoves ? ctrl.fastMoves.checked : true,
   };
 }
 function migrationSummary(scan) {
@@ -8022,7 +11935,12 @@ function migrationView() {
   const outputs = el('input', { type: 'checkbox', checked: Boolean(include.outputs) });
   const autoStartup = el('input', { type: 'checkbox', checked: Boolean(state.settings.migrate_assets_on_startup) });
   const autoSyncStartup = el('input', { type: 'checkbox', checked: state.settings.auto_sync_tag_db_on_startup !== false });
-  const ctrl = { sources, mode, conflict, newestFirst, deleteDupes, models, tagExports, tagDatabase, customTags, customModels, presets, downloads, outputs };
+  const skipInternet = el('input', { type: 'checkbox', checked: state.settings.migration_skip_post_online_tag_sync !== false });
+  const parallelTransfers = el('input', { type: 'checkbox', checked: state.settings.migration_parallel_file_transfers !== false, onchange: e => { transferWorkers.disabled = !e.target.checked; } });
+  const transferWorkers = el('input', { type: 'number', min: '1', max: '32', value: state.settings.migration_file_transfer_workers || 4, style: 'width:90px', title: 'Parallel migration file transfer workers. 4 is a good SSD default; use 1 or disable parallel transfers on slow HDDs.' });
+  transferWorkers.disabled = !parallelTransfers.checked;
+  const fastMoves = el('input', { type: 'checkbox', checked: state.settings.migration_fast_same_volume_moves !== false, title: 'Enabled by default. In Move mode, files on the same drive/volume are renamed into place instead of copied byte-for-byte and then deleted. This is the main speedup for large model folders on SSDs.' });
+  const ctrl = { sources, mode, conflict, newestFirst, deleteDupes, skipInternet, parallelTransfers, transferWorkers, fastMoves, models, tagExports, tagDatabase, customTags, customModels, presets, downloads, outputs };
   const scanOrRun = async (dryRun, queue = true) => {
     const body = migrationPayload(ctrl, dryRun);
     if (!body.source_paths.length) throw new Error('Add at least one previous install folder first.');
@@ -8033,12 +11951,27 @@ function migrationView() {
     const r = await api('/api/migration/run', { method: 'POST', body });
     state.migrationLastJob = r.job_id;
     state.lastModelRunJob = r.job_id;
+    state.startupStatus = {
+      ...(state.startupStatus || {}),
+      status: 'running',
+      phase: 'startup_migration',
+      progress: Math.max(0.01, Number(state.startupStatus?.progress || 0)),
+      percent: Math.max(1, Number(state.startupStatus?.percent || 0)),
+      message: `${dryRun ? 'Migration dry-run' : 'Asset migration'} job #${r.job_id} queued`,
+      job_id: r.job_id,
+      job_type: 'asset_migration',
+      trigger: 'manual_migration',
+      updated_at: new Date().toISOString(),
+      steps: [...(state.startupStatus?.steps || []), { at: new Date().toISOString(), progress: 0.01, phase: 'startup_migration', message: `Migration job #${r.job_id} queued` }].slice(-80)
+    };
     toast(`${dryRun ? 'Migration dry-run' : 'Asset migration'} queued as job ${r.job_id}`);
-    await refreshAll();
+    updateStartupProgressDom();
+    state.jobs = await api('/api/jobs', { cache: 'no-store' }).catch(() => state.jobs || []);
+    await refreshStartupStatus({ force: true }).catch(() => {});
   };
   return el('div', { class: 'grid' }, [
     card('Reuse Assets from Previous Installs', [
-      el('p', { class: 'muted' }, 'Point the new build at one or more older installs. The newest source is processed first, then older installs contribute only files/database rows that are still unique. This avoids re-downloading model weights and cached tag DB-export files after every test build.'),
+      el('p', { class: 'muted' }, 'Point the new build at one or more older installs. The newest source is processed first, then older installs contribute only files/database rows that are still unique. This avoids re-downloading model weights, cached tag DB-export files, imported tag database rows, custom catalogs, and other reusable runtime assets after every test build.'),
       sources,
       el('div', { class: 'row' }, [
         el('button', { class: 'secondary', onclick: async () => {
@@ -8049,6 +11982,12 @@ function migrationView() {
         conflict,
         el('label', {}, [newestFirst, ' Newest install first']),
         el('label', {}, [deleteDupes, ' Delete identical duplicate source files when moving'])
+      ]),
+      el('div', { class: 'row' }, [
+        el('label', { title: 'When enabled, migration reuses copied/imported local cache files and database rows and does not run post-migration internet refreshes for tag dictionaries. This should usually stay enabled when migrating from a complete previous install.' }, [skipInternet, ' Local-only migration: do NOT download internet refreshes after migration']),
+        el('label', { title: 'Enabled by default. Uses multiple file-transfer workers during copy/move migration, which is usually much faster on SSDs. Disable for HDDs or fragile external drives.' }, [parallelTransfers, ' Parallelize file transfers']),
+        el('label', {}, ['transfer workers ', transferWorkers]),
+        el('label', { title: 'Enabled by default. In Move mode on the same drive, this uses filesystem rename/replace instead of rewriting hundreds of GiB of model files.' }, [fastMoves, ' Fast same-drive moves'])
       ]),
       el('div', { class: 'row' }, [
         el('label', {}, [models, ' Models']),
@@ -8068,14 +12007,14 @@ function migrationView() {
       migrationSummary(state.migrationOutput)
     ]),
     card('Startup Migration / Stop Re-downloading on Next Launch', [
-      el('p', { class: 'muted' }, 'Save these source paths for the next app launch. Startup migration runs before the tag DB-export startup sync, so existing tag export files and imported dictionary rows can be reused before the app decides whether it needs the network.'),
-      el('div', { class: 'row' }, [el('label', {}, [autoStartup, ' Run asset migration on startup']), el('label', {}, [autoSyncStartup, ' Allow tag DB-export startup sync after migration'])]),
+      el('p', { class: 'muted' }, 'Save these source paths for the next app launch. Startup migration runs before any tag DB-export startup sync. With local-only migration enabled, the app uses migrated caches/database rows and skips the network refresh entirely.'),
+      el('div', { class: 'row' }, [el('label', {}, [autoStartup, ' Run asset migration on startup']), el('label', {}, [autoSyncStartup, ' Allow weekly tag DB-export startup sync when no migration/local cache is being used']), el('label', {}, [skipInternet, ' Local-only migration / skip internet refresh'])]),
       el('button', { class: 'primary', onclick: async () => {
         try {
           const payload = migrationPayload(ctrl, false);
-          const saved = await api('/api/migration/startup-settings', { method: 'PUT', body: { source_paths: payload.source_paths, migrate_on_startup: autoStartup.checked, include: payload.include, mode: payload.mode, conflict: payload.conflict, newest_first: payload.newest_first, delete_source_duplicates: payload.delete_source_duplicates } });
-          state.settings = await api('/api/settings', { method: 'PUT', body: { values: { auto_sync_tag_db_on_startup: autoSyncStartup.checked } } });
-          state.settings = { ...state.settings, previous_install_paths: saved.source_paths, migrate_assets_on_startup: saved.migrate_on_startup, migration_include_assets: saved.include, migration_mode: saved.mode, migration_conflict_policy: saved.conflict, migration_newest_first: saved.newest_first, migration_delete_source_duplicates: saved.delete_source_duplicates };
+          const saved = await api('/api/migration/startup-settings', { method: 'PUT', body: { source_paths: payload.source_paths, migrate_on_startup: autoStartup.checked, include: payload.include, mode: payload.mode, conflict: payload.conflict, newest_first: payload.newest_first, delete_source_duplicates: payload.delete_source_duplicates, skip_internet_refresh: payload.skip_internet_refresh, parallel_file_transfers: payload.parallel_file_transfers, file_transfer_workers: payload.file_transfer_workers, fast_same_volume_moves: payload.fast_same_volume_moves } });
+          state.settings = await api('/api/settings', { method: 'PUT', body: { values: { auto_sync_tag_db_on_startup: autoSyncStartup.checked, migration_skip_post_online_tag_sync: payload.skip_internet_refresh, migration_local_only_existing_assets: payload.skip_internet_refresh, migration_parallel_file_transfers: payload.parallel_file_transfers, migration_file_transfer_workers: payload.file_transfer_workers, migration_fast_same_volume_moves: payload.fast_same_volume_moves } } });
+          state.settings = { ...state.settings, previous_install_paths: saved.source_paths, migrate_assets_on_startup: saved.migrate_on_startup, migration_include_assets: saved.include, migration_mode: saved.mode, migration_conflict_policy: saved.conflict, migration_newest_first: saved.newest_first, migration_delete_source_duplicates: saved.delete_source_duplicates, migration_skip_post_online_tag_sync: saved.skip_internet_refresh, migration_local_only_existing_assets: saved.skip_internet_refresh, migration_parallel_file_transfers: saved.parallel_file_transfers, migration_file_transfer_workers: saved.file_transfer_workers, migration_fast_same_volume_moves: saved.fast_same_volume_moves };
           toast('Migration startup settings saved'); render();
         } catch (err) { toast(err.message, false); }
       } }, 'Save Migration Startup Settings'),
@@ -8090,7 +12029,7 @@ function migrationView() {
 
 
 function codeAssistantView() {
-  const root = el('input', { value: state.codeProjectRoot || '', placeholder: 'Project root path, e.g. C:\Users\CK\Desktop\my_project', style: 'min-width:420px', oninput: e => { state.codeProjectRoot = e.target.value; } });
+  const root = el('input', { value: state.codeProjectRoot || '', placeholder: 'Project root path, e.g. C:\Users\<USERNAME>\Desktop\my_project', style: 'min-width:420px', oninput: e => { state.codeProjectRoot = e.target.value; } });
   const chatModels = sortedModels(state.models.filter(m => { const caps = new Set(m.capabilities || []); return caps.has('chat') || caps.has('llm') || caps.has('assistant') || caps.has('orchestration') || m.cloud; }));
   const model = el('select', {}, chatModels.length ? chatModels.map(modelOptionNode) : modelOptions());
   const preferred = chatModels.find(m => m.name === state.assistantConfig?.orchestrator_model_name) || chatModels.find(m => String(m.name || '').includes('kimi')) || chatModels.find(m => m.name === 'openrouter-auto') || chatModels[0];
@@ -8265,7 +12204,8 @@ function settingsView() {
   const apiProfiles = el('textarea', { rows: 11, style: 'width:100%', placeholder: 'Named provider tokens JSON. Example: {"openrouter":[{"name":"main","token":"sk-or-...","default":true}],"huggingface":[{"name":"hf1","token":"hf_..."}],"runpod":[{"name":"serverless","token":"..."}]}' }, JSON.stringify(s.api_token_profiles || { huggingface: [], openrouter: [], openai: [], anthropic: [], xai: [], runpod: [], vastai: [], lambda_labs: [] }, null, 2));
   const autoSyncStartup = el('input', { type: 'checkbox', checked: Boolean(s.auto_sync_tag_db_on_startup) });
   const syncEmptyOnly = el('input', { type: 'checkbox', checked: s.tag_db_sync_if_empty_only !== false });
-  const cacheHours = input('tag_db_export_cache_hours', 'Tag DB export cache hours', 'number');
+  const cacheHours = input('tag_db_export_cache_hours', 'Tag DB export stale after hours, default 168', 'number');
+  const startupSyncInterval = input('tag_db_startup_sync_interval_hours', 'Startup network check interval hours, default 168', 'number');
   const defaultProfile = tagProfileSelect(); defaultProfile.value = s.default_tag_profile || state.tagProfile;
   const defaultOrder = el('select', {}, ['retain', 'booru', 'custom_profile', 'lora_purpose'].map(x => el('option', { value: x }, x))); defaultOrder.value = s.default_ordering_strategy || state.orderingStrategy;
   const retain = el('input', { type: 'checkbox', checked: Boolean(s.retain_imported_tag_order) });
@@ -8349,6 +12289,7 @@ function settingsView() {
   const reasoningEffort = el('select', {}, ['none','low','medium','high','max'].map(x => el('option', { value: x }, x))); reasoningEffort.value = s.assistant_reasoning_effort || 'medium';
   const showVisiblePlan = el('input', { type: 'checkbox', checked: s.assistant_show_visible_plan !== false });
   const showLiveActionNotes = el('input', { type: 'checkbox', checked: s.assistant_show_live_action_notes !== false });
+  const showLiveChain = el('input', { type: 'checkbox', checked: s.assistant_show_live_chain_of_thought !== false && s.assistant_show_live_reasoning_trace !== false });
   const planningPasses = input('assistant_planning_passes', 'Planning passes', 'number'); planningPasses.value = s.assistant_planning_passes ?? 1;
   const planMaxTokens = input('assistant_plan_max_tokens', 'Plan max tokens', 'number'); planMaxTokens.value = s.assistant_plan_max_tokens || 768;
   const minChatTokens = input('assistant_min_chat_tokens', 'Min chat tokens', 'number'); minChatTokens.value = s.assistant_min_chat_tokens || 1024;
@@ -8447,13 +12388,13 @@ function settingsView() {
       ]) : null,
       el('div', { class: 'row' }, [tagCount, temp, maxTokens, threshold]),
       el('div', { class: 'row' }, [defGpuIds, defShard, defDtype, defQuant]),
-      el('button', { class: 'primary', onclick: async () => { try { const values = { default_tag_profile: defaultProfile.value, default_ordering_strategy: defaultOrder.value, retain_imported_tag_order: retain.checked, tag_text_mode: tagTextMode.value, tag_suggestion_count: Number(tagCount.value || 40), model_temperature: Number(temp.value || 0.2), model_max_new_tokens: Number(maxTokens.value || 512), classifier_threshold: Number(threshold.value || 0.35), default_model_device_ids: parseGpuIds(defGpuIds.value), default_model_sharding_strategy: defShard.value, default_model_sharding: defShard.value !== 'none', default_model_dtype: defDtype.value, default_model_quantization: defQuant.value }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); state.tagProfile = values.default_tag_profile; state.orderingStrategy = values.default_ordering_strategy; toast((state.settings.tag_text_mode_restart_required || state.settings.tag_text_mode !== state.settings.tag_text_mode_active) ? 'Default settings saved; restart required to apply tag text format.' : 'Default settings saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Defaults')
+      el('button', { class: 'primary', onclick: async () => { try { const values = { default_tag_profile: defaultProfile.value, default_ordering_strategy: defaultOrder.value, retain_imported_tag_order: retain.checked, tag_text_mode: tagTextMode.value, tag_suggestion_count: Number(tagCount.value || 40), model_temperature: Number(temp.value || 0.2), model_max_new_tokens: Number(maxTokens.value || 512), classifier_threshold: Number(threshold.value || DEFAULT_CLASSIFIER_THRESHOLD), default_model_device_ids: parseGpuIds(defGpuIds.value), default_model_sharding_strategy: defShard.value, default_model_sharding: defShard.value !== 'none', default_model_dtype: defDtype.value, default_model_quantization: defQuant.value }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); state.tagProfile = values.default_tag_profile; state.orderingStrategy = values.default_ordering_strategy; toast((state.settings.tag_text_mode_restart_required || state.settings.tag_text_mode !== state.settings.tag_text_mode_active) ? 'Default settings saved; restart required to apply tag text format.' : 'Default settings saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Defaults')
     ].filter(Boolean)),
     card('Assistant Thinking / Visible Planning Defaults', [
-      el('p', { class: 'muted' }, 'Controls how assistant-capable models think longer. The app can run a separate user-visible planning pass before the final answer and raise token/continuation budgets. This does not expose provider/private hidden chain-of-thought.'),
-      el('div', { class: 'row' }, [el('label', {}, ['thinking mode ', thinkMode]), el('label', {}, ['reasoning effort ', reasoningEffort]), el('label', {}, [showVisiblePlan, ' show visible plan/action notes']), el('label', {}, [showLiveActionNotes, ' show live action-notes overlay'])]),
+      el('p', { class: 'muted' }, 'Controls how assistant-capable models plan, show live action notes, and show a separate live chain-of-thought-style reasoning trace overlay. Provider/private hidden reasoning cannot be extracted; the visible trace is generated by the app/model contract.'),
+      el('div', { class: 'row' }, [el('label', {}, ['thinking mode ', thinkMode]), el('label', {}, ['reasoning effort ', reasoningEffort]), el('label', {}, [showVisiblePlan, ' show visible plan/action notes']), el('label', {}, [showLiveActionNotes, ' show live action-notes overlay']), el('label', {}, [showLiveChain, ' show live chain-of-thought overlay'])]),
       el('div', { class: 'row' }, [planningPasses, planMaxTokens, minChatTokens, deepChatTokens, maxReflect]),
-      el('button', { class: 'primary', onclick: async () => { try { const values = { assistant_thinking_mode: thinkMode.value, assistant_reasoning_effort: reasoningEffort.value, assistant_show_visible_plan: showVisiblePlan.checked, assistant_show_live_action_notes: showLiveActionNotes.checked, assistant_planning_passes: Number(planningPasses.value || 0), assistant_plan_max_tokens: Number(planMaxTokens.value || 768), assistant_min_chat_tokens: Number(minChatTokens.value || 1024), assistant_deep_chat_tokens: Number(deepChatTokens.value || 4096), assistant_max_auto_reflection_rounds: Number(maxReflect.value || 0) }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); toast('Assistant thinking/planning defaults saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Thinking / Planning Defaults')
+      el('button', { class: 'primary', onclick: async () => { try { const values = { assistant_thinking_mode: thinkMode.value, assistant_reasoning_effort: reasoningEffort.value, assistant_show_visible_plan: showVisiblePlan.checked, assistant_show_live_action_notes: showLiveActionNotes.checked, assistant_show_live_chain_of_thought: showLiveChain.checked, assistant_show_live_reasoning_trace: showLiveChain.checked, assistant_planning_passes: Number(planningPasses.value || 0), assistant_plan_max_tokens: Number(planMaxTokens.value || 768), assistant_min_chat_tokens: Number(minChatTokens.value || 1024), assistant_deep_chat_tokens: Number(deepChatTokens.value || 4096), assistant_max_auto_reflection_rounds: Number(maxReflect.value || 0) }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); toast('Assistant thinking/planning defaults saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Thinking / Planning Defaults')
     ]),
     card('Model VRAM / Long Chat Memory Management', [
       el('p', { class: 'muted' }, 'Prevents long chat/inference sessions from gradually consuming VRAM with temporary CUDA allocations/KV cache. CPU offload keeps model objects in RAM and reactivates them on the selected GPU for the next request.'),
@@ -8461,8 +12402,8 @@ function settingsView() {
       el('div', { class: 'row' }, [el('label', {}, ['CPU offload policy ', vramOffloadPolicy]), vramOffloadThreshold, vramIdleSeconds]),
       el('div', { class: 'row' }, [el('label', { title: 'When estimated context pressure is high, pass use_cache=false to Transformers generation. This is slower, but can reduce temporary KV-cache VRAM spikes.' }, [vramDisableCache, ' disable generation KV cache under context pressure']), vramContextThreshold, el('label', {}, [vramDebug, ' debug cleanup snapshots'])]),
       el('div', { class: 'row' }, [
-        el('button', { class: 'secondary', onclick: async () => { try { state.vramCleanupResult = await api('/api/models/memory/cleanup', { method: 'POST', body: { offload_to_cpu: false } }); await refreshAll(); toast('CUDA cache cleanup requested'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Clean CUDA Cache Now'),
-        el('button', { class: 'secondary', onclick: async () => { try { state.vramCleanupResult = await api('/api/models/memory/cleanup', { method: 'POST', body: { offload_to_cpu: true } }); await refreshAll(); toast('Loaded models moved to CPU RAM where supported'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Move Loaded Models to CPU RAM')
+        el('button', { class: 'secondary', onclick: async () => { try { state.vramCleanupResult = await api('/api/models/memory/cleanup', { method: 'POST', body: { offload_to_cpu: false } }); await refreshModelsPanel({ force: true }); toast('CUDA cache cleanup requested'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Clean CUDA Cache Now'),
+        el('button', { class: 'secondary', onclick: async () => { try { state.vramCleanupResult = await api('/api/models/memory/cleanup', { method: 'POST', body: { offload_to_cpu: true } }); await refreshModelsPanel({ force: true }); toast('Loaded models moved to CPU RAM where supported'); render(true, true); } catch (err) { toast(err.message, false); } } }, 'Move Loaded Models to CPU RAM')
       ]),
       state.vramCleanupResult ? el('pre', { class: 'log tiny-log' }, JSON.stringify(state.vramCleanupResult, null, 2)) : null,
       el('button', { class: 'primary', onclick: async () => { try { const values = { model_vram_cleanup_after_inference: vramCleanup.checked, model_vram_aggressive_gc_after_inference: vramAggressive.checked, model_vram_reset_peak_stats_after_inference: vramResetPeaks.checked, model_vram_auto_cpu_offload_enabled: vramAutoOffload.checked, model_vram_auto_cpu_offload_policy: vramOffloadPolicy.value, model_vram_auto_cpu_offload_threshold: Number(vramOffloadThreshold.value || 0.82), model_vram_idle_cpu_offload_seconds: Number(vramIdleSeconds.value || 300), model_vram_disable_generation_cache_on_pressure: vramDisableCache.checked, model_vram_context_pressure_threshold: Number(vramContextThreshold.value || 0.70), model_vram_cleanup_debug: vramDebug.checked }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); toast('Model VRAM memory policy saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save VRAM Memory Policy')
@@ -8483,7 +12424,7 @@ function settingsView() {
       state.voiceStatus ? el('pre', { class: 'log tiny-log' }, JSON.stringify({ loaded: state.voiceStatus.settings?.loaded_voice_models, backend_devices: state.voiceStatus.backend }, null, 2)) : null,
       el('button', { class: 'primary', onclick: async () => { try { await saveVoiceSettingsFromControls(); toast('Voice STT/TTS settings saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Voice Settings')
     ].filter(Boolean)),
-    card('Tag DB Exports Startup Sync', [el('p', { class: 'muted' }, 'For txt-only custom datasets, the app can load the selected booru DB exports tag table at startup so autocomplete and category colors are available before import.'), el('div', { class: 'row' }, [el('label', {}, [autoSyncStartup, ' Auto-sync tag DB exports on startup']), el('label', {}, [syncEmptyOnly, ' Legacy: sync only if dictionary is empty']), cacheHours]), el('button', { class: 'primary', onclick: async () => { try { const values = { auto_sync_tag_db_on_startup: autoSyncStartup.checked, tag_db_sync_if_empty_only: syncEmptyOnly.checked, tag_db_export_cache_hours: Number(cacheHours.value || 336) }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); toast('Tag DB sync settings saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Tag DB Sync Settings')]),
+    card('Tag DB Exports Startup Sync', [el('p', { class: 'muted' }, 'The app should not download tag dictionaries on every launch. Startup network checks are gated to once per week by default, and migration can reuse local cache/database rows without any internet refresh. Empty first-run installs still bootstrap immediately when no migrated/local dictionary is present.'), el('div', { class: 'row' }, [el('label', {}, [autoSyncStartup, ' Auto-sync tag DB exports on startup when needed']), el('label', {}, [syncEmptyOnly, ' Sync only if dictionary is empty']), cacheHours, startupSyncInterval]), el('div', { class: 'row' }, [el('button', { class: 'primary', onclick: async () => { try { const values = { auto_sync_tag_db_on_startup: autoSyncStartup.checked, tag_db_sync_if_empty_only: syncEmptyOnly.checked, tag_db_export_cache_hours: Number(cacheHours.value || 168), tag_db_startup_sync_interval_hours: Number(startupSyncInterval.value || 168) }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); toast('Tag DB sync settings saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Tag DB Sync Settings'), el('button', { class: 'secondary', title: 'Queue an immediate tag dictionary update for the selected/default profile. This ignores the weekly startup gate but does not change startup settings.', onclick: async () => { try { const profile = defaultProfile.value || state.tagProfile || 'e621'; const r = await api('/api/tags/dictionary/import-default', { method: 'POST', body: { profile_key: profile, force_download: true } }); toast(`Immediate tag dictionary update queued as job ${r.job_id}`); state.lastModelRunJob = r.job_id; setTab('Jobs'); } catch (err) { toast(err.message, false); } } }, 'Update Tag Dictionary Now')])]),
     card('Metadata / Media / Krita Defaults', [el('p', { class: 'muted' }, 'Controls the standalone generation-metadata parser, media extraction defaults, and Krita handoff paths.'), el('div', { class: 'row' }, [el('label', {}, [metaExtractImport, ' Extract embedded metadata during import']), el('label', {}, [metaApplyFallback, ' Use metadata when sidecars are missing']), metaTagSource, metaCaptionSource]), el('div', { class: 'row' }, [frameDir, audioDir]), el('div', { class: 'row' }, [kritaExe, kritaDir]), el('button', { class: 'primary', onclick: async () => { try { const values = { metadata_extract_on_import: metaExtractImport.checked, metadata_apply_when_no_sidecar: metaApplyFallback.checked, metadata_default_tag_source: metaTagSource.value, metadata_default_caption_source: metaCaptionSource.value, media_frame_output_dir: frameDir.value || null, audio_recording_dir: audioDir.value || null, krita_executable: kritaExe.value || null, krita_handoff_dir: kritaDir.value || null }; state.settings = await api('/api/settings', { method: 'PUT', body: { values } }); toast('Metadata/media defaults saved'); render(); } catch (err) { toast(err.message, false); } } }, 'Save Metadata / Media Defaults')]),
     card('FlexAvatar Optional Runtime', [
       el('p', { class: 'muted' }, 'FlexAvatar uses an isolated Conda environment because the upstream research stack targets Python 3.9 and CUDA 11.8. Source/workspace changes take effect after restarting the main app.'),
@@ -8636,7 +12577,7 @@ function jobsTable(limit = 100, selectable = false) {
   const detailText = freshDetail ? JSON.stringify(freshDetail, null, 2) : '';
   const detail = freshDetail ? card(`Full Job #${freshDetail.id} Details`, [
     el('div', { class: 'row' }, [
-      el('button', { class: 'secondary', onclick: async () => { state.jobDetails[String(freshDetail.id)] = await api(`/api/jobs/${freshDetail.id}`).catch(() => freshDetail); render(); } }, 'Refresh This Log'),
+      el('button', { class: 'secondary', onclick: async () => { state.jobDetails[String(freshDetail.id)] = await api(`/api/jobs/${freshDetail.id}`).catch(() => freshDetail); renderNowPreservingState(false); } }, 'Refresh This Log'),
       el('button', { class: 'secondary', onclick: async () => copyText(detailText, 'Copied full job details') }, 'Copy Full Details'),
       el('button', { class: 'secondary', onclick: () => downloadTextFile(`dct-job-${freshDetail.id}.json`, detailText) }, 'Download Log File'),
       el('button', { class: 'secondary', onclick: () => { state.jobDetailId = null; render(); } }, 'Hide Details')
@@ -8663,24 +12604,2235 @@ function jobsTable(limit = 100, selectable = false) {
   ]);
 }
 
+async function refreshGlobalDataset() {
+  const [status, branches, assets] = await Promise.all([
+    api('/api/global-dataset/status').catch(() => null),
+    api('/api/global-dataset/branches').catch(() => []),
+    api('/api/global-dataset/assets?page=1&page_size=40').catch(() => ({ items: [], total: 0, page: 1, page_size: 40 }))
+  ]);
+  state.globalDatasetStatus = status;
+  state.globalDatasetBranches = branches || [];
+  state.globalDatasetAssets = assets || { items: [], total: 0, page: 1, page_size: 40 };
+}
+
+
+async function refreshDatasetPipelineCatalog() {
+  const [catalog, printTools] = await Promise.all([
+    api('/api/dataset-pipeline/catalog').catch(() => null),
+    api('/api/dataset-pipeline/3d-print/tools').catch(() => null)
+  ]);
+  state.datasetPipelineCatalog = catalog;
+  state.datasetPipelinePrintTools = printTools;
+  return { catalog, printTools };
+}
+
+
+
+
+async function refreshGraphEditor() {
+  const [catalog, items, runs, events] = await Promise.all([
+    api('/api/graph-editor/catalog').catch(() => state.graphEditorCatalog),
+    api('/api/graph-editor').then(r => r.items || []).catch(() => state.graphEditorItems || []),
+    api('/api/graph-editor/runs').then(r => r.items || []).catch(() => state.graphEditorRuns || []),
+    api('/api/graph-editor/events').then(r => r.items || []).catch(() => state.graphEditorEvents || [])
+  ]);
+  state.graphEditorCatalog = catalog || state.graphEditorCatalog;
+  state.graphEditorItems = items || [];
+  state.graphEditorRuns = runs || [];
+  state.graphEditorEvents = events || state.graphEditorEvents || [];
+  if (state.graphEditorSelectedId && !state.graphEditorSelected) {
+    state.graphEditorSelected = await api(`/api/graph-editor/${encodeURIComponent(state.graphEditorSelectedId)}`).catch(() => null);
+    state.graphEditorEditJson = state.graphEditorSelected ? JSON.stringify(state.graphEditorSelected, null, 2) : state.graphEditorEditJson;
+  }
+}
+function graphEditorSelectOptions() {
+  return [el('option', { value: '' }, 'Select graph'), ...(state.graphEditorItems || []).map(g => el('option', { value: g.id }, `${g.name || g.id} · ${(g.nodes || []).length} nodes`))];
+}
+function graphEditorTemplateOptions() {
+  const rows = state.graphEditorCatalog?.workflow_templates || state.workflowCatalog?.templates || [];
+  return rows.length ? rows.map(t => el('option', { value: t.key }, t.label || t.key)) : [el('option', { value: 'full_dataset_curation' }, 'Full automated dataset curation')];
+}
+function graphEditorNodeTypeOptions() {
+  const rows = graphEditorCanvasPaletteRows();
+  return rows.length ? rows.map(t => el('option', { value: t.kind }, `${t.label || t.kind} · ${t.palette_category || t.category || 'node'}`)) : [el('option', { value: 'manual_review_gate' }, 'Manual review gate')];
+}
+function graphEditorWorkflowTypeOptions() {
+  const rows = state.graphEditorCatalog?.workflow_step_catalog || [];
+  return rows.length ? rows.map(t => el('option', { value: t.type }, t.label || t.type)) : [el('option', { value: 'create_branch' }, 'Create branch')];
+}
+function graphEditorModelOptions() { return workflowModelOptions(); }
+function graphEditorBodyFromUi() {
+  return {
+    name: state.graphEditorName || 'Agentic curation graph',
+    goal: state.graphEditorGoal || '',
+    instructions: state.graphEditorInstructions || state.graphEditorGoal || '',
+    template_key: state.graphEditorTemplateKey || 'full_dataset_curation',
+    assistant_model: state.graphEditorAssistantModel || state.assistantModelSelection || 'dataset-assistant',
+    source_dataset_id: state.graphEditorSourceDatasetId ? Number(state.graphEditorSourceDatasetId) : null,
+    branch_name: state.graphEditorBranch || state.globalDatasetBranchName || 'default',
+    target_model: state.graphEditorTarget || state.datasetPipelineTarget || 'sdxl',
+    adapter_type: state.graphEditorAdapter || state.datasetPipelineAdapter || 'lora',
+    dataset_goal: state.graphEditorDatasetGoal || state.datasetPipelineGoal || 'character',
+    training_tool: state.graphEditorTrainingTool || state.datasetPipelineTrainingTool || 'generic',
+    automation_level: 'guided'
+  };
+}
+function graphEditorKindMeta(kind) {
+  const rows = graphEditorCanvasPaletteRows();
+  return rows.find(x => x.kind === kind) || {};
+}
+function graphEditorKindColor(kind) {
+  const cat = graphEditorKindMeta(kind).category || kind;
+  const colors = { control:'#dc2626', model:'#7c3aed', global_dataset:'#059669', tags:'#0ea5e9', download:'#f97316', selection:'#a855f7', labeling:'#16a34a', augmentation:'#db2777', training_prep:'#4f46e5', quality:'#ca8a04', export:'#0891b2', handoff:'#0f766e', distributed:'#64748b', tool:'#ef4444', start:'#2563eb', input:'#22c55e', context:'#6366f1', event:'#0ea5e9', browser:'#f59e0b', output:'#94a3b8' };
+  return colors[cat] || colors[kind] || '#334155';
+}
+
+function graphEditorNodeHasInput(node) {
+  const kind = node?.kind || '';
+  if (kind === 'start' || kind === 'webhook_event' || kind === 'live_stream_input') return false;
+  if (kind === 'output_artifact') return true;
+  const metaPorts = graphEditorKindMeta(kind).ports || {};
+  const nodePorts = (node?.ports && (Object.prototype.hasOwnProperty.call(node.ports, 'inputs') || Object.prototype.hasOwnProperty.call(node.ports, 'outputs'))) ? node.ports : null;
+  const ports = nodePorts || metaPorts || {};
+  return (ports.inputs ?? 1) !== 0;
+}
+function graphEditorNodeHasOutput(node) {
+  const kind = node?.kind || '';
+  if (kind === 'output_artifact') return false;
+  const metaPorts = graphEditorKindMeta(kind).ports || {};
+  const nodePorts = (node?.ports && (Object.prototype.hasOwnProperty.call(node.ports, 'inputs') || Object.prototype.hasOwnProperty.call(node.ports, 'outputs'))) ? node.ports : null;
+  const ports = nodePorts || metaPorts || {};
+  return (ports.outputs ?? 1) !== 0;
+}
+function graphEditorPortValue(node, direction) {
+  const kind = node?.kind || '';
+  const metaPorts = graphEditorKindMeta(kind).ports || {};
+  const nodePorts = (node?.ports && (Object.prototype.hasOwnProperty.call(node.ports, 'inputs') || Object.prototype.hasOwnProperty.call(node.ports, 'outputs'))) ? node.ports : null;
+  const ports = nodePorts || metaPorts || {};
+  const key = direction === 'inputs' ? 'inputs' : 'outputs';
+  if (Object.prototype.hasOwnProperty.call(ports, key)) return ports[key];
+  if (direction === 'inputs') {
+    if (kind === 'start' || kind === 'webhook_event' || kind === 'live_stream_input') return 0;
+    return 1;
+  }
+  if (kind === 'output_artifact') return 0;
+  return 1;
+}
+function graphEditorPortCount(node, direction) {
+  const value = graphEditorPortValue(node, direction);
+  if (value === 0 || value === '0' || value === false || value === null) return 0;
+  if (value === 'many') return 4;
+  const num = Number(value);
+  if (Number.isFinite(num)) return Math.max(0, Math.min(12, Math.round(num)));
+  return 1;
+}
+function graphEditorPortDescriptors(node, direction) {
+  const count = graphEditorPortCount(node, direction);
+  const kind = node?.kind || '';
+  const cfg = node?.config || {};
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    let id = direction === 'inputs' ? `in${count === 1 ? '' : i + 1}` : `out${count === 1 ? '' : i + 1}`;
+    let label = id;
+    if (kind === 'condition_gate' && direction === 'outputs') {
+      id = i === 0 ? 'true' : 'false';
+      label = i === 0 ? (cfg.true_label || cfg.on_true || 'yes') : (cfg.false_label || cfg.on_false || 'no');
+    } else if (graphEditorPortValue(node, direction) === 'many') {
+      label = direction === 'inputs' ? `in ${i + 1}` : `out ${i + 1}`;
+    }
+    out.push({ id, label, index:i, count, offsetY: Math.round(28 + (i + 1) * (Math.max(84, 26 + count * 24) - 46) / (count + 1)) });
+  }
+  return out;
+}
+function graphEditorPortPosition(node, direction, portId = '', fallbackIndex = 0) {
+  const ports = graphEditorPortDescriptors(node, direction);
+  let idx = Math.max(0, ports.findIndex(p => String(p.id) === String(portId || '')));
+  if (idx < 0) idx = Math.max(0, Math.min(ports.length - 1, Number(fallbackIndex || 0)));
+  const port = ports[idx] || { offsetY: 58 };
+  const x = Number(node?.x || 0) + (direction === 'outputs' ? 220 : 0);
+  const y = Number(node?.y || 0) + Number(port.offsetY || 58);
+  return { x, y, port };
+}
+function graphEditorSelectionSet() {
+  const ids = Array.isArray(state.graphEditorSelectedNodeIds) ? state.graphEditorSelectedNodeIds : [];
+  const set = new Set(ids.filter(Boolean));
+  if (!set.size && state.graphEditorSelectedNodeId) set.add(state.graphEditorSelectedNodeId);
+  return set;
+}
+function graphEditorSetSelection(ids = [], edgeIds = []) {
+  const unique = [...new Set((ids || []).filter(Boolean))];
+  state.graphEditorSelectedNodeIds = unique;
+  state.graphEditorSelectedEdgeIds = [...new Set((edgeIds || []).filter(Boolean))];
+  state.graphEditorSelectedNodeId = unique[0] || '';
+  if (unique.length) state.graphEditorLastSelectedNodeId = unique[unique.length - 1];
+}
+function graphEditorSelectNodeWithModifiers(nodeId, event = null, nodes = []) {
+  const id = String(nodeId || '');
+  if (!id) return graphEditorSelectionSet();
+  const current = graphEditorSelectionSet();
+  const additive = Boolean(event?.ctrlKey || event?.metaKey);
+  const range = Boolean(event?.shiftKey);
+  if (range && state.graphEditorLastSelectedNodeId) {
+    const order = (nodes || graphEditorEnsureCurrent().nodes || []).map(n => String(n.id || ''));
+    const a = order.indexOf(String(state.graphEditorLastSelectedNodeId));
+    const b = order.indexOf(id);
+    if (a >= 0 && b >= 0) {
+      const next = additive ? new Set(current) : new Set();
+      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) next.add(order[i]);
+      graphEditorSetSelection([...next], additive ? (state.graphEditorSelectedEdgeIds || []) : []);
+      return graphEditorSelectionSet();
+    }
+  }
+  if (additive) {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    graphEditorSetSelection([...next], state.graphEditorSelectedEdgeIds || []);
+    return graphEditorSelectionSet();
+  }
+  graphEditorSetSelection([id], []);
+  return graphEditorSelectionSet();
+}
+function graphEditorAddRecentKind(kind) {
+  const k = String(kind || '').trim();
+  if (!k) return;
+  const next = [k, ...(state.graphEditorPaletteRecentKinds || []).filter(x => x !== k)].slice(0, 3);
+  state.graphEditorPaletteRecentKinds = next;
+}
+function graphEditorPaletteVisibleRows() {
+  const rows = graphEditorCanvasPaletteRows();
+  const q = String(state.graphEditorPaletteSearch || state.graphEditorPaletteFilter || '').trim().toLowerCase();
+  const filters = state.graphEditorPaletteCategoryFilters || {};
+  const activeCats = Object.keys(filters).filter(k => filters[k]);
+  return rows.filter(row => {
+    const cat = String(row.palette_category || row.category || 'other');
+    if (activeCats.length && !activeCats.includes(cat)) return false;
+    if (!q) return true;
+    return [row.kind, row.label, row.category, row.palette_category, row.description, row.standalone_type].some(v => String(v || '').toLowerCase().includes(q));
+  });
+}
+function graphEditorSelectedGraphParts() {
+  const graph = graphEditorEnsureCurrent();
+  const ids = graphEditorSelectionSet();
+  const nodes = (graph.nodes || []).filter(n => ids.has(n.id));
+  const edges = (graph.edges || []).filter(e => ids.has(e.from) && ids.has(e.to));
+  return { graph, ids, nodes, edges };
+}
+function graphEditorCopySelection(cut = false) {
+  const { graph, nodes, edges } = graphEditorSelectedGraphParts();
+  if (!nodes.length) { toast('Select one or more nodes first.', false); return false; }
+  const minX = Math.min(...nodes.map(n => Number(n.x || 0)));
+  const minY = Math.min(...nodes.map(n => Number(n.y || 0)));
+  const maxX = Math.max(...nodes.map(n => Number(n.x || 0) + 220));
+  const maxY = Math.max(...nodes.map(n => Number(n.y || 0) + 110));
+  state.graphEditorClipboard = { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)), bounds:{ minX, minY, maxX, maxY }, copied_at: new Date().toISOString() };
+  if (cut) {
+    const ids = new Set(nodes.map(n => n.id));
+    graph.nodes = (graph.nodes || []).filter(n => !ids.has(n.id));
+    graph.edges = (graph.edges || []).filter(e => !ids.has(e.from) && !ids.has(e.to));
+    graphEditorSetSelection([], []);
+    graphEditorSetCurrent(graph);
+    graphEditorRenderCanvasNow();
+    toast(`Cut ${nodes.length} node(s)`);
+  } else {
+    toast(`Copied ${nodes.length} node(s)`);
+  }
+  return true;
+}
+function graphEditorPasteClipboard(position = null) {
+  const clip = state.graphEditorClipboard;
+  if (!clip || !Array.isArray(clip.nodes) || !clip.nodes.length) { toast('Graph clipboard is empty.', false); return false; }
+  const graph = graphEditorEnsureCurrent();
+  const count = Number(state.graphEditorPasteCount || 0) + 1;
+  state.graphEditorPasteCount = count;
+  const baseX = Number(clip.bounds?.minX || 0);
+  const baseY = Number(clip.bounds?.minY || 0);
+  const target = position || state.graphEditorLastCanvasWorldPoint || { x: baseX + 40 * count, y: baseY + 40 * count };
+  const dx = Number(target.x || 0) - baseX + (position ? 0 : 40 * count);
+  const dy = Number(target.y || 0) - baseY + (position ? 0 : 40 * count);
+  const map = new Map();
+  const newNodes = clip.nodes.map((node, idx) => {
+    const nextId = `${String(node.kind || 'node').replace(/[^a-z0-9]+/gi, '_').toLowerCase()}_${Date.now().toString(36)}_${idx + 1}`;
+    map.set(node.id, nextId);
+    return { ...JSON.parse(JSON.stringify(node)), id: nextId, x: Math.round(Number(node.x || 0) + dx), y: Math.round(Number(node.y || 0) + dy), label: node.label || node.kind || nextId };
+  });
+  const newEdges = (clip.edges || []).filter(e => map.has(e.from) && map.has(e.to)).map((edge, idx) => ({ ...JSON.parse(JSON.stringify(edge)), id:`edge_${map.get(edge.from)}_${map.get(edge.to)}_${Date.now().toString(36)}_${idx}`, from:map.get(edge.from), to:map.get(edge.to) }));
+  graph.nodes = [...(graph.nodes || []), ...newNodes];
+  graph.edges = [...(graph.edges || []), ...newEdges];
+  graphEditorSetSelection(newNodes.map(n => n.id), newEdges.map(e => e.id));
+  graphEditorSetCurrent(graph);
+  graphEditorRenderCanvasNow();
+  toast(`Pasted ${newNodes.length} node(s)`);
+  return true;
+}
+function graphEditorDeleteSelection() {
+  const graph = graphEditorEnsureCurrent();
+  const ids = graphEditorSelectionSet();
+  if (!ids.size && !(state.graphEditorSelectedEdgeIds || []).length) return false;
+  graph.nodes = (graph.nodes || []).filter(n => !ids.has(n.id));
+  const selectedEdges = new Set(state.graphEditorSelectedEdgeIds || []);
+  graph.edges = (graph.edges || []).filter(e => !ids.has(e.from) && !ids.has(e.to) && !selectedEdges.has(e.id));
+  graphEditorSetSelection([], []);
+  graphEditorSetCurrent(graph);
+  graphEditorRenderCanvasNow();
+  return true;
+}
+function graphEditorSafeConfig(node) {
+  if (!node.config || typeof node.config !== 'object') node.config = {};
+  return node.config;
+}
+function graphEditorSetNodeConfigValue(nodeId, key, value) {
+  const graph = graphEditorEnsureCurrent();
+  graph.nodes = (graph.nodes || []).map(n => {
+    if (n.id !== nodeId) return n;
+    const cfg = { ...(n.config || {}) };
+    cfg[key] = value;
+    return { ...n, config: cfg };
+  });
+  graphEditorSetCurrent(graph);
+}
+function graphEditorSetNodeNestedConfigValue(nodeId, path, value) {
+  const graph = graphEditorEnsureCurrent();
+  graph.nodes = (graph.nodes || []).map(n => {
+    if (n.id !== nodeId) return n;
+    const cfg = { ...(n.config || {}) };
+    let cur = cfg;
+    const parts = String(path || '').split('.').filter(Boolean);
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      cur[part] = { ...(cur[part] || {}) };
+      cur = cur[part];
+    }
+    cur[parts[parts.length - 1]] = value;
+    return { ...n, config: cfg };
+  });
+  graphEditorSetCurrent(graph);
+}
+function graphEditorCsvToList(value) {
+  return String(value || '').split(/[;,]/).map(x => x.trim()).filter(Boolean);
+}
+function graphEditorListToCsv(value) {
+  return Array.isArray(value) ? value.join(', ') : String(value || '');
+}
+function graphEditorConfigInput(node, key, label, placeholder = '', type = 'text') {
+  const cfg = graphEditorSafeConfig(node);
+  const input = el('input', { type, value: cfg[key] ?? '', placeholder, oninput:e=>{ graphEditorSetNodeConfigValue(node.id, key, type === 'number' ? Number(e.target.value || 0) : e.target.value); } });
+  return el('label', { class:'label compact' }, [label, input]);
+}
+function graphEditorConfigCheck(node, key, label) {
+  const cfg = graphEditorSafeConfig(node);
+  return el('label', { class:'label compact' }, [el('input', { type:'checkbox', checked:Boolean(cfg[key]), onchange:e=>{ graphEditorSetNodeConfigValue(node.id, key, e.target.checked); render(); } }), ' ', label]);
+}
+function graphEditorConfigSelect(node, key, label, values) {
+  const cfg = graphEditorSafeConfig(node);
+  const sel = el('select', { onchange:e=>{ graphEditorSetNodeConfigValue(node.id, key, e.target.value); render(); } }, values.map(v => Array.isArray(v) ? el('option', { value:v[0] }, v[1]) : el('option', { value:v }, v)));
+  sel.value = cfg[key] ?? (Array.isArray(values[0]) ? values[0][0] : values[0]);
+  return el('label', { class:'label compact' }, [label, sel]);
+}
+function graphEditorModalityInput(node, key, label) {
+  const cfg = graphEditorSafeConfig(node);
+  const values = ['text','image','audio','video','json','multimodal','tags','caption','file'];
+  const selected = new Set(Array.isArray(cfg[key]) ? cfg[key] : graphEditorCsvToList(cfg[key]));
+  return el('details', { class:'compact-details' }, [
+    el('summary', {}, label),
+    el('div', { class:'chips open' }, values.map(v => el('label', { class:'chip' }, [
+      el('input', { type:'checkbox', checked:selected.has(v), onchange:e=>{
+        const next = new Set(Array.isArray(graphEditorSafeConfig(node)[key]) ? graphEditorSafeConfig(node)[key] : graphEditorCsvToList(graphEditorSafeConfig(node)[key]));
+        if (e.target.checked) next.add(v); else next.delete(v);
+        graphEditorSetNodeConfigValue(node.id, key, [...next]);
+      }}), ' ', v
+    ])))
+  ]);
+}
+function graphEditorNodeAdvancedInspector(node) {
+  if (!node) return null;
+  const kind = node.kind || '';
+  const cfg = graphEditorSafeConfig(node);
+  if (['text_input','image_input','audio_input','video_input','live_stream_input'].includes(kind)) {
+    return el('details', { open:true, class:'graph-node-advanced' }, [
+      el('summary', {}, 'Input / stream options'),
+      el('div', { class:'row wrap' }, [
+        graphEditorConfigSelect(node, 'source', 'Source', ['user_manual','from_graph','from_tools','from_events','from_agent_console']),
+        graphEditorConfigSelect(node, 'delivery', 'Delivery', ['oneshot','stream']),
+        graphEditorConfigInput(node, 'channel', 'Channel', 'events/user_prompt/sensor'),
+        graphEditorConfigInput(node, 'text', 'Text/manual value', 'optional manual input')
+      ]),
+      el('div', { class:'row wrap' }, [
+        graphEditorConfigCheck(node, 'accept_inbound', 'accept inbound graph artifact'),
+        graphEditorConfigCheck(node, 'enabled', 'input enabled'),
+        graphEditorConfigInput(node, 'endpoint', 'Endpoint', 'ws://127.0.0.1:9101/video')
+      ])
+    ]);
+  }
+  if (kind === 'bundle_context' || kind === 'join_merge') {
+    return el('details', { open:true, class:'graph-node-advanced' }, [
+      el('summary', {}, 'Bundle / context limits'),
+      el('div', { class:'row wrap' }, [
+        graphEditorConfigSelect(node, 'mode', 'Mode', ['array','object']),
+        graphEditorConfigInput(node, 'object_keys_csv', 'Object keys CSV', 'caption,tags,metadata'),
+        graphEditorConfigInput(node, 'max_items', 'Max items', '', 'number'),
+        graphEditorConfigInput(node, 'max_chars', 'Max chars', '', 'number'),
+        graphEditorConfigSelect(node, 'policy', 'Limit policy', ['none','drop_oldest','drop_largest','text_summarize','truncate_text']),
+        graphEditorConfigCheck(node, 'text_only', 'text/json only')
+      ])
+    ]);
+  }
+  if (kind === 'model_call') {
+    return el('details', { open:true, class:'graph-node-advanced' }, [
+      el('summary', {}, 'Model / agent call options'),
+      el('div', { class:'row wrap' }, [
+        graphEditorConfigInput(node, 'model_ref_id', 'Model', 'dataset-assistant / local model / provider id'),
+        graphEditorConfigInput(node, 'preset_id', 'Agent preset/card', 'optional preset id'),
+        graphEditorConfigInput(node, 'provider', 'Provider', 'local/openrouter/openai-compatible'),
+        graphEditorConfigInput(node, 'temperature', 'Temperature', '', 'number'),
+        graphEditorConfigInput(node, 'max_tokens', 'Max tokens', '', 'number')
+      ]),
+      el('textarea', { rows:'4', style:'width:100%', placeholder:'User prompt / node instruction', oninput:e=>graphEditorSetNodeConfigValue(node.id, 'user_prompt', e.target.value) }, cfg.user_prompt || ''),
+      el('div', { class:'row wrap' }, [graphEditorModalityInput(node, 'input_modalities', 'Input modalities'), graphEditorModalityInput(node, 'output_modalities', 'Output modalities')])
+    ]);
+  }
+  if (kind === 'supervisor_controller') {
+    return el('details', { open:true, class:'graph-node-advanced' }, [
+      el('summary', {}, 'Supervisor planner options'),
+      el('div', { class:'row wrap' }, [
+        graphEditorConfigInput(node, 'controller_model_ref_id', 'Controller model', 'dataset-assistant'),
+        graphEditorConfigInput(node, 'controller_preset_id', 'Controller preset', 'preset_supervisor_default'),
+        graphEditorConfigSelect(node, 'plan_mode', 'Plan mode', ['manual','llm_json']),
+        graphEditorConfigInput(node, 'max_spawns', 'Max downstream actions', '', 'number'),
+        graphEditorConfigInput(node, 'channels', 'Event channels CSV', 'user_prompt, events, alerts')
+      ]),
+      el('textarea', { rows:'4', style:'width:100%', placeholder:'Supervisor instruction prefix', oninput:e=>graphEditorSetNodeConfigValue(node.id, 'instruction_prefix', e.target.value) }, cfg.instruction_prefix || '')
+    ]);
+  }
+  if (kind === 'external_tool_call') {
+    return el('details', { open:true, class:'graph-node-advanced' }, [
+      el('summary', {}, 'External tool / HTTP gateway'),
+      el('div', { class:'row wrap' }, [
+        graphEditorConfigInput(node, 'tool_label', 'Tool label', 'Local Tool Gateway'),
+        graphEditorConfigInput(node, 'base_url', 'Base URL', 'http://127.0.0.1:9000'),
+        graphEditorConfigInput(node, 'path', 'Path', '/tool/execute'),
+        graphEditorConfigSelect(node, 'method', 'Method', ['GET','POST','PUT','PATCH','DELETE']),
+        graphEditorConfigCheck(node, 'local_only', 'local-only guard')
+      ]),
+      el('label', { class:'label' }, ['Headers JSON', el('textarea', { rows:'3', style:'width:100%;font-family:monospace', oninput:e=>graphEditorSetNodeConfigValue(node.id, 'headers_json', e.target.value) }, cfg.headers_json || '{}')]),
+      el('label', { class:'label' }, ['Body template with {{input}}', el('textarea', { rows:'5', style:'width:100%;font-family:monospace', oninput:e=>graphEditorSetNodeConfigValue(node.id, 'body_template', e.target.value) }, cfg.body_template || '{\n  "input": {{input}}\n}')])
+    ]);
+  }
+  if (kind === 'browser_search' || kind === 'browser_open') {
+    return el('details', { open:true, class:'graph-node-advanced' }, [
+      el('summary', {}, 'Browser MCP options'),
+      el('div', { class:'row wrap' }, [
+        graphEditorConfigSelect(node, 'browser', 'Browser MCP', ['browser_default','browser_edge','browser_chrome','browser_firefox','browser_chromium','browser_tor']),
+        kind === 'browser_search' ? graphEditorConfigInput(node, 'query', 'Search query', 'what to look up') : graphEditorConfigInput(node, 'url', 'URL', 'https://...'),
+        graphEditorConfigInput(node, 'search_engine', 'Search engine template', 'https://www.google.com/search?q={query}'),
+        graphEditorConfigCheck(node, 'private', 'private/incognito window'),
+        graphEditorConfigCheck(node, 'requires_user_approval', 'requires approval')
+      ]),
+      el('p', { class:'muted tiny' }, 'Browser MCP actions open visible user-browser windows/searches after approval. They are not hidden webscrapers.')
+    ]);
+  }
+  if (kind === 'event_bus_publish' || kind === 'webhook_event') {
+    return el('details', { open:true, class:'graph-node-advanced' }, [
+      el('summary', {}, 'Event channel options'),
+      el('div', { class:'row wrap' }, [
+        graphEditorConfigInput(node, 'channel', 'Channel', 'events'),
+        graphEditorConfigSelect(node, 'kind', 'Kind', ['prompt','alert','event','tool','model']),
+        graphEditorConfigInput(node, 'source', 'Source', 'graph'),
+        graphEditorConfigInput(node, 'path', 'Webhook path', '/api/webhooks/events')
+      ]),
+      el('textarea', { rows:'3', style:'width:100%', placeholder:'Event/message payload', oninput:e=>graphEditorSetNodeConfigValue(node.id, 'message', e.target.value) }, cfg.message || '')
+    ]);
+  }
+  return el('details', { class:'graph-node-advanced' }, [el('summary', {}, 'Standalone graph-node compatibility'), el('p', { class:'muted tiny' }, 'This node keeps extra JSON config from the standalone graph editor. If it does not map to a deterministic workflow step, it remains approval-gated or is retained as graph context.')]);
+}
+
+function graphEditorConfigValueByPath(cfg, path) {
+  const parts = String(path || '').split('.').filter(Boolean);
+  let cur = cfg || {};
+  for (const part of parts) {
+    if (!cur || typeof cur !== 'object') return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+function graphEditorPaletteFieldControl(node, field) {
+  const cfg = graphEditorSafeConfig(node);
+  const key = field.key || '';
+  const label = field.label || key;
+  const type = field.type || 'text';
+  const value = graphEditorConfigValueByPath(cfg, key);
+  const setValue = val => graphEditorSetNodeNestedConfigValue(node.id, key, val);
+  if (type === 'boolean') {
+    return el('label', { class:'label compact' }, [el('input', { type:'checkbox', checked:Boolean(value), onchange:e=>{ setValue(e.target.checked); render(); } }), ' ', label]);
+  }
+  if (type === 'select') {
+    const options = Array.isArray(field.options) && field.options.length ? field.options : [''];
+    const sel = el('select', { onchange:e=>{ setValue(e.target.value); render(); } }, options.map(v=>el('option',{value:v},String(v))));
+    sel.value = value ?? options[0];
+    return el('label', { class:'label compact' }, [label, sel]);
+  }
+  if (type === 'model_select') {
+    const opts = [el('option', { value:'' }, 'Use/default model'), ...(state.models || []).map(m=>el('option',{value:m.name},m.label || m.name))];
+    const sel = el('select', { onchange:e=>{ setValue(e.target.value); render(); } }, opts);
+    sel.value = value || '';
+    return el('label', { class:'label compact' }, [label, sel]);
+  }
+  if (type === 'multiselect') {
+    const options = Array.isArray(field.options) ? field.options : ['text','image','audio','video','json'];
+    const selected = new Set(Array.isArray(value) ? value : graphEditorCsvToList(value));
+    return el('details', { class:'compact-details palette-field' }, [
+      el('summary', {}, label),
+      el('div', { class:'chips open' }, options.map(v=>el('label', { class:'chip' }, [
+        el('input', { type:'checkbox', checked:selected.has(v), onchange:e=>{
+          const next = new Set(Array.isArray(graphEditorConfigValueByPath(graphEditorSafeConfig(node), key)) ? graphEditorConfigValueByPath(graphEditorSafeConfig(node), key) : graphEditorCsvToList(graphEditorConfigValueByPath(graphEditorSafeConfig(node), key)));
+          if (e.target.checked) next.add(v); else next.delete(v);
+          setValue([...next]); render();
+        }}), ' ', v
+      ])))
+    ]);
+  }
+  if (type === 'textarea' || type === 'json_text' || type === 'list') {
+    const raw = Array.isArray(value) ? value.join(', ') : (value ?? '');
+    return el('label', { class:'label' }, [label, el('textarea', { rows: type === 'json_text' ? '4' : '3', style:'width:100%', oninput:e=>{
+      if (type === 'list') setValue(graphEditorCsvToList(e.target.value)); else setValue(e.target.value);
+    } }, raw)]);
+  }
+  return el('label', { class:'label compact' }, [label, el('input', { type: type === 'number' ? 'number' : 'text', value: value ?? '', oninput:e=>setValue(type === 'number' ? Number(e.target.value || 0) : e.target.value) })]);
+}
+function graphEditorPaletteCustomizationInspector(node) {
+  if (!node) return null;
+  const meta = graphEditorKindMeta(node.kind);
+  const schema = meta.customization_schema || {};
+  const sections = Array.isArray(schema.sections) ? schema.sections : [];
+  if (!sections.length) return null;
+  return el('details', { class:'graph-node-advanced palette-driven-customization', open:false }, [
+    el('summary', {}, `Palette-driven customization${schema.standalone_type ? ' · ' + schema.standalone_type : ''}`),
+    el('p', { class:'muted tiny' }, 'These controls are generated from the node-palette schema ported from the standalone graph editor. They write into this node config and can also be edited by the orchestrator model.'),
+    ...sections.map(section => el('fieldset', { class:'graph-palette-section' }, [
+      el('legend', {}, section.title || 'Options'),
+      el('div', { class:'row wrap' }, (section.fields || []).map(field => graphEditorPaletteFieldControl(node, field)))
+    ]))
+  ]);
+}
+function graphEditorPaletteGroups() {
+  const rows = graphEditorCanvasPaletteRows();
+  const groups = new Map();
+  for (const row of rows) {
+    const key = row.palette_category || row.category || 'other';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+}
+function graphEditorNodePaletteCard() {
+  const groups = graphEditorPaletteGroups();
+  return card('Graph Node Palette / Standalone Node Contracts', [
+    el('p', { class:'muted tiny' }, 'Palette categories and customization fields are now backend-provided so the user, GUI, and orchestrator model all reference the same node contracts. Nodes compile into Automation Workflow steps where possible; unsafe/expensive actions stay approval-gated.'),
+    groups.length ? el('div', { class:'graph-palette-groups' }, groups.map(([cat, rows]) => el('details', { class:'graph-palette-category', open:true }, [
+      el('summary', {}, `${cat.replaceAll('_',' ')} · ${rows.length}`),
+      el('div', { class:'graph-palette-grid' }, rows.map(row => el('div', { class:'graph-palette-node', style:`--node-color:${graphEditorKindColor(row.kind)}` }, [
+        el('div', { class:'graph-palette-node-head' }, [el('strong', {}, row.label || row.kind), el('span', { class:'badge' }, row.kind)]),
+        el('p', { class:'muted tiny' }, row.description || ''),
+        el('div', { class:'chips open tiny' }, [
+          el('span', { class:'chip' }, `ports in:${row.ports?.inputs ?? 1} out:${row.ports?.outputs ?? 1}`),
+          row.workflow_step_type ? el('span', { class:'chip' }, `workflow: ${row.workflow_step_type}`) : el('span', { class:'chip' }, 'graph-only/context'),
+          row.standalone_type ? el('span', { class:'chip' }, `standalone: ${row.standalone_type}`) : null
+        ].filter(Boolean)),
+        (row.customizable_fields || []).length ? el('details', { class:'compact-details' }, [el('summary', {}, `custom fields · ${row.customizable_fields.length}`), el('div', { class:'tiny muted' }, row.customizable_fields.join(', '))]) : null,
+        el('button', { class:'secondary small', onclick:()=>graphEditorAddNode(row.kind) }, 'Add Node')
+      ].filter(Boolean))))
+    ]))) : el('p', { class:'muted' }, 'Refresh the graph catalog to show node types.')
+  ]);
+}
+
+function graphEditorPublishEvent() {
+  const row = { id:`evt_${Date.now().toString(36)}`, created_at:new Date().toISOString(), channel:state.graphEditorEventChannel || 'events', kind:state.graphEditorEventKind || 'prompt', source:state.graphEditorEventSource || 'user', message:state.graphEditorEventMessage || '' };
+  if (!row.message.trim()) { toast('Type an event/prompt first.', false); return; }
+  state.graphEditorEventLog = [row, ...(state.graphEditorEventLog || [])].slice(0, 500);
+  state.graphEditorEventMessage = '';
+  toast(`Published graph event to ${row.channel}`);
+  render();
+}
+function graphEditorEventConsoleCard() {
+  const channels = ['user_prompt','events','alerts','tool','model','sensor/cam1','sensor/mic1','sensor/cam1_stream'];
+  const kinds = ['prompt','alert','event','tool','model'];
+  const channelSel = el('select', { onchange:e=>state.graphEditorEventChannel=e.target.value }, channels.map(c=>el('option',{value:c},c))); channelSel.value = state.graphEditorEventChannel || 'user_prompt';
+  const kindSel = el('select', { onchange:e=>state.graphEditorEventKind=e.target.value }, kinds.map(c=>el('option',{value:c},c))); kindSel.value = state.graphEditorEventKind || 'prompt';
+  const filtered = (state.graphEditorEventLog || []).filter(e => !state.graphEditorEventFilter || e.channel === state.graphEditorEventFilter).slice(0, 80);
+  return card('Graph Event Console / Supervisor Context', [
+    el('p', { class:'muted tiny' }, 'Standalone editor event-bus behavior is available here. Supervisor/model nodes can refer to channels in their config; saved workflows preserve this graph context.'),
+    el('div', { class:'row wrap' }, [channelSel, kindSel, el('input', { value:state.graphEditorEventSource || 'user', placeholder:'source', oninput:e=>state.graphEditorEventSource=e.target.value }), el('button', { class:'primary small', onclick:graphEditorPublishEvent }, 'Publish Event'), el('button', { class:'secondary small', onclick:()=>{state.graphEditorEventLog=[];render();} }, 'Clear Log')]),
+    el('textarea', { rows:'3', style:'width:100%', placeholder:'Prompt, alert, tool message, model message, or event payload...', oninput:e=>state.graphEditorEventMessage=e.target.value }, state.graphEditorEventMessage || ''),
+    filtered.length ? el('div', { class:'graph-event-log' }, filtered.map(e=>el('div', { class:'graph-event-row' }, [el('span', { class:'badge' }, e.kind), el('strong', {}, e.channel), el('span', { class:'muted tiny' }, e.source || 'unknown'), el('pre', { class:'log compact' }, e.message || '')]))) : el('p', { class:'muted' }, 'No graph events published in this session.')
+  ]);
+}
+function graphEditorFeatureSummaryCard() {
+  const c = state.graphEditorCatalog?.graph_feature_contract || {};
+  return card('Standalone Graph Editor Features Integrated', [
+    el('p', { class:'muted' }, 'The integrated editor keeps the current dark/neon DCT canvas style while adding the standalone node/edge primitives, event console, bundle policies, model/supervisor/tool nodes, and browser MCP nodes.'),
+    el('div', { class:'chips open' }, (c.ported_features || ['right_click_add_node','pan_and_zoom_canvas','port_based_connections','edge_delete_handles','flow_animation','event_console','browser_mcp_nodes']).map(x=>el('span',{class:'chip'},String(x).replaceAll('_',' '))))
+  ]);
+}
+function graphEditorCurrent() {
+  if (state.graphEditorSelected) return state.graphEditorSelected;
+  try { return JSON.parse(state.graphEditorEditJson || '{}'); } catch (_) { return null; }
+}
+function graphEditorEnsureCurrent() {
+  let graph = graphEditorCurrent();
+  if (!graph || !Array.isArray(graph.nodes)) {
+    graph = {
+      name: state.graphEditorName || 'Unsaved agentic graph',
+      goal: state.graphEditorGoal || '',
+      instructions: state.graphEditorInstructions || '',
+      branch_name: state.graphEditorBranch || 'default',
+      target_model: state.graphEditorTarget || 'sdxl',
+      adapter_type: state.graphEditorAdapter || 'lora',
+      dataset_goal: state.graphEditorDatasetGoal || 'character',
+      training_tool: state.graphEditorTrainingTool || 'generic',
+      nodes: [{ id:'start', kind:'start', label: state.graphEditorGoal || 'Start / user goal', x:40, y:80, config:{ prompt: state.graphEditorGoal || '' }, enabled:true }],
+      edges: [],
+      metadata: { source:'frontend_unsaved_graph' }
+    };
+  }
+  graph.nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  graph.edges = Array.isArray(graph.edges) ? graph.edges : [];
+  return graph;
+}
+function graphEditorSetCurrent(graph) {
+  state.graphEditorSelected = graph;
+  state.graphEditorSelectedId = graph?.id || state.graphEditorSelectedId || '';
+  state.graphEditorEditJson = graph ? JSON.stringify(graph, null, 2) : '';
+}
+function graphEditorLocalPresetMemory() {
+  if (!state.graphEditorLocalPresetMemory || typeof state.graphEditorLocalPresetMemory !== 'object') state.graphEditorLocalPresetMemory = {};
+  return state.graphEditorLocalPresetMemory;
+}
+function graphEditorLocalPresets() {
+  try {
+    const raw = localStorage.getItem('dctAgenticGraphEditorLocalPresets') || '{}';
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      state.graphEditorLocalPresetMemory = parsed;
+      return parsed;
+    }
+  } catch (_) {}
+  return graphEditorLocalPresetMemory();
+}
+function graphEditorWriteLocalPresets(presets) {
+  state.graphEditorLocalPresetMemory = presets || {};
+  try { localStorage.setItem('dctAgenticGraphEditorLocalPresets', JSON.stringify(state.graphEditorLocalPresetMemory)); } catch (_) {}
+}
+function graphEditorSaveLocalPreset() {
+  const graph = graphEditorEnsureCurrent();
+  const name = String(state.graphEditorLocalPresetName || graph.name || '').trim();
+  if (!name) { toast('Enter a local graph preset name first.', false); return; }
+  const presets = { ...graphEditorLocalPresets() };
+  presets[name] = { ...graph, name: graph.name || name, saved_at: new Date().toISOString(), source: 'browser_local_graph_preset' };
+  graphEditorWriteLocalPresets(presets);
+  state.graphEditorLocalPresetSelected = name;
+  toast(`Saved local graph preset: ${name}`);
+  graphEditorRenderCanvasNow();
+}
+function graphEditorLoadLocalPreset(name = state.graphEditorLocalPresetSelected) {
+  const key = String(name || '').trim();
+  const graph = graphEditorLocalPresets()[key];
+  if (!key || !graph) { toast('Choose a saved local graph preset first.', false); return; }
+  graphEditorSetCurrent(JSON.parse(JSON.stringify(graph)));
+  state.graphEditorLocalPresetName = key;
+  state.graphEditorSelectedId = '';
+  toast(`Loaded local graph preset: ${key}`);
+  graphEditorRenderCanvasNow();
+}
+function graphEditorDeleteLocalPreset(name = state.graphEditorLocalPresetSelected) {
+  const key = String(name || '').trim();
+  if (!key) { toast('Choose a local graph preset to delete.', false); return; }
+  const presets = { ...graphEditorLocalPresets() };
+  if (!(key in presets)) { toast('Local graph preset was not found.', false); return; }
+  delete presets[key];
+  graphEditorWriteLocalPresets(presets);
+  if (state.graphEditorLocalPresetSelected === key) state.graphEditorLocalPresetSelected = '';
+  toast(`Deleted local graph preset: ${key}`);
+  graphEditorRenderCanvasNow();
+}
+function graphEditorDownloadSnapshot() {
+  const graph = graphEditorEnsureCurrent();
+  const safe = String(graph.name || 'agentic_graph').replace(/[^a-z0-9_.-]+/gi, '_').replace(/^_+|_+$/g, '') || 'agentic_graph';
+  downloadTextFile(`${safe}_${Date.now()}.json`, JSON.stringify(graph, null, 2));
+}
+function graphEditorUpdateNode(nodeId, patch = {}) {
+  const graph = graphEditorEnsureCurrent();
+  graph.nodes = (graph.nodes || []).map(n => n.id === nodeId ? { ...n, ...(patch || {}) } : n);
+  graphEditorSetCurrent(graph);
+  return graph.nodes.find(n => n.id === nodeId) || null;
+}
+function graphEditorUpdateNodeConfig(nodeId, jsonText) {
+  try {
+    const cfg = JSON.parse(String(jsonText || '{}'));
+    graphEditorUpdateNode(nodeId, { config: cfg });
+    state.graphEditorConfigJsonError = '';
+  } catch (err) {
+    state.graphEditorConfigJsonError = err?.message || String(err);
+  }
+}
+function graphEditorChangeNodeKind(nodeId, nextKind) {
+  const graph = graphEditorEnsureCurrent();
+  const meta = graphEditorKindMeta(nextKind);
+  graph.nodes = (graph.nodes || []).map(n => {
+    if (n.id !== nodeId) return n;
+    const mergedConfig = { ...(meta.default_config || {}), ...(n.config || {}) };
+    return {
+      ...n,
+      kind: nextKind,
+      label: n.label && n.label !== n.kind ? n.label : (meta.label || nextKind),
+      config: mergedConfig,
+      workflow_step_type: meta.workflow_step_type || n.workflow_step_type || null,
+      requires_approval: n.requires_approval || meta.safe_to_auto_run === false,
+      ports: meta.ports || n.ports || {},
+      modalities_in: meta.modalities_in || n.modalities_in || [],
+      modalities_out: meta.modalities_out || n.modalities_out || [],
+      ui: { ...(n.ui || {}), changed_kind_from: n.kind, palette_category: meta.category || n.ui?.palette_category || 'node' }
+    };
+  });
+  graphEditorSetCurrent(graph);
+}
+function graphEditorRefreshInteractiveRegions() {
+  if (state.tab !== 'Agentic Graph Editor') return false;
+  const canvasRegion = document.getElementById('dct-graph-canvas-region');
+  const inspectorRegion = document.getElementById('dct-graph-inspector-region');
+  if (!canvasRegion && !inspectorRegion) return false;
+  const graph = graphEditorEnsureCurrent();
+  const selectedNode = (graph.nodes || []).find(n => n.id === state.graphEditorSelectedNodeId) || null;
+  snapshotFormState(state.tab);
+  snapshotScrollState(state.tab, { force: true });
+  if (canvasRegion) canvasRegion.replaceChildren(graphEditorCanvas(graph));
+  if (inspectorRegion) inspectorRegion.replaceChildren(graphEditorNodeInspectorPanel(selectedNode));
+  restoreScrollState(state.tab, { aggressive: false });
+  restoreShellScrollState(null, { restoreMain: false });
+  return true;
+}
+// legacy test marker: graphEditorRenderCanvasNow previously called renderNowPreservingState(true)
+function graphEditorMarkCanvasInteraction(holdMs = 2200) {
+  const now = Date.now();
+  state.graphEditorActiveInteractionUntil = Math.max(Number(state.graphEditorActiveInteractionUntil || 0), now + Math.max(250, Number(holdMs || 0)));
+  state.lastUserInteractionAt = now;
+  snapshotScrollState(state.tab, { force: true });
+}
+function graphEditorHasActiveCanvasInteraction() {
+  if (state.tab !== 'Agentic Graph Editor') return false;
+  const now = Date.now();
+  return Boolean(
+    now < Number(state.graphEditorActiveInteractionUntil || 0) ||
+    state.graphEditorPanningCanvas ||
+    state.graphEditorDraggingNode ||
+    state.graphEditorConnectingActive ||
+    state.graphEditorContextMenu ||
+    state.graphEditorNodeContextMenu
+  );
+}
+function graphEditorRenderCanvasNow() {
+  // Graph canvas interactions must be immediate and repaint synchronously. Polling refreshes are blocked by
+  // graphEditorHasActiveCanvasInteraction(), but graph-local events patch only
+  // the live canvas/inspector regions so node selection, right-click menus,
+  // double-click inspectors, drags, and port connections do not wait on the
+  // full app-shell render/defer queue.
+  graphEditorMarkCanvasInteraction(1200);
+  state.renderDeferredForEditing = false;
+  if (graphEditorRefreshInteractiveRegions()) return true;
+  snapshotFormState(state.tab);
+  snapshotScrollState(state.tab, { force: true });
+  return render(true, 'hard');
+}
+
+function graphEditorOpenNodeInspector(nodeId, mode = 'normal') {
+  if (!nodeId) return;
+  state.graphEditorSelectedNodeId = nodeId;
+  state.graphEditorSelectedNodeIds = [nodeId];
+  state.graphEditorSelectedEdgeIds = [];
+  state.graphEditorInspectorMode = mode || 'normal';
+  state.graphEditorNodeContextMenu = null;
+  state.graphEditorContextMenu = null;
+  graphEditorRenderCanvasNow();
+}
+
+function graphEditorRunPayload(extra = {}) {
+  return {
+    dry_run: state.graphEditorRuntimeDry !== false,
+    approve_unsafe_steps: Boolean(state.graphEditorApproveUnsafe),
+    user_approved: Boolean(state.graphEditorApproveUnsafe),
+    stop_on_approval_gate: state.graphEditorStopOnApproval !== false,
+    allow_model_calls: Boolean(state.graphEditorAllowModelCalls),
+    event_log: state.graphEditorEventLog || [],
+    prompt: state.graphEditorGoal || state.graphEditorInstructions || '',
+    ...extra
+  };
+}
+async function graphEditorExecuteSession() {
+  try {
+    const graph = graphEditorEnsureCurrent();
+    state.graphEditorRuntimeResult = await api('/api/graph-editor/execute-session', { method:'POST', body:{ graph, payload: graphEditorRunPayload() } });
+    toast(`Graph session ${state.graphEditorRuntimeResult.status || 'completed'}`);
+    render(true, true);
+  } catch (err) { toast(err.message, false); }
+}
+async function graphEditorExecuteSelectedNode() {
+  try {
+    const graph = graphEditorEnsureCurrent();
+    const nodeId = state.graphEditorSelectedNodeId;
+    if (!nodeId) throw new Error('Select a node first.');
+    state.graphEditorNodeRuntimeResult = await api('/api/graph-editor/execute-node', { method:'POST', body:{ graph, node_id:nodeId, payload: graphEditorRunPayload() } });
+    state.graphEditorRuntimeResult = { ...(state.graphEditorRuntimeResult || {}), node_results: { ...(state.graphEditorRuntimeResult?.node_results || {}), [nodeId]: state.graphEditorNodeRuntimeResult } };
+    toast(`Executed node ${nodeId}`);
+    render(true, true);
+  } catch (err) { toast(err.message, false); }
+}
+function graphEditorAddNode(kind = 'manual_review_gate', position = null, options = {}) {
+  const graph = graphEditorEnsureCurrent();
+  const idx = (graph.nodes || []).length + 1;
+  const meta = graphEditorKindMeta(kind);
+  const idPrefix = String(kind || 'node').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').slice(0, 18).toLowerCase() || 'node';
+  const id = `${idPrefix}_${Date.now().toString(36)}_${idx}`;
+  const pos = position && Number.isFinite(Number(position.x)) && Number.isFinite(Number(position.y))
+    ? { x: Math.round(Number(position.x)), y: Math.round(Number(position.y)) }
+    : { x: 80 + (idx % 4) * 260, y: 160 + Math.floor(idx / 4) * 145 };
+  graph.nodes.push({
+    id,
+    kind,
+    label: meta.label || kind,
+    x: pos.x,
+    y: pos.y,
+    config: JSON.parse(JSON.stringify(meta.default_config || {})),
+    enabled: true,
+    requires_approval: meta.safe_to_auto_run === false,
+    workflow_step_type: meta.workflow_step_type || null,
+    ports: meta.ports || {},
+    modalities_in: meta.modalities_in || [],
+    modalities_out: meta.modalities_out || [],
+    ui: { created_from_palette: true, palette_category: meta.category || 'node' }
+  });
+  graphEditorSetSelection([id], []);
+  graphEditorAddRecentKind(kind);
+  state.graphEditorContextMenu = null;
+  state.graphEditorNodeContextMenu = null;
+  graphEditorSetCurrent(graph);
+  if (!options.silent) graphEditorRenderCanvasNow();
+  return id;
+}
+function graphEditorRemoveSelectedNode() {
+  if (!graphEditorDeleteSelection()) {
+    const id = state.graphEditorSelectedNodeId;
+    if (!id) return;
+    graphEditorSetSelection([id], []);
+    graphEditorDeleteSelection();
+  }
+}
+function graphEditorAddEdgeByIds(from, to, patch = {}) {
+  if (!from || !to || from === to) { toast('Select two different graph nodes first.', false); return false; }
+  const graph = graphEditorEnsureCurrent();
+  const sourcePort = patch.source_port || patch.sourcePort || 'out';
+  const targetPort = patch.target_port || patch.targetPort || 'in';
+  if ((graph.edges || []).some(e => e.from === from && e.to === to && String(e.source_port || e.sourcePort || 'out') === String(sourcePort) && String(e.target_port || e.targetPort || 'in') === String(targetPort))) { toast('Edge already exists for those ports.', false); return false; }
+  graph.edges.push({ id:`edge_${from}_${to}_${sourcePort}_${targetPort}_${Date.now().toString(36)}`.replace(/[^a-zA-Z0-9_:-]+/g, '_'), from, to, label: patch.label || 'next', edge_type: patch.edge_type || 'sequence', condition: patch.condition || '', source_port: sourcePort, target_port: targetPort, ...patch });
+  state.graphEditorEdgeFrom = from;
+  state.graphEditorEdgeTo = to;
+  graphEditorSetCurrent(graph);
+  return true;
+}
+function graphEditorAddEdge() {
+  const ok = graphEditorAddEdgeByIds(state.graphEditorEdgeFrom, state.graphEditorEdgeTo);
+  if (ok) graphEditorRenderCanvasNow();
+}
+function graphEditorRemoveEdge(edgeId) {
+  const graph = graphEditorEnsureCurrent();
+  graph.edges = (graph.edges || []).filter(e => e.id !== edgeId);
+  graphEditorSetCurrent(graph);
+  graphEditorRenderCanvasNow();
+}
+
+function graphEditorUpdateEdge(edgeId, patch) {
+  const graph = graphEditorEnsureCurrent();
+  graph.edges = (graph.edges || []).map(e => e.id === edgeId ? { ...e, ...patch } : e);
+  graphEditorSetCurrent(graph);
+}
+function graphEditorCanvasPaletteRows() {
+  const rows = (state.graphEditorCatalog?.node_palette || []).slice();
+  if (!rows.length) return [
+    { kind:'text_input', label:'Text Input', category:'input', palette_category:'Input / Text', description:'Manual, graph-fed, event-fed, or agent-console text source.' },
+    { kind:'image_input', label:'Image Input', category:'input', palette_category:'Input / Image', description:'Image source for manual upload, existing media, tool output, sensor feed, or graph-fed image artifacts.' },
+    { kind:'audio_input', label:'Audio Input', category:'input', palette_category:'Input / Audio', description:'Audio source for file/mic/tool/event graph workflows.' },
+    { kind:'video_input', label:'Video Input', category:'input', palette_category:'Input / Video', description:'Video/live-stream source for graph workflows.' },
+    { kind:'live_stream_input', label:'Live Stream Input', category:'input', palette_category:'Input / Live stream', description:'Realtime camera/audio/video event-stream placeholder.' },
+    { kind:'bundle_context', label:'Bundle / Context Packer', category:'context', palette_category:'Context / Bundle', description:'Aggregate upstream artifacts with item/character limits and drop/truncate/summarize policies.' },
+    { kind:'model_call', label:'Model Call', category:'model', palette_category:'Model / Inference', description:'LLM/VLM/tagger/model node that uses the app model catalog and optional agent preset/card.' },
+    { kind:'supervisor_controller', label:'Supervisor Controller', category:'model', palette_category:'Model / Supervisor', description:'Top-level coordinator node that plans downstream action nodes and reads event channels.' },
+    { kind:'external_tool_call', label:'External HTTP/Tool Call', category:'tool', palette_category:'Tool / HTTP', description:'Local-safe external tool gateway call with method, URL/path, headers JSON, and body template.' },
+    { kind:'mcp_tool', label:'MCP Tool Call', category:'tool', palette_category:'Tool / MCP', description:'Approved MCP call to Blender, Krita, ComfyUI, Audacity, OBS, ZBrush, browsers, slicers, or custom tools.' },
+    { kind:'event_bus_publish', label:'Event Bus Publish', category:'event', palette_category:'Event', description:'Publish prompts, alerts, tool messages, model messages, or run notes into a graph event channel.' },
+    { kind:'webhook_event', label:'Webhook/Event Trigger', category:'event', palette_category:'Event', description:'Event/webhook-triggered graph start placeholder.' },
+    { kind:'condition_gate', label:'Condition Gate', category:'control', palette_category:'Control', description:'Conditional route marker with editable guard/edge labels.' },
+    { kind:'parallel_fanout', label:'Parallel Fan-out', category:'control', palette_category:'Control', description:'Fork downstream branches for parallel planning/execution.' },
+    { kind:'join_merge', label:'Join / Merge', category:'control', palette_category:'Control', description:'Merge downstream branch outputs into one bundle/context artifact.' },
+    { kind:'browser_search', label:'Browser Search / Lookup', category:'browser', palette_category:'Browser MCP', description:'User-approved browser MCP action for internet search/lookup.' },
+    { kind:'browser_open', label:'Browser Open URL', category:'browser', palette_category:'Browser MCP', description:'User-approved browser MCP action for opening a URL in an installed browser.' },
+    { kind:'output_artifact', label:'Output Artifact', category:'output', palette_category:'Output', description:'Terminal output/display node for graph results, exports, and user-review artifacts.' }
+  ];
+  return rows;
+}
+function graphEditorCanvasPaletteGroups() {
+  const groups = new Map();
+  for (const row of graphEditorPaletteVisibleRows()) {
+    const cat = String(row.palette_category || row.category || 'other');
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(row);
+  }
+  return [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+}
+function graphEditorScreenToWorld(canvas, clientX, clientY, viewport) {
+  const rect = canvas.getBoundingClientRect();
+  const scale = Math.max(0.05, Math.min(6, Number(viewport.scale || 1)));
+  return { x: (clientX - rect.left - Number(viewport.x || 0)) / scale, y: (clientY - rect.top - Number(viewport.y || 0)) / scale };
+}
+function graphEditorApplyWorldTransform(inner, viewport) {
+  if (!inner) return;
+  inner.style.transform = `translate(${Number(viewport.x || 0)}px,${Number(viewport.y || 0)}px) scale(${Number(viewport.scale || 1)})`;
+  inner.style.transformOrigin = '0 0';
+}
+function graphEditorIsCanvasInteractiveTarget(target) {
+  if (!target) return false;
+  return Boolean(target.closest?.('.agent-graph-node,.graph-port,.agent-graph-edge-delete,.agent-graph-context-menu,button,input,textarea,select,label,summary,details'));
+}
+function graphEditorIsControlTarget(target) {
+  if (!target) return false;
+  return Boolean(target.closest?.('.graph-port,.agent-graph-edge-delete,.agent-graph-context-menu,button,input,textarea,select,label,summary,details'));
+}
+function graphEditorCanvas(graph) {
+  const nodes = graph.nodes || [];
+  const edges = graph.edges || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const viewport = state.graphEditorViewport || { x: 0, y: 0, scale: 1 };
+  viewport.scale = Math.max(0.05, Math.min(6.0, Number(viewport.scale || 1)));
+  state.graphEditorViewport = viewport;
+  const selectedNodes = graphEditorSelectionSet();
+  const selectedEdges = new Set(state.graphEditorSelectedEdgeIds || []);
+  const canvas = el('div', { class:`agent-graph-canvas graphEditorCanvas enhanced functional ${state.graphEditorAnimateFlow ? 'flow-on' : ''}`, tabindex:'0', title:'Ctrl+drag to box-select nodes/edges. Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes.' }, []);
+  const inner = el('div', { class:'agent-graph-world', style:`transform:translate(${viewport.x || 0}px,${viewport.y || 0}px) scale(${viewport.scale});transform-origin:0 0;` }, []);
+  const portOut = (node, portId = 'out') => graphEditorPortPosition(node, 'outputs', portId);
+  const portIn = (node, portId = 'in') => graphEditorPortPosition(node, 'inputs', portId);
+  const cubicPath = (a, b) => {
+    const dx = Math.max(80, Math.abs(b.x - a.x) / 2);
+    return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+  };
+  const nodeRect = node => ({ x:Number(node.x || 0), y:Number(node.y || 0), w:220, h:Math.max(110, 84 + Math.max(graphEditorPortCount(node, 'inputs'), graphEditorPortCount(node, 'outputs')) * 14) });
+  const rectsIntersect = (a, b) => a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
+  const pointInRect = (pt, r) => pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'agent-graph-edges');
+  svg.setAttribute('viewBox', '-5000 -5000 10000 10000');
+  // The SVG viewBox includes negative world coordinates. Offset the physical
+  // SVG by the same amount so graph world (0,0) maps to canvas world (0,0).
+  // Without this, every path is translated roughly 5000px off-screen while
+  // nodes remain visible at their direct world coordinates.
+  svg.style.left = '-5000px';
+  svg.style.top = '-5000px';
+  svg.style.right = 'auto';
+  svg.style.bottom = 'auto';
+  svg.style.width = '10000px';
+  svg.style.height = '10000px';
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+  marker.setAttribute('id', 'agentGraphArrow'); marker.setAttribute('markerWidth', '10'); marker.setAttribute('markerHeight', '10'); marker.setAttribute('refX', '7'); marker.setAttribute('refY', '3'); marker.setAttribute('orient', 'auto');
+  const markerPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  markerPath.setAttribute('d', 'M0,0 L0,6 L8,3 z'); markerPath.setAttribute('fill', '#93c5fd'); marker.append(markerPath); defs.append(marker); svg.append(defs);
+  const ghostPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  ghostPath.setAttribute('class', 'agent-graph-edge-path graph-connection-ghost');
+  ghostPath.setAttribute('fill', 'none'); ghostPath.setAttribute('stroke', '#f8fafc'); ghostPath.setAttribute('stroke-width', '2.2'); ghostPath.setAttribute('stroke-dasharray', '7 7'); ghostPath.style.display = 'none';
+  for (const edge of edges) {
+    const a = byId.get(edge.from); const b = byId.get(edge.to);
+    if (!a || !b) continue;
+    const sourcePort = edge.source_port || edge.sourcePort || 'out';
+    const targetPort = edge.target_port || edge.targetPort || 'in';
+    const d = cubicPath(portOut(a, sourcePort), portIn(b, targetPort));
+    const color = graphEditorKindColor(a.kind);
+    const pth = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    pth.setAttribute('d', d); pth.setAttribute('fill', 'none'); pth.setAttribute('stroke', color || '#93c5fd'); pth.setAttribute('stroke-width', selectedEdges.has(edge.id) ? '4.0' : '2.2'); pth.setAttribute('marker-end', 'url(#agentGraphArrow)');
+    pth.setAttribute('class', `agent-graph-edge-path ${selectedEdges.has(edge.id) ? 'selected' : ''} ${state.graphEditorAnimateFlow ? 'flow-active' : ''}`);
+    pth.style.pointerEvents = 'stroke';
+    pth.addEventListener('click', ev => {
+      graphEditorMarkCanvasInteraction(900);
+      ev.preventDefault(); ev.stopPropagation();
+      const nextEdges = ev.ctrlKey || ev.metaKey ? new Set(state.graphEditorSelectedEdgeIds || []) : new Set();
+      if (nextEdges.has(edge.id)) nextEdges.delete(edge.id); else nextEdges.add(edge.id);
+      graphEditorSetSelection(ev.ctrlKey || ev.metaKey ? [...graphEditorSelectionSet()] : [], [...nextEdges]);
+      graphEditorRenderCanvasNow();
+    });
+    svg.append(pth);
+  }
+  svg.append(ghostPath);
+  inner.append(svg);
+  for (const edge of edges) {
+    const a = byId.get(edge.from); const b = byId.get(edge.to);
+    if (!a || !b) continue;
+    const out = portOut(a, edge.source_port || edge.sourcePort || 'out');
+    const inn = portIn(b, edge.target_port || edge.targetPort || 'in');
+    const mx = (out.x + inn.x) / 2;
+    const my = (out.y + inn.y) / 2;
+    inner.append(el('button', { type:'button', class:`agent-graph-edge-delete ${selectedEdges.has(edge.id) ? 'selected' : ''}`, style:`left:${mx}px;top:${my}px`, title:'Delete edge', onclick:(ev)=>{ev.stopPropagation(); graphEditorRemoveEdge(edge.id); } }, '×'));
+  }
+  const startConnection = (from, ev, sourcePort = 'out') => {
+    graphEditorMarkCanvasInteraction(2500);
+    ev.preventDefault(); ev.stopPropagation();
+    try { canvas.focus({ preventScroll:true }); } catch (_) {}
+    const wasActive = state.graphEditorConnectingFrom === from && state.graphEditorConnectingPort === sourcePort;
+    const downX = ev.clientX;
+    const downY = ev.clientY;
+    let moved = false;
+    state.graphEditorSuppressOutputClickUntil = Date.now() + 650;
+    state.graphEditorConnectingFrom = from;
+    state.graphEditorConnectingPort = sourcePort || 'out';
+    state.graphEditorConnectingActive = true;
+    const fromNode = byId.get(from);
+    const start = fromNode ? portOut(fromNode, sourcePort) : null;
+    ghostPath.style.display = start ? 'block' : 'none';
+    const move = mv => {
+      if (!start) return;
+      if (Math.abs(mv.clientX - downX) + Math.abs(mv.clientY - downY) > 4) moved = true;
+      const w = graphEditorScreenToWorld(canvas, mv.clientX, mv.clientY, viewport);
+      ghostPath.setAttribute('d', cubicPath(start, w));
+    };
+    const up = mv => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      const target = document.elementFromPoint(mv.clientX, mv.clientY);
+      const input = target?.closest?.('.graph-port.in[data-node-id]');
+      const to = input?.getAttribute?.('data-node-id');
+      const targetPort = input?.getAttribute?.('data-port-id') || 'in';
+      const ok = to && to !== from ? graphEditorAddEdgeByIds(from, to, { source_port: sourcePort || 'out', target_port: targetPort }) : false;
+      state.graphEditorConnectGhost = null;
+      state.graphEditorConnectingActive = false;
+      graphEditorMarkCanvasInteraction(700);
+      if (ok) {
+        state.graphEditorConnectingFrom = '';
+        state.graphEditorConnectingPort = 'out';
+        toast(`Connected ${from} → ${to}`);
+      } else if (wasActive && !moved) {
+        state.graphEditorConnectingFrom = '';
+        state.graphEditorConnectingPort = 'out';
+        state.graphEditorConnectingActive = false;
+      } else {
+        state.graphEditorConnectingFrom = from;
+        state.graphEditorConnectingPort = sourcePort || 'out';
+        state.graphEditorConnectingActive = true;
+      }
+      graphEditorRenderCanvasNow();
+    };
+    window.addEventListener('pointermove', move, { passive:true });
+    window.addEventListener('pointerup', up, { passive:true, once:true });
+  };
+  for (const node of nodes) {
+    const color = graphEditorKindColor(node.kind);
+    const selected = selectedNodes.has(node.id);
+    const inputPorts = graphEditorPortDescriptors(node, 'inputs');
+    const outputPorts = graphEditorPortDescriptors(node, 'outputs');
+    const boxHeight = Math.max(110, 84 + Math.max(inputPorts.length, outputPorts.length) * 14);
+    const children = [];
+    for (const port of inputPorts) {
+      children.push(el('button', { type:'button', class:'graph-port in', 'data-node-id':node.id, 'data-port-id':port.id, style:`top:${port.offsetY}px`, title:`Input port: ${port.label}`, onclick:(ev)=>{ ev.preventDefault(); ev.stopPropagation(); graphEditorMarkCanvasInteraction(1800); const from = state.graphEditorConnectingFrom; if (from && from !== node.id) { const sourcePort = state.graphEditorConnectingPort || 'out'; if (graphEditorAddEdgeByIds(from, node.id, { source_port: sourcePort, target_port: port.id })) toast(`Connected ${from} → ${node.id}`); state.graphEditorConnectingFrom=''; state.graphEditorConnectingPort='out'; state.graphEditorConnectingActive=false; graphEditorRenderCanvasNow(); } } }, ''));
+    }
+    for (const port of outputPorts) {
+      children.push(el('button', { type:'button', class:`graph-port out ${state.graphEditorConnectingFrom === node.id && state.graphEditorConnectingPort === port.id ? 'active' : ''}`, 'data-node-id':node.id, 'data-port-id':port.id, style:`top:${port.offsetY}px`, title:`Output port: ${port.label}. Click/drag to an input port.`, onclick:(ev)=>{ ev.preventDefault(); ev.stopPropagation(); graphEditorMarkCanvasInteraction(1800); if (Date.now() < Number(state.graphEditorSuppressOutputClickUntil || 0)) return; const same = state.graphEditorConnectingFrom === node.id && state.graphEditorConnectingPort === port.id; state.graphEditorConnectingFrom = same ? '' : node.id; state.graphEditorConnectingPort = same ? 'out' : port.id; state.graphEditorConnectingActive = Boolean(state.graphEditorConnectingFrom); graphEditorRenderCanvasNow(); }, onpointerdown:(ev)=>startConnection(node.id, ev, port.id) }, ''));
+    }
+    children.push(el('div', { class:'node-kind tiny' }, String(node.kind || 'node')));
+    children.push(el('strong', {}, node.label || node.id));
+    children.push(el('code', { class:'tiny' }, node.id));
+    children.push(el('div', { class:'node-actions' }, [
+      el('button', { type:'button', class:'secondary tiny-button', title:'Select / edit properties', onclick:(ev)=>{ev.stopPropagation(); graphEditorOpenNodeInspector(node.id, 'normal');} }, 'edit'),
+      el('button', { type:'button', class:'secondary tiny-button', title:'Run this node', onclick:(ev)=>{ev.stopPropagation(); graphEditorSetSelection([node.id], []); graphEditorExecuteSelectedNode();} }, 'run'),
+      el('button', { type:'button', class:'secondary tiny-button', title:'Copy node selection', onclick:(ev)=>{ev.stopPropagation(); if (!graphEditorSelectionSet().has(node.id)) graphEditorSetSelection([node.id], []); graphEditorCopySelection(false);} }, 'copy'),
+      el('button', { type:'button', class:'danger tiny-button', title:'Delete node', onclick:(ev)=>{ev.stopPropagation(); if (!graphEditorSelectionSet().has(node.id)) graphEditorSetSelection([node.id], []); graphEditorRemoveSelectedNode();} }, '×')
+    ]));
+    const box = el('div', { class:`agent-graph-node enhanced ${selected ? 'selected multi-selected' : ''}`, 'data-node-id':node.id, style:`left:${Number(node.x || 0)}px;top:${Number(node.y || 0)}px;min-height:${boxHeight}px;border-color:${color};--node-color:${color}` }, children.filter(Boolean));
+    box.addEventListener('contextmenu', ev => {
+      graphEditorMarkCanvasInteraction(2200);
+      ev.preventDefault(); ev.stopPropagation();
+      if (!graphEditorSelectionSet().has(node.id) || ev.ctrlKey || ev.metaKey || ev.shiftKey) graphEditorSelectNodeWithModifiers(node.id, ev, nodes);
+      const pt = graphEditorScreenToWorld(canvas, ev.clientX, ev.clientY, viewport);
+      state.graphEditorNodeContextMenu = { node_id: node.id, worldX: Math.round(pt.x), worldY: Math.round(pt.y) };
+      state.graphEditorContextMenu = null;
+      graphEditorRenderCanvasNow();
+    });
+    box.addEventListener('dblclick', ev => {
+      graphEditorMarkCanvasInteraction(1800);
+      if (graphEditorIsControlTarget(ev.target)) return;
+      ev.preventDefault(); ev.stopPropagation();
+      graphEditorOpenNodeInspector(node.id, 'maximized');
+    });
+    box.addEventListener('pointerdown', ev => {
+      graphEditorMarkCanvasInteraction(2500);
+      if (ev.button !== 0 || graphEditorIsControlTarget(ev.target)) return;
+      ev.preventDefault(); ev.stopPropagation();
+      try { canvas.focus({ preventScroll:true }); } catch (_) {}
+      let current = graphEditorSelectionSet();
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
+        current = graphEditorSelectNodeWithModifiers(node.id, ev, nodes);
+        graphEditorRenderCanvasNow();
+        return;
+      }
+      if (!current.has(node.id)) {
+        current = graphEditorSelectNodeWithModifiers(node.id, ev, nodes);
+      }
+      state.graphEditorDraggingNode = true;
+      const dragIds = graphEditorSelectionSet();
+      const originals = new Map(nodes.filter(n => dragIds.has(n.id)).map(n => [n.id, { x:Number(n.x || 0), y:Number(n.y || 0) }]));
+      const startX = ev.clientX, startY = ev.clientY;
+      const scale = Math.max(0.05, Number(viewport.scale || 1));
+      try { box.setPointerCapture(ev.pointerId); } catch (_) {}
+      const move = mv => {
+        const dx = Math.round((mv.clientX - startX) / scale);
+        const dy = Math.round((mv.clientY - startY) / scale);
+        for (const n of nodes) {
+          if (!dragIds.has(n.id)) continue;
+          const orig = originals.get(n.id);
+          if (!orig) continue;
+          n.x = orig.x + dx;
+          n.y = orig.y + dy;
+          const nodeEl = inner.querySelector(`.agent-graph-node[data-node-id="${CSS.escape(n.id)}"]`);
+          if (nodeEl) { nodeEl.style.left = `${n.x}px`; nodeEl.style.top = `${n.y}px`; }
+        }
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        state.graphEditorDraggingNode = false;
+        graphEditorMarkCanvasInteraction(900);
+        graph.nodes = (graph.nodes || []).map(n => dragIds.has(n.id) ? { ...n, x:Math.round(Number(n.x || 0)), y:Math.round(Number(n.y || 0)) } : n);
+        graphEditorSetCurrent(graph);
+        graphEditorRenderCanvasNow();
+      };
+      window.addEventListener('pointermove', move, { passive:true });
+      window.addEventListener('pointerup', up, { passive:true, once:true });
+    });
+    inner.append(box);
+  }
+  if (state.graphEditorSelectionBox) {
+    const r = state.graphEditorSelectionBox;
+    inner.append(el('div', { class:'agent-graph-selection-box', style:`left:${Math.min(r.x, r.x + r.w)}px;top:${Math.min(r.y, r.y + r.h)}px;width:${Math.abs(r.w)}px;height:${Math.abs(r.h)}px` }, ''));
+  }
+  canvas.append(inner);
+  const addPaletteTools = (rowsAll) => {
+    const cats = [...new Set(rowsAll.map(row => String(row.palette_category || row.category || 'other')))].sort((a,b)=>a.localeCompare(b));
+    const filters = state.graphEditorPaletteCategoryFilters || {};
+    const activeCats = Object.keys(filters).filter(k => filters[k]);
+    return el('div', { class:'context-palette-tools' }, [
+      el('input', { class:'context-node-search', type:'search', placeholder:'Search nodes, models, tools, inputs...', value:state.graphEditorPaletteSearch || '', onfocus:()=>{ state.graphEditorPaletteSearchFocus = true; }, onblur:()=>{ setTimeout(()=>{ state.graphEditorPaletteSearchFocus = false; }, 120); }, oninput:e=>{ state.graphEditorPaletteSearch = e.target.value; state.graphEditorPaletteSearchFocus = true; graphEditorRenderCanvasNow(); }, onclick:e=>e.stopPropagation(), onpointerdown:e=>e.stopPropagation() }),
+      el('div', { class:'context-filter-row' }, cats.map(cat => {
+        const sample = rowsAll.find(row => String(row.palette_category || row.category || 'other') === cat) || {};
+        const active = Boolean(filters[cat]);
+        return el('label', { class:`context-filter-chip ${active ? 'active' : ''}`, style:`--node-color:${graphEditorKindColor(sample.kind || sample.category || cat)}`, onclick:(ev)=>ev.stopPropagation() }, [
+          el('input', { type:'checkbox', checked:active, onchange:(ev)=>{ ev.stopPropagation(); const next = { ...(state.graphEditorPaletteCategoryFilters || {}) }; if (ev.target.checked) next[cat] = true; else delete next[cat]; state.graphEditorPaletteCategoryFilters = next; graphEditorRenderCanvasNow(); } }),
+          ' ', cat.replaceAll('_',' ')
+        ]);
+      })),
+      activeCats.length ? el('button', { type:'button', class:'secondary tiny-button', onclick:(ev)=>{ ev.stopPropagation(); state.graphEditorPaletteCategoryFilters = {}; graphEditorRenderCanvasNow(); } }, 'Clear category filters') : null
+    ].filter(Boolean));
+  };
+  const recentRows = () => {
+    const rowsAll = graphEditorCanvasPaletteRows();
+    return (state.graphEditorPaletteRecentKinds || []).map(k => rowsAll.find(row => row.kind === k)).filter(Boolean).slice(0, 3);
+  };
+  const nodeChoice = (row, menu) => el('button', { type:'button', class:'context-node-choice', style:`--node-color:${graphEditorKindColor(row.kind)}`, onclick:(ev)=>{ev.stopPropagation(); graphEditorAddNode(row.kind, { x: menu.worldX, y: menu.worldY }); state.graphEditorContextMenu = null; toast(`Added ${row.label || row.kind}`);} }, [
+    el('strong', {}, row.standalone_type ? `${row.standalone_type} · ${row.label || row.kind}` : (row.label || row.kind)),
+    el('span', { class:'tiny muted' }, row.standalone_type ? `${row.kind} · standalone contract` : row.kind),
+    row.description ? el('small', {}, row.description) : null
+  ].filter(Boolean));
+  const appendAddMenu = () => {
+    const menu = state.graphEditorContextMenu;
+    if (!menu) return;
+    const allRows = graphEditorCanvasPaletteRows();
+    const groups = graphEditorCanvasPaletteGroups();
+    const recent = recentRows();
+    const panel = el('div', { class:'agent-graph-context-menu world-menu searchable', style:`left:${Number(menu.worldX ?? menu.x ?? 0)}px;top:${Number(menu.worldY ?? menu.y ?? 0)}px` }, [
+      el('div', { class:'context-title' }, 'Add graph node'),
+      el('p', { class:'muted tiny' }, 'Search, filter by category, or use the last 3 node types. The menu stays at this canvas coordinate while you pan/zoom.'),
+      addPaletteTools(allRows),
+      recent.length ? el('div', { class:'context-recent-row' }, [el('div', { class:'tiny muted' }, 'Recently used'), ...recent.map(row => nodeChoice(row, menu))]) : null,
+      ...groups.map(([cat, rows]) => el('details', { open:true, class:'context-node-group' }, [
+        el('summary', {}, `${cat.replaceAll('_',' ')} · ${rows.length}`),
+        el('div', { class:'context-node-grid' }, rows.map(row => nodeChoice(row, menu)))
+      ])),
+      !groups.length ? el('p', { class:'muted' }, 'No node types match the current search/filter.') : null,
+      el('button', { type:'button', class:'secondary small', onclick:(ev)=>{ev.stopPropagation(); state.graphEditorContextMenu=null; graphEditorRenderCanvasNow();} }, 'Close')
+    ].filter(Boolean));
+    panel.addEventListener('pointerdown', ev => ev.stopPropagation());
+    panel.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); });
+    panel.addEventListener('wheel', ev => ev.stopPropagation(), { passive:true });
+    inner.append(panel);
+    const input = panel.querySelector('.context-node-search');
+    if (input && document.activeElement !== input && state.graphEditorPaletteSearchFocus) setTimeout(()=>{ try { input.focus({ preventScroll:true }); } catch (_) {} }, 0);
+  };
+  const appendNodeMenu = () => {
+    const menu = state.graphEditorNodeContextMenu;
+    if (!menu) return;
+    const node = byId.get(menu.node_id);
+    if (!node) { state.graphEditorNodeContextMenu = null; return; }
+    const panel = el('div', { class:'agent-graph-context-menu compact world-menu', style:`left:${Number(menu.worldX ?? menu.x ?? 0)}px;top:${Number(menu.worldY ?? menu.y ?? 0)}px` }, [
+      el('div', { class:'context-title' }, node.label || node.id),
+      el('button', { type:'button', class:'context-node-choice', onclick:(ev)=>{ev.stopPropagation(); graphEditorOpenNodeInspector(node.id, 'normal');} }, 'Edit properties panel'),
+      el('button', { type:'button', class:'context-node-choice', onclick:(ev)=>{ev.stopPropagation(); graphEditorOpenNodeInspector(node.id, 'maximized');} }, 'Maximize properties'),
+      el('button', { type:'button', class:'context-node-choice', onclick:(ev)=>{ev.stopPropagation(); graphEditorSetSelection([node.id], []); graphEditorCopySelection(false);} }, 'Copy node/selection'),
+      el('button', { type:'button', class:'context-node-choice', onclick:(ev)=>{ev.stopPropagation(); graphEditorSetSelection([node.id], []); graphEditorCopySelection(true);} }, 'Cut node/selection'),
+      el('button', { type:'button', class:'context-node-choice', onclick:(ev)=>{ev.stopPropagation(); state.graphEditorSelectedNodeId=node.id; state.graphEditorNodeContextMenu=null; graphEditorExecuteSelectedNode();} }, 'Run this node'),
+      el('button', { type:'button', class:'context-node-choice danger-text', onclick:(ev)=>{ev.stopPropagation(); graphEditorSetSelection([node.id], []); state.graphEditorNodeContextMenu=null; graphEditorRemoveSelectedNode();} }, 'Delete node'),
+      el('button', { type:'button', class:'secondary small', onclick:(ev)=>{ev.stopPropagation(); state.graphEditorNodeContextMenu=null; graphEditorRenderCanvasNow();} }, 'Close')
+    ]);
+    panel.addEventListener('pointerdown', ev => ev.stopPropagation());
+    panel.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); });
+    panel.addEventListener('wheel', ev => ev.stopPropagation(), { passive:true });
+    inner.append(panel);
+  };
+  appendAddMenu();
+  appendNodeMenu();
+  const openCanvasMenu = ev => {
+    graphEditorMarkCanvasInteraction(2200);
+    if (ev.target?.closest?.('.agent-graph-node') || graphEditorIsControlTarget(ev.target)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    try { canvas.focus({ preventScroll:true }); } catch (_) {}
+    const pt = graphEditorScreenToWorld(canvas, ev.clientX, ev.clientY, viewport);
+    state.graphEditorLastCanvasWorldPoint = { x:Math.round(pt.x), y:Math.round(pt.y) };
+    state.graphEditorContextMenu = { worldX: Math.round(pt.x), worldY: Math.round(pt.y) };
+    state.graphEditorNodeContextMenu = null;
+    graphEditorRenderCanvasNow();
+  };
+  const zoomCanvas = ev => {
+    if (ev.target?.closest?.('.agent-graph-context-menu')) return;
+    graphEditorMarkCanvasInteraction(900);
+    ev.preventDefault();
+    ev.stopPropagation();
+    const before = graphEditorScreenToWorld(canvas, ev.clientX, ev.clientY, viewport);
+    state.graphEditorLastCanvasWorldPoint = { x:Math.round(before.x), y:Math.round(before.y) };
+    const factor = ev.deltaY < 0 ? 1.10 : 1 / 1.10;
+    viewport.scale = Math.max(0.05, Math.min(6.0, Number(viewport.scale || 1) * factor));
+    const rect = canvas.getBoundingClientRect();
+    viewport.x = ev.clientX - rect.left - before.x * viewport.scale;
+    viewport.y = ev.clientY - rect.top - before.y * viewport.scale;
+    state.graphEditorViewport = viewport;
+    graphEditorApplyWorldTransform(inner, viewport);
+  };
+  const finishSelection = (boxWorld) => {
+    const rect = { x:Math.min(boxWorld.x, boxWorld.x + boxWorld.w), y:Math.min(boxWorld.y, boxWorld.y + boxWorld.h), w:Math.abs(boxWorld.w), h:Math.abs(boxWorld.h) };
+    const ids = nodes.filter(n => rectsIntersect(nodeRect(n), rect)).map(n => n.id);
+    const idSet = new Set(ids);
+    const edgeIds = edges.filter(e => {
+      if (idSet.has(e.from) && idSet.has(e.to)) return true;
+      const a = byId.get(e.from); const b = byId.get(e.to);
+      if (!a || !b) return false;
+      const out = portOut(a, e.source_port || e.sourcePort || 'out');
+      const inn = portIn(b, e.target_port || e.targetPort || 'in');
+      return pointInRect({ x:(out.x + inn.x) / 2, y:(out.y + inn.y) / 2 }, rect);
+    }).map(e => e.id);
+    graphEditorSetSelection(ids, edgeIds);
+  };
+  const startSelectionBox = ev => {
+    graphEditorMarkCanvasInteraction(2500);
+    ev.preventDefault(); ev.stopPropagation();
+    try { canvas.focus({ preventScroll:true }); } catch (_) {}
+    const start = graphEditorScreenToWorld(canvas, ev.clientX, ev.clientY, viewport);
+    const selectionEl = el('div', { class:'agent-graph-selection-box live', style:`left:${start.x}px;top:${start.y}px;width:0;height:0` }, '');
+    inner.append(selectionEl);
+    state.graphEditorSelectingBox = true;
+    state.graphEditorSelectionBox = { x:start.x, y:start.y, w:0, h:0 };
+    const move = mv => {
+      const cur = graphEditorScreenToWorld(canvas, mv.clientX, mv.clientY, viewport);
+      const boxWorld = { x:start.x, y:start.y, w:cur.x - start.x, h:cur.y - start.y };
+      state.graphEditorSelectionBox = boxWorld;
+      selectionEl.style.left = `${Math.min(boxWorld.x, boxWorld.x + boxWorld.w)}px`;
+      selectionEl.style.top = `${Math.min(boxWorld.y, boxWorld.y + boxWorld.h)}px`;
+      selectionEl.style.width = `${Math.abs(boxWorld.w)}px`;
+      selectionEl.style.height = `${Math.abs(boxWorld.h)}px`;
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      state.graphEditorSelectingBox = false;
+      finishSelection(state.graphEditorSelectionBox || { x:start.x, y:start.y, w:0, h:0 });
+      state.graphEditorSelectionBox = null;
+      graphEditorRenderCanvasNow();
+    };
+    window.addEventListener('pointermove', move, { passive:true });
+    window.addEventListener('pointerup', up, { passive:true, once:true });
+  };
+  const startPan = ev => {
+    graphEditorMarkCanvasInteraction(2500);
+    if (ev.button !== 0) return;
+    if (graphEditorIsCanvasInteractiveTarget(ev.target)) return;
+    if (ev.ctrlKey || ev.metaKey) { startSelectionBox(ev); return; }
+    ev.preventDefault();
+    ev.stopPropagation();
+    try { canvas.focus({ preventScroll:true }); } catch (_) {}
+    const hadOpenMenu = Boolean(state.graphEditorContextMenu || state.graphEditorNodeContextMenu);
+    state.graphEditorContextMenu = null;
+    state.graphEditorNodeContextMenu = null;
+    if (hadOpenMenu) { graphEditorRenderCanvasNow(); return; }
+    const sx = ev.clientX, sy = ev.clientY, ox = Number(viewport.x || 0), oy = Number(viewport.y || 0);
+    state.graphEditorPanningCanvas = true;
+    canvas.classList.add('panning');
+    const move = mv => {
+      viewport.x = ox + mv.clientX - sx;
+      viewport.y = oy + mv.clientY - sy;
+      state.graphEditorViewport = viewport;
+      graphEditorApplyWorldTransform(inner, viewport);
+    };
+    const up = () => {
+      state.graphEditorPanningCanvas = false;
+      graphEditorMarkCanvasInteraction(700);
+      canvas.classList.remove('panning');
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', up, true);
+      graphEditorSetCurrent(graph);
+    };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, { capture:true, once:true });
+  };
+  canvas.addEventListener('keydown', ev => {
+    const key = String(ev.key || '').toLowerCase();
+    if (!(ev.ctrlKey || ev.metaKey) && key !== 'delete' && key !== 'backspace') return;
+    if (graphEditorIsControlTarget(ev.target)) return;
+    if ((ev.ctrlKey || ev.metaKey) && key === 'c') { ev.preventDefault(); graphEditorCopySelection(false); }
+    if ((ev.ctrlKey || ev.metaKey) && key === 'x') { ev.preventDefault(); graphEditorCopySelection(true); }
+    if ((ev.ctrlKey || ev.metaKey) && key === 'v') { ev.preventDefault(); graphEditorPasteClipboard(state.graphEditorLastCanvasWorldPoint || null); }
+    if (key === 'delete' || key === 'backspace') { ev.preventDefault(); graphEditorDeleteSelection(); }
+  });
+  canvas.oncontextmenu = openCanvasMenu;
+  canvas.onwheel = zoomCanvas;
+  canvas.onpointerdown = startPan;
+  canvas.addEventListener('contextmenu', openCanvasMenu, { capture:true });
+  canvas.addEventListener('dblclick', ev => {
+    if (graphEditorIsCanvasInteractiveTarget(ev.target)) return;
+    openCanvasMenu(ev);
+  });
+  canvas.addEventListener('wheel', zoomCanvas, { passive:false, capture:true });
+  canvas.addEventListener('pointerdown', startPan, { capture:true });
+  return canvas;
+}
+
+function graphEditorNodeInspectorPanel(selectedNode) {
+  if (!selectedNode) return card('Node Inspector', [el('p', { class:'muted' }, 'Select a node on the canvas to inspect/edit it. Right-click a node or double-click it to open the expanded properties panel.')]);
+  const mode = state.graphEditorInspectorMode || 'normal';
+  const minimized = mode === 'minimized';
+  const maximized = mode === 'maximized';
+  const rows = [
+    el('div', { class:'row spread wrap' }, [
+      el('div', {}, [el('strong', {}, selectedNode.label || selectedNode.id), el('div', { class:'muted tiny' }, `${selectedNode.kind || 'node'} · ${selectedNode.id}`)]),
+      el('div', { class:'row tight' }, [
+        el('button', { class:'secondary small', onclick:()=>{state.graphEditorInspectorMode='minimized'; graphEditorRenderCanvasNow();} }, 'Minimize'),
+        el('button', { class:'secondary small', onclick:()=>{state.graphEditorInspectorMode='normal'; graphEditorRenderCanvasNow();} }, 'Normal'),
+        el('button', { class:'primary small', onclick:()=>{state.graphEditorInspectorMode='maximized'; graphEditorRenderCanvasNow();} }, 'Maximize'),
+        el('button', { class:'secondary small', onclick:()=>{state.graphEditorSelectedNodeId=''; state.graphEditorInspectorMode='normal'; graphEditorRenderCanvasNow();} }, 'Close Panel')
+      ])
+    ])
+  ];
+  if (minimized) rows.push(el('p', { class:'muted tiny' }, 'Inspector minimized. Use Normal or Maximize to edit this node.'));
+  else rows.push(
+    el('div', { class:'row wrap' }, [
+      el('label', { class:'label compact' }, ['Node ID', el('input', { value:selectedNode.id, disabled:true })]),
+      el('label', { class:'label compact' }, ['Kind', (()=>{ const s=el('select',{onchange:e=>{graphEditorChangeNodeKind(selectedNode.id,e.target.value);graphEditorRenderCanvasNow();}}, graphEditorNodeTypeOptions()); s.value=selectedNode.kind||'manual_review_gate'; return s; })()]),
+      el('label', { class:'label compact' }, ['Enabled ', el('input', { type:'checkbox', checked:selectedNode.enabled !== false, onchange:e=>{graphEditorUpdateNode(selectedNode.id,{enabled:e.target.checked});graphEditorRenderCanvasNow();} })]),
+      el('label', { class:'label compact' }, ['Requires approval ', el('input', { type:'checkbox', checked:Boolean(selectedNode.requires_approval), onchange:e=>{graphEditorUpdateNode(selectedNode.id,{requires_approval:e.target.checked});graphEditorRenderCanvasNow();} })])
+    ]),
+    el('label', { class:'label' }, ['Label', el('input', { value:selectedNode.label || '', oninput:e=>graphEditorUpdateNode(selectedNode.id,{label:e.target.value}) })]),
+    (()=>{ const s=el('select',{onchange:e=>{const cfg={...(selectedNode.config||{}), workflow_step_type:e.target.value}; graphEditorUpdateNode(selectedNode.id,{workflow_step_type:e.target.value, config:cfg}); graphEditorRenderCanvasNow();}}, graphEditorWorkflowTypeOptions()); s.value=selectedNode.workflow_step_type || (selectedNode.config||{}).workflow_step_type || graphEditorKindMeta(selectedNode.kind).workflow_step_type || ''; return el('label',{class:'label'},['Workflow step mapping', s]); })(),
+    el('label', { class:'label' }, ['Config JSON', el('textarea', { rows:maximized ? '18' : '8', oninput:e=>graphEditorUpdateNodeConfig(selectedNode.id, e.target.value) }, JSON.stringify(selectedNode.config || {}, null, 2))]),
+    graphEditorPaletteCustomizationInspector(selectedNode),
+    graphEditorNodeAdvancedInspector(selectedNode),
+    (()=>{ const rr = state.graphEditorRuntimeResult?.node_results?.[selectedNode.id] || state.graphEditorNodeRuntimeResult; return rr ? el('details', { open:true }, [el('summary', {}, 'Runtime output for this node'), el('pre', { class:'log compact' }, JSON.stringify(rr,null,2))]) : null; })()
+  );
+  return el('section', { class:`card graph-node-inspector ${minimized ? 'minimized' : maximized ? 'maximized' : 'normal'}` }, [el('h2', {}, maximized ? 'Node Inspector · expanded' : 'Node Inspector'), ...rows.filter(Boolean)]);
+}
+
+function graphEditorMermaidLocal(graph) {
+  graph = graph || graphEditorEnsureCurrent();
+  const lines = ['graph LR'];
+  for (const n of graph.nodes || []) lines.push(`  ${String(n.id).replace(/[^A-Za-z0-9_]/g,'_')}["${String(n.label || n.kind || n.id).replaceAll('"', "'").replaceAll('\n','<br/>')}"]`);
+  for (const e of graph.edges || []) lines.push(`  ${String(e.from).replace(/[^A-Za-z0-9_]/g,'_')} --> ${String(e.to).replace(/[^A-Za-z0-9_]/g,'_')}`);
+  return lines.join('\n');
+}
+async function graphEditorSaveCurrentGraph(graph) {
+  let g = graph || graphEditorEnsureCurrent();
+  if (!g.id) {
+    const created = await api('/api/graph-editor', { method:'POST', body: graphEditorBodyFromUi() });
+    g.id = created.id;
+    g.created_at = created.created_at;
+  }
+  const saved = await api(`/api/graph-editor/${encodeURIComponent(g.id)}`, { method:'PUT', body:{ graph:g } });
+  graphEditorSetCurrent(saved);
+  await refreshGraphEditor();
+  return saved;
+}
+
+function graphChatContextSnapshot() {
+  const graph = graphEditorEnsureCurrent();
+  const selectedNode = (graph.nodes || []).find(n => n.id === state.graphEditorSelectedNodeId) || null;
+  return {
+    surface: 'Agentic Graph Chat',
+    graph_id: graph.id || state.graphEditorSelectedId || null,
+    graph_name: graph.name || state.graphEditorName || '',
+    graph_goal: graph.goal || state.graphEditorGoal || state.graphEditorInstructions || '',
+    selected_node_id: selectedNode?.id || null,
+    selected_node: selectedNode || null,
+    node_count: (graph.nodes || []).length,
+    edge_count: (graph.edges || []).length,
+    runtime_dry_run: state.graphEditorRuntimeDry !== false,
+    stop_on_approval_gate: state.graphEditorStopOnApproval !== false,
+    allow_model_calls: Boolean(state.graphEditorAllowModelCalls),
+    selected_media_ids: [...state.selected],
+    dataset_id: state.graphEditorSourceDatasetId ? Number(state.graphEditorSourceDatasetId) : null,
+    event_log_tail: (state.graphEditorEventLog || []).slice(-30),
+    current_graph: graph
+  };
+}
+async function sendGraphChatMessage(text, chatOptions = {}, controls = {}) {
+  const finalPrompt = String(text || '').trim();
+  if (!finalPrompt) throw new Error('Type a graph/chat request first.');
+  const graph = graphEditorEnsureCurrent();
+  const modelName = controls.modelName || state.graphChatModelSelection || state.graphEditorAssistantModel || state.assistantModelSelection || state.assistantConfig?.assistant_model_name || 'dataset-assistant';
+  const graphContext = graphChatContextSnapshot();
+  const body = {
+    model_name: modelName,
+    prompt: finalPrompt,
+    conversation_id: state.graphChatConversationId || null,
+    conversation_title: `Graph: ${(graph.name || state.graphEditorName || 'draft').slice(0, 72)}`,
+    dataset_id: graphContext.dataset_id || null,
+    media_ids: [...state.selected],
+    history: (state.graphChatMessages || []).map(m => ({ role:m.role, content:m.content })),
+    include_metadata_context: true,
+    use_selected_media: Boolean(state.selected.size),
+    ...(controls.rt ? runtimeBodyFromControls(controls.rt) : {}),
+    options: {
+      max_new_tokens: Math.max(Number(state.settings.model_max_new_tokens || 0), 2048),
+      max_continuation_rounds: chatOptions.continueLastOutput ? 2 : 1,
+      auto_continue_incomplete: true,
+      continue_last_output: Boolean(chatOptions.continueLastOutput),
+      chat_assistant: true,
+      graph_editor_chat: true,
+      tag_profile: state.tagProfile,
+      agent_tools_chat: Boolean(state.graphChatAgentToolsEnabled),
+      agent_tools_execute_coa_enabled: Boolean(state.graphChatAgentToolsEnabled && (state.agentCoaExecutionEnabled || state.settings?.agent_tools_enable_approved_coa_execution)),
+      show_visible_plan: true,
+      expose_reasoning_trace: true,
+      reasoning_trace_kind: 'visible_plan_and_action_trace_only',
+      user_visible_reasoning_note: 'Expose only user-visible plans, assumptions, tool actions, and verification notes; do not reveal private hidden chain-of-thought.',
+      ...(controls.reasoning ? reasoningOptionsFromControls(controls.reasoning, { min_chat_max_new_tokens: 2048 }) : {})
+    },
+    context: graphContext
+  };
+  setOptimisticModelStage(modelName, 'inference', 'running', 0.02, 'Graph-linked assistant request sent');
+  updateLiveStatusDom();
+  const r = await api('/api/models/chat', { method:'POST', body });
+  state.graphChatConversationId = r.conversation_id || state.graphChatConversationId;
+  state.graphChatMessages = r.history || state.graphChatMessages || [];
+  state.graphChatConversationState = {
+    ...(state.graphChatConversationState || {}),
+    memory_summary: r.memory_summary || state.graphChatConversationState?.memory_summary || '',
+    last_context_budget: r.context_budget || state.graphChatConversationState?.last_context_budget || null,
+    context_reset_message_id: r.context_reset_message_id || state.graphChatConversationState?.context_reset_message_id || 0,
+    graph_context: { graph_id: graphContext.graph_id, graph_name: graphContext.graph_name, selected_node_id: graphContext.selected_node_id }
+  };
+  state.graphChatLastResponse = r;
+  state.graphChatLastError = null;
+  if (state.graphChatAgentToolsEnabled && r.assistant_message_id && r.conversation_id) {
+    try { await fetchCoaOptionsForMessage(r.conversation_id, r.assistant_message_id); } catch (_) {}
+  }
+  if (state.graphChatAgentToolsEnabled && r.response) {
+    try {
+      const parsed = await api('/api/agent-tools/parse-tool-calls', { method:'POST', body:{ text:r.response } });
+      if ((parsed.tool_calls || []).length) {
+        state.agentSurfacePlans['agent-graph-chat'] = {
+          ...(state.agentSurfacePlans['agent-graph-chat'] || {}),
+          plan: { summary:'Executable COA/tool calls parsed from graph chat response', steps:parsed.tool_calls },
+          tool_calls: parsed.tool_calls,
+          response: r.response,
+          conversation_id: r.conversation_id
+        };
+        toast(`Parsed ${parsed.tool_calls.length} executable COA/tool call(s) from graph chat response`);
+      }
+    } catch (_) {}
+  }
+  await loadChatConversations().catch(() => {});
+  await refreshModelStatuses(false).catch(() => {});
+  updateLiveStatusDom();
+  toast(`Graph chat replied${r.conversation_id ? ' in conversation #' + r.conversation_id : ''}`);
+  return r;
+}
+async function sendQueuedGraphChat(text, meta = {}, controls = {}) {
+  resetStaleChatQueueLock('graph');
+  const item = { text:String(text || ''), meta:{ ...(meta || {}) }, queued_at:new Date().toISOString() };
+  if (state.graphChatSending) {
+    state.graphChatQueue = [...(state.graphChatQueue || []), item];
+    toast(`Queued graph chat message (${state.graphChatQueue.length} waiting).`);
+    render(true, true);
+    return;
+  }
+  state.graphChatSending = true;
+  state.graphChatCurrent = item;
+  render(true, true);
+  try {
+    let current = item;
+    while (current) {
+      state.graphChatCurrent = current;
+      await sendGraphChatMessage(current.text, current.meta || {}, controls);
+      current = (state.graphChatQueue || []).shift() || null;
+      state.graphChatQueue = state.graphChatQueue || [];
+      if (current) render(true, true);
+    }
+  } finally {
+    state.graphChatSending = false;
+    state.graphChatCurrent = null;
+    render(true, true);
+  }
+}
+function markdownLiteBlocks(markdownText) {
+  const lines = String(markdownText || '').split(/\r?\n/);
+  const out = [];
+  let list = [];
+  let paragraph = [];
+  let code = [];
+  let inCode = false;
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      out.push(el('p', {}, paragraph.join(' ')));
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      out.push(el('ul', {}, list.map(item => el('li', {}, item))));
+      list = [];
+    }
+  };
+  const flushCode = () => {
+    if (code.length) {
+      out.push(el('pre', { class:'log compact' }, code.join('\n')));
+      code = [];
+    }
+  };
+  for (const rawLine of lines) {
+    const line = String(rawLine || '');
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      if (inCode) { flushCode(); inCode = false; }
+      else { flushParagraph(); flushList(); inCode = true; code = []; }
+      continue;
+    }
+    if (inCode) { code.push(line); continue; }
+    if (!trimmed) { flushParagraph(); flushList(); continue; }
+    const heading = trimmed.match(/^(#{1,4})\s+(.*)$/);
+    if (heading) {
+      flushParagraph(); flushList();
+      const level = Math.min(4, heading[1].length);
+      out.push(el(`h${level}`, {}, heading[2]));
+      continue;
+    }
+    const bullet = trimmed.match(/^[-*]\s+(.*)$/);
+    if (bullet) {
+      flushParagraph();
+      list.push(bullet[1].replace(/`([^`]+)`/g, '$1').replace(/\*\*([^*]+)\*\*/g, '$1'));
+      continue;
+    }
+    paragraph.push(trimmed.replace(/`([^`]+)`/g, '$1').replace(/\*\*([^*]+)\*\*/g, '$1'));
+  }
+  flushCode(); flushParagraph(); flushList();
+  return out;
+}
+
+function guaranteedWorkflowTemplateSelect() {
+  const sel = el('select', { onchange:e=>{ state.agenticWorkflowReadmeKey = e.target.value; render(); } },
+    GUARANTEED_AGENTIC_WORKFLOW_TEMPLATES.map(row => { const meta = workflowCategoryMeta(row.category); return el('option', { value: row.key, style: `background:${meta.color}22;color:#f8fafc;` }, `${meta.label} · ${row.label}`); }));
+  sel.value = state.agenticWorkflowReadmeKey || 'guaranteed_graph_runtime_smoke_test';
+  return sel;
+}
+
+function guaranteedWorkflowRequestBody(key) {
+  const row = GUARANTEED_AGENTIC_WORKFLOW_TEMPLATES.find(x => x.key === key) || GUARANTEED_AGENTIC_WORKFLOW_TEMPLATES[0];
+  return {
+    name: row.label,
+    template_key: row.key,
+    goal: 'Known-good smoke-test graph intended to run locally without network, model downloads, shell commands, browser actions, MCP servers, or trainer execution.',
+    instructions: 'Run this template in graph runtime dry-run mode first. Expand only after this baseline succeeds.',
+    assistant_model: state.graphEditorAssistantModel || 'dataset-assistant',
+    branch_name: state.graphEditorBranch || 'smoke_test_branch',
+    target_model: state.graphEditorTarget || 'sdxl',
+    adapter_type: state.graphEditorAdapter || 'lora',
+    dataset_goal: state.graphEditorDatasetGoal || 'character',
+    training_tool: state.graphEditorTrainingTool || 'generic',
+    automation_level: 'guided',
+    created_by: 'workflow_readme_tab',
+    options: { known_good_runtime: true, local_only: true, dry_run_first: true },
+  };
+}
+
+async function createGuaranteedAgenticWorkflow(key = null, { runAfterCreate = false } = {}) {
+  const templateKey = key || state.agenticWorkflowReadmeKey || 'guaranteed_graph_runtime_smoke_test';
+  state.agenticWorkflowReadmeBusy = true;
+  renderNowPreservingState(false);
+  try {
+    const graph = await api('/api/graph-editor', { method:'POST', body: guaranteedWorkflowRequestBody(templateKey) });
+    graphEditorSetCurrent(graph);
+    state.graphEditorTemplateKey = templateKey;
+    state.agenticWorkflowReadmeLastCreated = graph;
+    await refreshGraphEditor().catch(()=>null);
+    toast('Known-good graph template created');
+    if (runAfterCreate) await runGuaranteedAgenticWorkflow(graph);
+    else renderNowPreservingState(false);
+    return graph;
+  } catch (err) {
+    toast(err.message, false);
+    throw err;
+  } finally {
+    state.agenticWorkflowReadmeBusy = false;
+    renderNowPreservingState(false);
+  }
+}
+
+async function runGuaranteedAgenticWorkflow(graph = null) {
+  const selected = graph || state.agenticWorkflowReadmeLastCreated || state.graphEditorSelected;
+  if (!selected || !(selected.nodes || []).length) {
+    return createGuaranteedAgenticWorkflow(state.agenticWorkflowReadmeKey, { runAfterCreate: true });
+  }
+  state.agenticWorkflowReadmeBusy = true;
+  renderNowPreservingState(false);
+  try {
+    const result = await api('/api/graph-editor/execute-session', {
+      method:'POST',
+      body:{
+        graph:selected,
+        payload:{ dry_run:true, approve_unsafe_steps:false, stop_on_approval_gate:true, allow_model_calls:false, continue_on_error:false, source:'workflow_readme_tab' }
+      }
+    });
+    state.agenticWorkflowReadmeLastRun = result;
+    state.graphEditorRuntimeResult = result;
+    toast(result.ok ? 'Runtime smoke test completed' : 'Runtime smoke test returned warnings/errors', Boolean(result.ok));
+    renderNowPreservingState(false);
+    return result;
+  } catch (err) {
+    toast(err.message, false);
+    throw err;
+  } finally {
+    state.agenticWorkflowReadmeBusy = false;
+    renderNowPreservingState(false);
+  }
+}
+
+async function selfTestCertifiedAgenticWorkflows({ selectedOnly = false } = {}) {
+  if (state.agenticWorkflowSelfTestBusy) return state.agenticWorkflowSelfTest;
+  state.agenticWorkflowSelfTestBusy = true;
+  state.agenticWorkflowSelfTest = { status:'running', message:'Running certified local dry-run workflow self-test…' };
+  renderNowPreservingState(false);
+  try {
+    const body = selectedOnly ? { template_keys:[state.agenticWorkflowReadmeKey || 'guaranteed_graph_runtime_smoke_test'] } : {};
+    const result = await api('/api/graph-editor/templates/self-test', { method:'POST', body });
+    state.agenticWorkflowSelfTest = result;
+    toast(result.ok ? `Certified workflow self-test passed (${result.passed}/${result.tested})` : `Certified workflow self-test failed (${result.failed}/${result.tested})`, Boolean(result.ok));
+    return result;
+  } catch (err) {
+    state.agenticWorkflowSelfTest = { ok:false, status:'failed', error:err.message || String(err) };
+    toast(err.message, false);
+    return state.agenticWorkflowSelfTest;
+  } finally {
+    state.agenticWorkflowSelfTestBusy = false;
+    renderNowPreservingState(false);
+  }
+}
+
+function agenticWorkflowReadmesView() {
+  const key = state.agenticWorkflowReadmeKey || 'guaranteed_graph_runtime_smoke_test';
+  const row = GUARANTEED_AGENTIC_WORKFLOW_TEMPLATES.find(x => x.key === key) || GUARANTEED_AGENTIC_WORKFLOW_TEMPLATES[0];
+  const markdown = AGENTIC_WORKFLOW_READMES[key] || AGENTIC_WORKFLOW_READMES.guaranteed_graph_runtime_smoke_test;
+  return el('div', { class:'stack' }, [
+    card('Certified Agentic Workflow READMEs', [
+      el('p', { class:'muted' }, 'These templates are regression-certified against the same local graph runtime exposed in the canvas. Their certified path is local-only dry-run execution with no model download, live model call, browser/MCP/shell action, media mutation, or trainer launch.'),
+      el('div', { class:'row wrap' }, [
+        el('label', { class:'label compact' }, ['Workflow README', guaranteedWorkflowTemplateSelect()]),
+        el('button', { class:'primary', disabled:Boolean(state.agenticWorkflowReadmeBusy), onclick:()=>createGuaranteedAgenticWorkflow(key) }, 'Create This Graph Template'),
+        el('button', { class:'primary', disabled:Boolean(state.agenticWorkflowReadmeBusy), onclick:()=>createGuaranteedAgenticWorkflow(key, { runAfterCreate:true }) }, 'Create + Run Certified Dry-Run'),
+        el('button', { class:'secondary', disabled:Boolean(state.agenticWorkflowReadmeBusy), onclick:()=>runGuaranteedAgenticWorkflow() }, 'Run Selected Dry-Run'),
+        el('button', { class:'secondary', disabled:Boolean(state.agenticWorkflowSelfTestBusy), onclick:()=>selfTestCertifiedAgenticWorkflows({ selectedOnly:true }) }, 'Self-Test Selected'),
+        el('button', { class:'primary', disabled:Boolean(state.agenticWorkflowSelfTestBusy), onclick:()=>selfTestCertifiedAgenticWorkflows() }, 'Self-Test All Certified Workflows'),
+        el('button', { class:'secondary', onclick:()=>setTab('Agentic Graph Editor') }, 'Open Graph Editor')
+      ]),
+      el('div', { class:'grid three' }, GUARANTEED_AGENTIC_WORKFLOW_TEMPLATES.map(t => { const meta = workflowCategoryMeta(t.category); return el('div', { class:`mini-card workflow-template-card ${t.key === key ? 'selected' : ''}`, style:`--workflow-color:${meta.color};`, onclick:()=>{ state.agenticWorkflowReadmeKey = t.key; render(); } }, [
+        el('span', { class:`workflow-category-chip ${meta.cls}` }, meta.label),
+        el('strong', {}, t.label),
+        el('p', { class:'muted tiny' }, t.short)
+      ]); }))
+    ]),
+    card(row.label, [
+      el('div', { class:'markdown-lite' }, markdownLiteBlocks(markdown))
+    ]),
+    state.agenticWorkflowReadmeLastCreated ? card('Last created graph', [
+      el('div', { class:'row wrap' }, [
+        el('span', { class:'badge' }, state.agenticWorkflowReadmeLastCreated.id || 'unsaved'),
+        el('span', { class:'badge' }, state.agenticWorkflowReadmeLastCreated.name || 'graph'),
+        el('button', { class:'secondary small', onclick:()=>{ graphEditorSetCurrent(state.agenticWorkflowReadmeLastCreated); setTab('Agentic Graph Editor'); } }, 'Open This Graph')
+      ]),
+      el('pre', { class:'log compact' }, JSON.stringify({ id: state.agenticWorkflowReadmeLastCreated.id, name: state.agenticWorkflowReadmeLastCreated.name, nodes: (state.agenticWorkflowReadmeLastCreated.nodes || []).length, edges: (state.agenticWorkflowReadmeLastCreated.edges || []).length, validation: state.agenticWorkflowReadmeLastCreated.validation || null }, null, 2))
+    ]) : null,
+    state.agenticWorkflowReadmeLastRun ? card('Last selected workflow dry-run result', [
+      el('pre', { class:'log compact' }, JSON.stringify(state.agenticWorkflowReadmeLastRun, null, 2))
+    ]) : null,
+    state.agenticWorkflowSelfTest ? card('Certified workflow self-test result', [
+      el('pre', { class:'log compact' }, JSON.stringify(state.agenticWorkflowSelfTest, null, 2))
+    ]) : null
+  ]);
+}
+
+
+function agenticGraphChatView() {
+  const graph = graphEditorEnsureCurrent();
+  const selectedNode = (graph.nodes || []).find(n => n.id === state.graphEditorSelectedNodeId) || null;
+  const model = el('select', { class:'model-category-select', onchange:e=>{ state.graphChatModelSelection=e.target.value; primeModelLifecycleForSelection(e.target.value); updateLiveStatusDom(); } }, graphEditorModelOptions());
+  model.value = state.graphChatModelSelection || state.graphEditorAssistantModel || state.assistantModelSelection || '';
+  const selectedModel = () => (state.models || []).find(m => m.name === model.value) || { name:model.value || 'dataset-assistant', label:model.value || 'dataset-assistant', capabilities: [] };
+  const rt = modelRuntimeControls();
+  const reasoning = assistantReasoningControls('graph');
+  const tools = el('input', { type:'checkbox', checked: state.graphChatAgentToolsEnabled !== false, onchange:e=>{ state.graphChatAgentToolsEnabled=e.target.checked; } });
+  const prompt = el('textarea', { rows:5, style:'width:100%', placeholder:'Ask the assistant to explain, edit, validate, run, or convert the selected graph/node. Ctrl+Enter sends from the chat composer below.', value:state.graphChatDraft || '', oninput:e=>{ state.graphChatDraft=e.target.value; } });
+  const sendFromTop = async () => { const text=(state.graphChatDraft || '').trim(); if(!text) throw new Error('Type a graph chat request first.'); state.graphChatDraft=''; await sendQueuedGraphChat(text, {}, { rt, reasoning, modelName:model.value || 'dataset-assistant' }); };
+  return el('div', { class:'grid' }, [
+    card('Agentic Graph Chat: linked workflow assistant', [
+      el('p', { class:'muted' }, 'This chat is bound to the current graph canvas, selected node, selected media, and workflow/runtime settings. Visible plans/action traces are exposed to the user; private hidden chain-of-thought is not used as UI output.'),
+      el('div', { class:'row wrap' }, [model, el('label', {}, [tools, ' enable approved local tools / COA parsing']), el('button', { class:'secondary', onclick:()=>setTab('Agentic Graph Editor') }, 'Open Graph Editor'), el('button', { class:'secondary', onclick:async()=>{ await refreshGraphEditor(); toast('Graph context refreshed'); render(true,true); } }, 'Refresh Graph Context'), el('button', { class:'secondary', onclick:()=>{ state.graphChatConversationId=null; state.graphChatMessages=[]; state.graphChatConversationState={}; state.graphChatLastResponse=null; render(true,true); } }, 'New Linked Conversation')]),
+      modelLifecycleStrip(selectedModel(), true),
+      inlineSelectedModelRuntimeControls(model, rt, 'graph-chat'),
+      assistantReasoningPanel(reasoning, 'Visible graph plan / action trace controls'),
+      el('pre', { class:'log compact' }, JSON.stringify({ graph_id: graph.id || state.graphEditorSelectedId || null, graph_name: graph.name || state.graphEditorName || 'draft', selected_node_id: selectedNode?.id || null, nodes:(graph.nodes||[]).length, edges:(graph.edges||[]).length, selected_media_ids:[...state.selected] }, null, 2)),
+      prompt,
+      el('button', { class:'primary', onclick:async()=>{ try { await sendFromTop(); } catch(err){ state.graphChatLastError=state.lastApiError || { error:err.message }; toast(err.message,false); render(true,true); } } }, state.graphChatSending ? 'Queue Graph Request' : 'Send Graph Request'),
+      state.graphChatLastError ? errorLogCard('Last Graph Chat Error', state.graphChatLastError) : null,
+      state.graphChatLastResponse ? visiblePlanPanel(state.graphChatLastResponse, 'Visible graph plan / action notes') : null
+    ].filter(Boolean)),
+    conversationHistoryPanel('graph', state.graphChatConversationId, state.graphChatMessages, {
+      title:'Graph-Linked Chat',
+      surface:'Agentic Graph Chat',
+      modelName: () => model.value || 'dataset-assistant',
+      runtimeControls: rt,
+      context: () => JSON.stringify(graphChatContextSnapshot(), null, 2),
+      reload: async id => loadScopedChatConversation(id, 'graph'),
+      saveState: () => ({ title:`Graph Chat · ${graph.name || state.graphEditorName || 'draft'}`, scope:'agentic-graph-chat', graph_context:graphChatContextSnapshot(), selected_model:model.value || '' }),
+      composer: {
+        draftKey:'graphChatDraft',
+        placeholder:'Chat about this graph, the selected node, workflow execution, tool contracts, or conversion into an automation workflow.',
+        sendLabel:'Send Graph Chat',
+        finishLabel:'Finish Graph Answer',
+        hint:'The model receives the current graph JSON, selected node, selected media IDs, and runtime settings. Visible plan/action trace only.',
+        onSend: (text, meta) => sendQueuedGraphChat(text, meta, { rt, reasoning, modelName:model.value || 'dataset-assistant' })
+      }
+    })
+  ]);
+}
+function agenticGraphEditorView() {
+  const catalog = state.graphEditorCatalog || { node_palette: [], workflow_templates: [], workflow_step_catalog: [] };
+  const selected = state.graphEditorSelected;
+  const graph = graphEditorEnsureCurrent();
+  const selectedNode = (graph.nodes || []).find(n => n.id === state.graphEditorSelectedNodeId) || null;
+  const templateSel = el('select', { onchange:e=>state.graphEditorTemplateKey=e.target.value }, graphEditorTemplateOptions()); templateSel.value = state.graphEditorTemplateKey || 'full_dataset_curation';
+  const datasetSel = el('select', { onchange:e=>state.graphEditorSourceDatasetId=e.target.value }, datasetOptions()); datasetSel.value = state.graphEditorSourceDatasetId || '';
+  const graphSel = el('select', { onchange:async e=>{ state.graphEditorSelectedId=e.target.value; state.graphEditorSelected=e.target.value ? await api(`/api/graph-editor/${encodeURIComponent(e.target.value)}`) : null; state.graphEditorEditJson=state.graphEditorSelected ? JSON.stringify(state.graphEditorSelected,null,2) : ''; state.graphEditorSelectedNodeId=''; graphEditorRenderCanvasNow(); } }, graphEditorSelectOptions()); graphSel.value = state.graphEditorSelectedId || '';
+  const nodeTypeSel = el('select', { onchange:e=>state.graphEditorNewNodeKind=e.target.value }, graphEditorNodeTypeOptions()); nodeTypeSel.value = state.graphEditorNewNodeKind || 'manual_review_gate';
+  const fromSel = el('select', { onchange:e=>state.graphEditorEdgeFrom=e.target.value }, [el('option',{value:''},'from node'), ...(graph.nodes||[]).map(n=>el('option',{value:n.id},`${n.id} · ${n.kind}`))]); fromSel.value = state.graphEditorEdgeFrom || '';
+  const toSel = el('select', { onchange:e=>state.graphEditorEdgeTo=e.target.value }, [el('option',{value:''},'to node'), ...(graph.nodes||[]).map(n=>el('option',{value:n.id},`${n.id} · ${n.kind}`))]); toSel.value = state.graphEditorEdgeTo || '';
+  const nodeRows = (catalog.node_palette || []).map(row => el('tr', {}, [el('td', {}, row.kind), el('td', {}, row.label || ''), el('td', {}, row.category || ''), el('td', {}, row.workflow_step_type || ''), el('td', {}, row.description || '')]));
+  const graphRows = (state.graphEditorItems || []).map(g => el('tr', {}, [
+    el('td', {}, [el('strong', {}, g.name || g.id), el('div', { class:'muted tiny' }, g.goal || g.description || '')]),
+    el('td', {}, `${(g.nodes || []).length} / ${(g.edges || []).length}`),
+    el('td', {}, g.branch_name || ''),
+    el('td', {}, [
+      el('button', { class:'secondary small', onclick:async()=>{state.graphEditorSelectedId=g.id; state.graphEditorSelected=await api(`/api/graph-editor/${encodeURIComponent(g.id)}`); state.graphEditorEditJson=JSON.stringify(state.graphEditorSelected,null,2); state.graphEditorSelectedNodeId=''; graphEditorRenderCanvasNow();}}, 'Open'),
+      el('button', { class:'danger small', onclick:async()=>{if(!confirm('Delete this graph?'))return; await api(`/api/graph-editor/${encodeURIComponent(g.id)}`, {method:'DELETE'}); state.graphEditorSelectedId=''; state.graphEditorSelected=null; state.graphEditorEditJson=''; await refreshGraphEditor(); graphEditorRenderCanvasNow();}}, 'Delete')
+    ])
+  ]));
+  const edgeRows = (graph.edges || []).map(e => el('tr', {}, [
+    el('td', {}, e.from),
+    el('td', {}, e.to),
+    el('td', {}, el('input', { value:e.label || '', placeholder:'edge label', oninput:ev=>graphEditorUpdateEdge(e.id,{label:ev.target.value}) })),
+    el('td', {}, el('input', { value:e.condition || '', placeholder:'condition / guard expression', oninput:ev=>graphEditorUpdateEdge(e.id,{condition:ev.target.value}) })),
+    el('td', {}, (()=>{ const sel=el('select',{onchange:ev=>graphEditorUpdateEdge(e.id,{edge_type:ev.target.value})}, ['sequence','condition','parallel','event','error'].map(v=>el('option',{value:v},v))); sel.value=e.edge_type||'sequence'; return sel; })()),
+    el('td', {}, el('button', { class:'danger small', onclick:()=>graphEditorRemoveEdge(e.id) }, 'Remove'))
+  ]));
+  return el('div', { class:'grid' }, [
+    card('Agentic Graph Editor: visual orchestration workflow builder', [
+      el('p', { class:'muted' }, 'Build node/edge workflows visually. Users can author graphs, the selected orchestrator model can draft/refine graph JSON, and compiled graphs run through the same Automation Workflow engine with branch-safe dataset edits and approval gates.'),
+      el('div', { class:'row wrap' }, [
+        el('label', { class:'label compact' }, ['Template', templateSel]),
+        el('label', { class:'label compact' }, ['Assistant model', (()=>{ const s=el('select',{onchange:e=>state.graphEditorAssistantModel=e.target.value}, graphEditorModelOptions()); s.value=state.graphEditorAssistantModel||''; return s; })()]),
+        el('label', { class:'label compact' }, ['Dataset', datasetSel]),
+        el('label', { class:'label compact' }, ['Saved graph', graphSel])
+      ]),
+      el('div', { class:'row wrap' }, [
+        el('input', { value: state.graphEditorName || '', placeholder:'graph name', oninput:e=>state.graphEditorName=e.target.value }),
+        el('input', { value: state.graphEditorBranch || '', placeholder:'branch name', oninput:e=>state.graphEditorBranch=e.target.value }),
+        el('input', { value: state.graphEditorTarget || '', placeholder:'target model e.g. sdxl/flux', oninput:e=>state.graphEditorTarget=e.target.value }),
+        el('input', { value: state.graphEditorAdapter || '', placeholder:'adapter type e.g. lora', oninput:e=>state.graphEditorAdapter=e.target.value }),
+        el('input', { value: state.graphEditorDatasetGoal || '', placeholder:'dataset goal e.g. character', oninput:e=>state.graphEditorDatasetGoal=e.target.value })
+      ]),
+      el('textarea', { rows:'3', placeholder:'Goal / workflow instructions for user or selected orchestrator model', oninput:e=>{state.graphEditorGoal=e.target.value; state.graphEditorInstructions=e.target.value;} }, state.graphEditorGoal || state.graphEditorInstructions || ''),
+      el('div', { class:'row wrap' }, [
+        el('label', {}, [el('input', { type:'checkbox', checked: state.graphEditorUseModelPlanning, onchange:e=>state.graphEditorUseModelPlanning=e.target.checked }), ' use selected model to draft/refine graph']),
+        el('label', {}, [el('input', { type:'checkbox', checked: state.graphEditorDryRun !== false, onchange:e=>state.graphEditorDryRun=e.target.checked }), ' dry-run graph by default']),
+        el('label', {}, [el('input', { type:'checkbox', checked: state.graphEditorApproveUnsafe, onchange:e=>state.graphEditorApproveUnsafe=e.target.checked }), ' approve unsafe steps for this run']),
+        el('label', {}, [el('input', { type:'checkbox', checked: state.graphEditorRuntimeDry !== false, onchange:e=>state.graphEditorRuntimeDry=e.target.checked }), ' runtime dry-run']),
+        el('label', {}, [el('input', { type:'checkbox', checked: state.graphEditorStopOnApproval !== false, onchange:e=>state.graphEditorStopOnApproval=e.target.checked }), ' stop at approval gates']),
+        el('label', {}, [el('input', { type:'checkbox', checked: Boolean(state.graphEditorAllowModelCalls), onchange:e=>state.graphEditorAllowModelCalls=e.target.checked }), ' allow live model calls'])
+      ]),
+      (()=>{ const presets=graphEditorLocalPresets(); const names=Object.keys(presets).sort(); const sel=el('select',{onchange:e=>state.graphEditorLocalPresetSelected=e.target.value}, [el('option',{value:''},'local preset'), ...names.map(n=>el('option',{value:n},n))]); sel.value=state.graphEditorLocalPresetSelected||''; return el('div',{class:'row wrap'}, [
+        el('input', { value:state.graphEditorLocalPresetName || '', placeholder:'local graph preset name', oninput:e=>state.graphEditorLocalPresetName=e.target.value }),
+        sel,
+        el('button', { class:'secondary small', onclick:()=>graphEditorSaveLocalPreset() }, 'Save Local Preset'),
+        el('button', { class:'secondary small', onclick:()=>graphEditorLoadLocalPreset(sel.value) }, 'Load Local Preset'),
+        el('button', { class:'danger small', onclick:()=>graphEditorDeleteLocalPreset(sel.value) }, 'Delete Local Preset'),
+        el('button', { class:'secondary small', onclick:graphEditorDownloadSnapshot }, 'Export Snapshot JSON')
+      ]); })(),
+      el('div', { class:'row wrap' }, [
+        el('button', { class:'secondary', onclick:async()=>{try{await refreshGraphEditor();toast('Graph catalog refreshed');graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Refresh Graphs'),
+        el('button', { class:'primary', onclick:async()=>{try{await graphEditorSaveCurrentGraph(graph); toast('Graph saved'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Save Graph'),
+        el('button', { class:'secondary', onclick:()=>{ state.graphEditorEditJson = JSON.stringify(graphEditorEnsureCurrent(), null, 2); state.graphEditorFocusedPanel = 'json'; toast('Graph JSON is ready in the editor panel below.'); graphEditorRenderCanvasNow(); }}, 'Edit Graph'),
+        el('button', { class:'danger', disabled: !(selected?.id || graph.id || state.graphEditorSelectedId), onclick:async()=>{try{const id=selected?.id || graph.id || state.graphEditorSelectedId; if(!id) throw new Error('Save or select a graph before removing it.'); if(!confirm('Remove this saved graph?')) return; await api(`/api/graph-editor/${encodeURIComponent(id)}`, {method:'DELETE'}); state.graphEditorSelectedId=''; state.graphEditorSelected=null; state.graphEditorEditJson=''; state.graphEditorSelectedNodeId=''; await refreshGraphEditor(); toast('Graph removed'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Remove Graph'),
+        el('button', { class:'secondary', onclick:()=>setTab('Agentic Graph Chat') }, 'Open Linked Graph Chat'),
+        el('button', { class:'primary', onclick:async()=>{try{const r=await api('/api/graph-editor', {method:'POST', body:graphEditorBodyFromUi()}); graphEditorSetCurrent(r); await refreshGraphEditor(); toast('Graph created'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Create From Template'),
+        el('button', { class:'primary', onclick:async()=>{try{const r=await api('/api/graph-editor/plan', {method:'POST', body:{...graphEditorBodyFromUi(), use_model:Boolean(state.graphEditorUseModelPlanning)}}); state.graphEditorLastResult=r; graphEditorSetCurrent(r.graph); await refreshGraphEditor(); toast('Graph plan generated'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Generate Graph Plan'),
+        el('button', { class:'secondary', onclick:async()=>{try{const wfId=state.workflowSelectedId || prompt('Workflow ID to import as graph:', ''); if(!wfId)return; const r=await api(`/api/graph-editor/import-workflow/${encodeURIComponent(wfId)}`, {method:'POST', body:{}}); graphEditorSetCurrent(r); await refreshGraphEditor(); toast('Workflow imported as graph'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Import Selected Workflow'),
+        el('button', { class:'secondary', onclick:()=>{graphEditorSetCurrent(null); state.graphEditorSelectedId=''; state.graphEditorSelectedNodeId=''; graphEditorRenderCanvasNow();}}, 'New Blank Draft')
+      ])
+    ]),
+    card('Graph Canvas', [
+      el('div', { class:'row wrap' }, [
+        nodeTypeSel,
+        el('button', { class:'secondary', onclick:()=>graphEditorAddNode(state.graphEditorNewNodeKind || 'manual_review_gate') }, '+ Add Selected Node'),
+        el('button', { class:'secondary', onclick:()=>{ const v=state.graphEditorViewport||{x:0,y:0,scale:1}; state.graphEditorContextMenu={worldX:Math.round((260-(v.x||0))/(v.scale||1)),worldY:Math.round((180-(v.y||0))/(v.scale||1))}; graphEditorRenderCanvasNow(); } }, 'Open Node Palette'),
+        el('button', { class:'danger', onclick:graphEditorRemoveSelectedNode }, 'Remove Selected Node'),
+        fromSel,
+        toSel,
+        el('button', { class:'secondary', onclick:graphEditorAddEdge }, 'Add Edge'),
+        el('button', { class:'secondary', onclick:()=>{state.graphEditorAnimateFlow=!state.graphEditorAnimateFlow;graphEditorRenderCanvasNow();} }, state.graphEditorAnimateFlow ? 'Stop Flow Animation' : 'Animate Flow'),
+        el('button', { class:'secondary', onclick:()=>{state.graphEditorViewport={x:0,y:0,scale:1};graphEditorRenderCanvasNow();} }, 'Reset View')
+      ]),
+      state.graphEditorConnectingFrom ? el('p', { class:'warning tiny' }, `Connecting from ${state.graphEditorConnectingFrom}: click an input port to finish, or click the output port again to cancel.`) : el('p', { class:'muted tiny' }, 'Right-click canvas background, or use Open Node Palette, to choose an exact node type. Drag any non-control area of a node to move it. Drag empty canvas to pan. Mouse wheel zooms around the cursor. Drag an output port to an input port, or click output then input, to connect nodes. Use × edge handles to delete edges.'),
+      el('div', { id:'dct-graph-canvas-region', class:'graph-editor-live-canvas-region' }, [graphEditorCanvas(graph)]),
+      edgeRows.length ? el('details', {}, [el('summary', {}, 'Edges'), el('table', { class:'table' }, [el('thead', {}, el('tr', {}, ['From','To','Label','Actions'].map(h=>el('th',{},h)))), el('tbody', {}, edgeRows)])]) : null
+    ]),
+    el('div', { id:'dct-graph-inspector-region', class:'graph-editor-live-inspector-region' }, [graphEditorNodeInspectorPanel(selectedNode)]),
+    card('Graph JSON / Workflow Conversion / Run', [
+      el('p', { class:'muted tiny' }, 'This is the saved graph representation. The model and the user edit the same JSON. Converting creates an Automation Workflow; running queues through Jobs.'),
+      el('textarea', { rows:'14', oninput:e=>{state.graphEditorEditJson=e.target.value; try{state.graphEditorSelected=JSON.parse(e.target.value||'{}');}catch(_){}} }, state.graphEditorEditJson || JSON.stringify(graph, null, 2)),
+      el('div', { class:'row wrap' }, [
+        el('button', { class:'secondary', onclick:async()=>{try{const g=JSON.parse(state.graphEditorEditJson||JSON.stringify(graph)); await graphEditorSaveCurrentGraph(g); toast('Graph JSON saved'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Save Graph JSON'),
+        el('button', { class:'secondary', onclick:async()=>{try{const saved=selected?.id ? selected : await graphEditorSaveCurrentGraph(graph); state.graphEditorLastResult=await api(`/api/graph-editor/${encodeURIComponent(saved.id)}/validate`, {method:'POST', body:{}}); toast(state.graphEditorLastResult.ok?'Graph valid':'Graph has validation errors', state.graphEditorLastResult.ok); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Validate'),
+        el('button', { class:'secondary', onclick:async()=>{try{const saved=selected?.id ? selected : await graphEditorSaveCurrentGraph(graph); state.graphEditorLastResult=await api(`/api/graph-editor/${encodeURIComponent(saved.id)}/to-workflow`, {method:'POST', body:{}}); toast('Graph converted to workflow preview'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Convert to Workflow Preview'),
+        el('button', { class:'secondary', onclick:async()=>{try{const saved=selected?.id ? selected : await graphEditorSaveCurrentGraph(graph); state.graphEditorLastResult=await api(`/api/graph-editor/${encodeURIComponent(saved.id)}/save-as-workflow`, {method:'POST', body:{}}); await refreshWorkflows(); toast('Graph saved as Automation Workflow'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Save as Automation Workflow'),
+        el('button', { class:'secondary', onclick:async()=>{try{const saved=selected?.id ? selected : await graphEditorSaveCurrentGraph(graph); state.graphEditorLastResult=await api(`/api/graph-editor/${encodeURIComponent(saved.id)}/dry-run`, {method:'POST', body:{dry_run:true}}); toast('Graph dry-run complete'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Dry-Run Graph'),
+        el('button', { class:'secondary', onclick:async()=>{try{const saved=selected?.id ? selected : await graphEditorSaveCurrentGraph(graph); state.graphEditorLastResult=await api(`/api/graph-editor/${encodeURIComponent(saved.id)}/simulate`, {method:'POST', body:{dry_run:true, approve_unsafe_steps:Boolean(state.graphEditorApproveUnsafe), stop_on_approval_gate:state.graphEditorStopOnApproval !== false}}); await refreshGraphEditor(); toast('Graph simulation preview complete'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Simulate Node Graph'),
+        el('button', { class:'primary', onclick:graphEditorExecuteSession }, 'Run Graph Runtime Session'),
+        el('button', { class:'secondary', onclick:graphEditorExecuteSelectedNode }, 'Run Selected Node'),
+        el('button', { class:'danger', onclick:async()=>{try{const saved=selected?.id ? selected : await graphEditorSaveCurrentGraph(graph); const r=await api(`/api/graph-editor/${encodeURIComponent(saved.id)}/run`, {method:'POST', body:{dry_run:Boolean(state.graphEditorDryRun), approve_unsafe_steps:Boolean(state.graphEditorApproveUnsafe), stop_on_approval_gate:state.graphEditorStopOnApproval !== false}}); state.jobs=await api('/api/jobs'); toast(`Graph job ${r.job_id} queued`); setTab('Jobs');}catch(err){toast(err.message,false);}}}, 'Queue Graph Run'),
+        el('button', { class:'secondary', onclick:async()=>{try{const saved=selected?.id ? selected : await graphEditorSaveCurrentGraph(graph); const instructions=prompt('Refine graph instructions:', state.graphEditorRefineInstructions || state.graphEditorInstructions || '') || ''; if(!instructions)return; const r=await api(`/api/graph-editor/${encodeURIComponent(saved.id)}/refine`, {method:'POST', body:{instructions, use_model:Boolean(state.graphEditorUseModelPlanning), assistant_model:state.graphEditorAssistantModel || null}}); state.graphEditorLastResult=r; graphEditorSetCurrent(r.graph); await refreshGraphEditor(); toast('Graph refined'); graphEditorRenderCanvasNow();}catch(err){toast(err.message,false);}}}, 'Refine With Instructions')
+      ]),
+      state.graphEditorLastResult ? el('details', { open:true }, [el('summary', {}, 'Latest graph result'), el('pre', { class:'log compact' }, JSON.stringify(state.graphEditorLastResult,null,2))]) : null,
+      state.graphEditorRuntimeResult ? el('details', { open:true }, [el('summary', {}, `Graph runtime result · ${state.graphEditorRuntimeResult.status || ''}`), el('pre', { class:'log compact' }, JSON.stringify(state.graphEditorRuntimeResult,null,2))]) : null,
+      state.graphEditorNodeRuntimeResult ? el('details', { open:false }, [el('summary', {}, `Selected node runtime result`), el('pre', { class:'log compact' }, JSON.stringify(state.graphEditorNodeRuntimeResult,null,2))]) : null,
+      el('details', {}, [el('summary', {}, 'Mermaid preview text'), el('pre', { class:'log compact' }, selected?.mermaid || graphEditorMermaidLocal(graph))])
+    ]),
+    card('Saved Graphs', [
+      graphRows.length ? el('table', { class:'table' }, [el('thead', {}, el('tr', {}, ['Name','Nodes / Edges','Branch','Actions'].map(h=>el('th',{},h)))), el('tbody', {}, graphRows)]) : el('p', { class:'muted' }, 'No saved graphs yet.')
+    ]),
+    graphEditorNodePaletteCard(),
+    graphEditorFeatureSummaryCard(),
+    graphEditorEventConsoleCard(),
+    card('Recent Graph Runs', [
+      (state.graphEditorRuns || []).length ? el('table', { class:'table' }, [el('thead', {}, el('tr', {}, ['Graph','Dry','Status','Run Manifest'].map(h=>el('th',{},h)))), el('tbody', {}, (state.graphEditorRuns||[]).map(r=>el('tr', {}, [el('td', {}, r.graph_id || ''), el('td', {}, String(Boolean(r.dry_run))), el('td', {}, r.result_summary?.status || ''), el('td', { class:'path tiny' }, r.id || r.path || '')])))]) : el('p', { class:'muted' }, 'No graph runs yet.')
+    ])
+  ]);
+}
+
+async function refreshWorkflows() {
+  const [catalog, items, runs] = await Promise.all([
+    api('/api/workflows/catalog').catch(() => state.workflowCatalog),
+    api('/api/workflows').then(r => r.items || []).catch(() => state.workflowItems || []),
+    api('/api/workflows/runs').then(r => r.items || []).catch(() => state.workflowRuns || [])
+  ]);
+  state.workflowCatalog = catalog || state.workflowCatalog;
+  state.workflowItems = items || [];
+  state.workflowRuns = runs || [];
+  if (state.workflowSelectedId && !state.workflowSelected) {
+    state.workflowSelected = await api(`/api/workflows/${encodeURIComponent(state.workflowSelectedId)}`).catch(() => null);
+    state.workflowEditJson = state.workflowSelected ? JSON.stringify(state.workflowSelected, null, 2) : state.workflowEditJson;
+  }
+}
+function workflowSelectOptions() {
+  return [el('option', { value: '' }, 'Select workflow'), ...(state.workflowItems || []).map(w => el('option', { value: w.id }, `${w.name || w.id} · ${(w.steps || []).length} steps`))];
+}
+
+const DEFAULT_DATASET_GOAL_OPTIONS = [
+  { key:'style', label:'Style' },
+  { key:'character', label:'Character' },
+  { key:'character_style', label:'Character + Style / OC + style' },
+  { key:'concept', label:'Concept' },
+  { key:'ic_lora', label:'IC-LoRA / in-context' },
+  { key:'controlnet', label:'ControlNet conditioning' },
+  { key:'embedding', label:'Embedding / textual inversion' }
+];
+function workflowDatasetGoalRows() {
+  const rows = Array.isArray(state.datasetPipelineCatalog?.dataset_goals) && state.datasetPipelineCatalog.dataset_goals.length ? state.datasetPipelineCatalog.dataset_goals : DEFAULT_DATASET_GOAL_OPTIONS;
+  const byKey = new Map();
+  [...rows, ...DEFAULT_DATASET_GOAL_OPTIONS].forEach(row => { if (row && row.key && !byKey.has(row.key)) byKey.set(row.key, row); });
+  return [...byKey.values()];
+}
+function workflowTemplateOptions() {
+  const rows = state.workflowCatalog?.templates || [];
+  return rows.length ? rows.map(t => el('option', { value: t.key }, t.label || t.key)) : [el('option', { value: 'full_dataset_curation' }, 'Full automated dataset curation')];
+}
+function workflowModelOptions() {
+  const rows = sortedModels((state.models || []).filter(assistantCapableModelFilter));
+  return [el('option', { value: '' }, 'Use selected/default assistant'), ...rows.map(m => el('option', { value: m.name }, m.label || m.name))];
+}
+function workflowBodyFromUi() {
+  return {
+    name: state.workflowDraftName || 'Automated dataset curation workflow',
+    goal: state.workflowGoal || '',
+    instructions: state.workflowInstructions || '',
+    template_key: state.workflowTemplateKey || 'full_dataset_curation',
+    assistant_model: state.workflowAssistantModel || state.assistantModelSelection || 'dataset-assistant',
+    source_dataset_id: state.workflowSourceDatasetId ? Number(state.workflowSourceDatasetId) : null,
+    branch_name: state.workflowBranch || state.globalDatasetBranchName || 'default',
+    target_model: state.workflowTarget || state.datasetPipelineTarget || 'sdxl',
+    adapter_type: state.workflowAdapter || state.datasetPipelineAdapter || 'lora',
+    dataset_goal: state.workflowDatasetGoal || state.datasetPipelineGoal || 'character',
+    training_tool: state.workflowTrainingTool || state.datasetPipelineTrainingTool || 'generic',
+    automation_level: state.workflowAutomationLevel || 'guided'
+  };
+}
+function automationWorkflowsView() {
+  const catalog = state.workflowCatalog || { templates: [], step_catalog: [] };
+  const selected = state.workflowSelected;
+  const templateSel = el('select', { onchange:e=>state.workflowTemplateKey=e.target.value }, workflowTemplateOptions()); templateSel.value = state.workflowTemplateKey || 'full_dataset_curation';
+  const datasetSel = el('select', { onchange:e=>state.workflowSourceDatasetId=e.target.value }, datasetOptions()); datasetSel.value = state.workflowSourceDatasetId || '';
+  const modelSel = el('select', { onchange:e=>state.workflowAssistantModel=e.target.value }, workflowModelOptions()); modelSel.value = state.workflowAssistantModel || '';
+  const selectedSel = el('select', { onchange: async e => { state.workflowSelectedId = e.target.value; state.workflowSelected = e.target.value ? await api(`/api/workflows/${encodeURIComponent(e.target.value)}`) : null; state.workflowEditJson = state.workflowSelected ? JSON.stringify(state.workflowSelected, null, 2) : ''; render(); } }, workflowSelectOptions()); selectedSel.value = state.workflowSelectedId || '';
+  const targetOptions = (state.datasetPipelineCatalog?.targets || [{key:'sdxl',label:'SDXL'}]).map(x=>el('option',{value:x.key},x.label||x.key));
+  const adapterOptions = (state.datasetPipelineCatalog?.adapter_types || [{key:'lora',label:'LoRA'}]).map(x=>el('option',{value:x.key},x.label||x.key));
+  const goalOptions = workflowDatasetGoalRows().map(x=>el('option',{value:x.key},x.label||x.key));
+  const targetSel = el('select', { onchange:e=>state.workflowTarget=e.target.value }, targetOptions); targetSel.value = state.workflowTarget || 'sdxl';
+  const adapterSel = el('select', { onchange:e=>state.workflowAdapter=e.target.value }, adapterOptions); adapterSel.value = state.workflowAdapter || 'lora';
+  const goalSel = el('select', { onchange:e=>state.workflowDatasetGoal=e.target.value }, goalOptions); goalSel.value = state.workflowDatasetGoal || 'character';
+  const automationSel = el('select', { onchange:e=>state.workflowAutomationLevel=e.target.value }, [
+    ['manual','Manual: workflow as checklist'], ['guided','Guided: safe steps automated'], ['supervised_auto','Supervised auto: run until approval gates'], ['full_auto_with_approval_gates','Full auto with approval gates']
+  ].map(([v,l])=>el('option',{value:v},l))); automationSel.value = state.workflowAutomationLevel || 'guided';
+  const useModel = el('input', { type:'checkbox', checked:Boolean(state.workflowUseModelPlanning), onchange:e=>state.workflowUseModelPlanning=e.target.checked });
+  const approve = el('input', { type:'checkbox', checked:Boolean(state.workflowApproveUnsafe), onchange:e=>state.workflowApproveUnsafe=e.target.checked });
+  const dry = el('input', { type:'checkbox', checked:state.workflowRunDry !== false, onchange:e=>state.workflowRunDry=e.target.checked });
+  const stopGate = el('input', { type:'checkbox', checked:state.workflowStopOnApproval !== false, onchange:e=>state.workflowStopOnApproval=e.target.checked });
+  const stepRows = (catalog.step_catalog || []).map(s => el('tr', {}, [el('td', {}, s.type), el('td', {}, s.label || ''), el('td', {}, s.category || ''), el('td', {}, s.safe_to_auto_run ? 'yes' : 'approval'), el('td', {}, s.description || '')]));
+  const workflowRows = (state.workflowItems || []).map(w => el('tr', {}, [
+    el('td', {}, w.name || w.id), el('td', {}, w.target_model || ''), el('td', {}, w.dataset_goal || ''), el('td', {}, (w.steps || []).length),
+    el('td', {}, [
+      el('button', { class:'secondary small', onclick:async()=>{state.workflowSelectedId=w.id; state.workflowSelected=await api(`/api/workflows/${encodeURIComponent(w.id)}`); state.workflowEditJson=JSON.stringify(state.workflowSelected,null,2); graphEditorRenderCanvasNow();}}, 'Open'),
+      el('button', { class:'danger small', onclick:async()=>{if(!confirm('Delete this workflow?'))return; await api(`/api/workflows/${encodeURIComponent(w.id)}`, {method:'DELETE'}); state.workflowSelectedId=''; state.workflowSelected=null; state.workflowEditJson=''; await refreshWorkflows(); render();}}, 'Delete')
+    ])
+  ]));
+  return el('div', { class:'grid' }, [
+    card('Automation Workflows: user/model/co-edited curation pipelines', [
+      el('p', { class:'muted' }, 'Create editable workflows that can automate downloading, global-dataset linking, labeling, character-reference pruning, augmentation/upscaling variants, regularization planning, readiness checks, export, and trainer/tool handoff. The workflow JSON can be written by the user, drafted by the selected assistant model, or edited cooperatively.'),
+      el('div', { class:'row wrap' }, [
+        el('label', {}, ['Template ', templateSel]), el('label', {}, ['Dataset ', datasetSel]), el('label', {}, ['Assistant ', modelSel]), el('label', {}, ['Automation ', automationSel])
+      ]),
+      el('div', { class:'row wrap' }, [
+        el('input', { value: state.workflowDraftName || '', placeholder:'Workflow name', style:'min-width:300px', oninput:e=>state.workflowDraftName=e.target.value }),
+        el('input', { value: state.workflowBranch || '', placeholder:'Branch name', oninput:e=>state.workflowBranch=e.target.value }),
+        el('label', {}, ['Target ', targetSel]), el('label', {}, ['Adapter ', adapterSel]), el('label', {}, ['Goal ', goalSel])
+      ]),
+      el('textarea', { rows:'3', style:'width:100%', placeholder:'Goal: e.g. prepare a character LoRA dataset, prune non-character images, create headshot crops, clean captions, export for Kohya/OneTrainer.', oninput:e=>state.workflowGoal=e.target.value }, state.workflowGoal || ''),
+      el('textarea', { rows:'4', style:'width:100%', placeholder:'Extra instructions for the assistant/workflow designer. Include quality criteria, trigger-token policy, allowed augmentations, export/trainer needs, remote worker preferences, etc.', oninput:e=>state.workflowInstructions=e.target.value }, state.workflowInstructions || ''),
+      el('div', { class:'row wrap' }, [
+        el('label', {}, [useModel, ' Ask selected assistant model to draft/refine workflow JSON']),
+        el('button', { class:'secondary', onclick:async()=>{await refreshWorkflows(); toast('Workflow catalog refreshed'); render();}}, 'Refresh'),
+        el('button', { class:'primary', onclick:async()=>{try{const r=await api('/api/workflows', {method:'POST', body:workflowBodyFromUi()}); state.workflowSelected=r; state.workflowSelectedId=r.id; state.workflowEditJson=JSON.stringify(r,null,2); await refreshWorkflows(); toast('Workflow created'); render();}catch(err){toast(err.message,false);}}}, 'Create From Template'),
+        el('button', { class:'primary', onclick:async()=>{try{const r=await api('/api/workflows/plan', {method:'POST', body:{...workflowBodyFromUi(), use_model:Boolean(state.workflowUseModelPlanning)}}); state.workflowPlanOutput=r; state.workflowSelected=r.workflow; state.workflowSelectedId=r.workflow?.id || ''; state.workflowEditJson=state.workflowSelected ? JSON.stringify(state.workflowSelected,null,2) : state.workflowEditJson; await refreshWorkflows(); toast('Workflow plan generated'); render();}catch(err){toast(err.message,false);}}}, 'Generate Workflow Plan'),
+        el('button', { class:'secondary', onclick:()=>setTab('Dataset Pipeline') }, 'Open Dataset Pipeline')
+      ])
+    ]),
+    card('Saved Workflows', [
+      el('div', { class:'row wrap' }, [selectedSel]),
+      workflowRows.length ? el('table', {}, [el('thead', {}, el('tr', {}, ['Name','Target','Goal','Steps','Actions'].map(h=>el('th',{},h)))), el('tbody', {}, workflowRows)]) : el('p', { class:'muted' }, 'No saved workflows yet.')
+    ]),
+    selected ? card('Workflow JSON Editor', [
+      el('p', { class:'muted tiny' }, 'This is the actual workflow representation. Users can edit it directly; assistant-generated workflows use the same JSON. Unsafe/expensive steps should keep requires_approval=true.'),
+      el('textarea', { rows:'18', style:'width:100%;font-family:monospace', oninput:e=>state.workflowEditJson=e.target.value }, state.workflowEditJson || JSON.stringify(selected,null,2)),
+      el('div', { class:'row wrap' }, [
+        el('button', { class:'secondary', onclick:async()=>{try{const wf=JSON.parse(state.workflowEditJson||'{}'); const saved=await api(`/api/workflows/${encodeURIComponent(selected.id)}`, {method:'PUT', body:{workflow:wf}}); state.workflowSelected=saved; state.workflowEditJson=JSON.stringify(saved,null,2); await refreshWorkflows(); toast('Workflow JSON saved'); render();}catch(err){toast(err.message,false);}}}, 'Save JSON'),
+        el('button', { class:'secondary', onclick:async()=>{try{state.workflowValidation=await api(`/api/workflows/${encodeURIComponent(selected.id)}/validate`, {method:'POST', body:{}}); toast(state.workflowValidation.ok?'Workflow valid':'Workflow has validation errors', state.workflowValidation.ok); render();}catch(err){toast(err.message,false);}}}, 'Validate'),
+        el('button', { class:'secondary', onclick:async()=>{try{state.workflowRunOutput=await api(`/api/workflows/${encodeURIComponent(selected.id)}/dry-run`, {method:'POST', body:{dry_run:true}}); toast('Workflow dry-run complete'); render();}catch(err){toast(err.message,false);}}}, 'Dry-Run Now'),
+        el('label', {}, [dry, ' dry-run job']), el('label', {}, [approve, ' approve unsafe steps']), el('label', {}, [stopGate, ' stop at approval gate']),
+        el('button', { class:'danger', onclick:async()=>{try{const r=await api(`/api/workflows/${encodeURIComponent(selected.id)}/run`, {method:'POST', body:{dry_run:Boolean(state.workflowRunDry), approve_unsafe_steps:Boolean(state.workflowApproveUnsafe), stop_on_approval_gate:state.workflowStopOnApproval !== false}}); state.jobs=await api('/api/jobs'); toast(`Workflow job ${r.job_id} queued`); setTab('Jobs');}catch(err){toast(err.message,false);}}}, 'Queue Workflow Run'),
+        el('button', { class:'secondary', onclick:async()=>{try{const instructions=prompt('Refine workflow instructions:', state.workflowInstructions || '') || ''; if(!instructions)return; const r=await api(`/api/workflows/${encodeURIComponent(selected.id)}/refine`, {method:'POST', body:{instructions, use_model:Boolean(state.workflowUseModelPlanning), assistant_model:state.workflowAssistantModel || null}}); state.workflowPlanOutput=r; state.workflowSelected=r.workflow; state.workflowEditJson=JSON.stringify(r.workflow,null,2); await refreshWorkflows(); toast('Workflow refined'); render();}catch(err){toast(err.message,false);}}}, 'Refine With Instructions')
+      ]),
+      state.workflowValidation ? el('pre', { class:'log compact' }, JSON.stringify(state.workflowValidation,null,2)) : null
+    ]) : null,
+    card('Last Plan / Run Output', [
+      state.workflowPlanOutput ? el('details', { open:false }, [el('summary', {}, 'Last generated/refined workflow plan'), el('pre', { class:'log compact' }, JSON.stringify(state.workflowPlanOutput,null,2))]) : null,
+      state.workflowRunOutput ? el('details', { open:true }, [el('summary', {}, `Last dry-run/run · ${state.workflowRunOutput.status || ''}`), el('pre', { class:'log compact' }, JSON.stringify(state.workflowRunOutput,null,2))]) : el('p', { class:'muted' }, 'No workflow run output yet.')
+    ]),
+    card('Step Catalog', [
+      el('p', { class:'muted tiny' }, 'These are the workflow operations available to the GUI and assistant model. Unsafe steps are allowed, but should require explicit user approval before execution.'),
+      el('table', {}, [el('thead', {}, el('tr', {}, ['Type','Label','Category','Auto-run','Description'].map(h=>el('th',{},h)))), el('tbody', {}, stepRows)])
+    ]),
+    card('Recent Workflow Runs', [
+      (state.workflowRuns || []).length ? el('table', {}, [el('thead', {}, el('tr', {}, ['Run','Workflow','Status','Dry','Manifest'].map(h=>el('th',{},h)))), el('tbody', {}, (state.workflowRuns||[]).map(r=>el('tr', {}, [el('td', {}, r.run_id || ''), el('td', {}, r.workflow_name || r.workflow_id || ''), el('td', {}, r.status || ''), el('td', {}, String(Boolean(r.dry_run))), el('td', {}, el('code', {}, r.manifest_path || ''))])))]) : el('p', { class:'muted' }, 'No workflow runs yet.')
+    ])
+  ]);
+}
+
+function datasetPipelineView() {
+  const catalog = state.datasetPipelineCatalog || { targets: [], adapter_types: [], dataset_goals: [], training_tool_interfaces: [], pipeline_stages: [] };
+  const branches = state.globalDatasetBranches || [];
+  const branchName = state.datasetPipelineBranch || state.globalDatasetBranchName || state.settings?.global_dataset_default_branch || 'default';
+  const targetOptions = (catalog.targets || []).length ? catalog.targets : [{ key:'sdxl', label:'SDXL' }, { key:'illustrious', label:'Illustrious' }, { key:'noobai', label:'NoobAI' }, { key:'wan2_2', label:'Wan 2.2' }, { key:'ltx2_3', label:'LTX 2.3' }];
+  const adapterOptions = (catalog.adapter_types || []).length ? catalog.adapter_types : [{ key:'lora', label:'LoRA' }, { key:'ic_lora', label:'IC-LoRA' }, { key:'controlnet', label:'ControlNet' }, { key:'embedding', label:'Embedding' }];
+  const goalOptions = (catalog.dataset_goals || []).length ? catalog.dataset_goals : [{ key:'style', label:'Style' }, { key:'character', label:'Character' }, { key:'character_style', label:'Character + Style' }, { key:'concept', label:'Concept' }];
+  const toolOptions = [{ key:'generic', label:'Generic manifest' }, ...(catalog.training_tool_interfaces || [])];
+  const mkSelect = (value, rows, onchange) => { const sel = el('select', { onchange }, rows.map(row => el('option', { value: row.key }, row.label || row.key))); sel.value = value; return sel; };
+  const branchSelect = el('select', { onchange: e => { state.datasetPipelineBranch = e.target.value; state.globalDatasetBranchName = e.target.value; } }, [el('option', { value: branchName }, branchName), ...branches.filter(b => b.name !== branchName).map(b => el('option', { value: b.name }, `${b.name} · ${b.item_count || 0} items`))]); branchSelect.value = branchName;
+  const bodyBase = () => ({
+    target_model: state.datasetPipelineTarget || 'sdxl',
+    adapter_type: state.datasetPipelineAdapter || 'lora',
+    adapter_family: state.datasetPipelineAdapter || 'lora',
+    dataset_goal: state.datasetPipelineGoal || 'character',
+    trigger_token: state.datasetPipelineTrigger || '<trigger_token>',
+    style_trigger_token: state.datasetPipelineStyleTrigger || '<style_trigger>',
+    include_explicit_descriptor_policy: true,
+    additional_notes: state.datasetPipelineNotes || '',
+    branch_name: state.datasetPipelineBranch || branchName || 'default'
+  });
+  const metrics = state.datasetPipelineEval?.metrics || null;
+  const stages = state.datasetPipelinePlan?.stages || catalog.pipeline_stages || [];
+  return el('div', { class:'grid' }, [
+    card('Dataset Pipeline Builder', [
+      el('p', { class:'muted' }, 'Automates the prep layer before training: download/ingest planning, rule-driven labeling, quality gates, augmentation/upscale handoff, post-labeling, final selection, and export manifests. This tool prepares datasets and external-tool handoffs; it does not run model training itself.'),
+      el('div', { class:'row wrap' }, [
+        el('label', {}, ['Branch ', branchSelect]),
+        el('label', {}, ['Target ', mkSelect(state.datasetPipelineTarget || 'sdxl', targetOptions, e => { state.datasetPipelineTarget = e.target.value; })]),
+        el('label', {}, ['Adapter ', mkSelect(state.datasetPipelineAdapter || 'lora', adapterOptions, e => { state.datasetPipelineAdapter = e.target.value; })]),
+        el('label', {}, ['Goal ', mkSelect(state.datasetPipelineGoal || 'character', goalOptions, e => { state.datasetPipelineGoal = e.target.value; })])
+      ]),
+      el('div', { class:'row wrap' }, [
+        el('input', { value: state.datasetPipelineTrigger || '<trigger_token>', placeholder:'primary trigger token', oninput:e=>state.datasetPipelineTrigger=e.target.value }),
+        el('input', { value: state.datasetPipelineStyleTrigger || '<style_trigger>', placeholder:'style trigger token for OC+style', oninput:e=>state.datasetPipelineStyleTrigger=e.target.value }),
+        el('textarea', { rows:'2', placeholder:'extra project-specific rules/notes for the model applying the captions', style:'min-width:420px', oninput:e=>state.datasetPipelineNotes=e.target.value }, state.datasetPipelineNotes || '')
+      ]),
+      el('div', { class:'row wrap' }, [
+        el('button', { class:'secondary', onclick:async()=>{try{await refreshDatasetPipelineCatalog();toast('Pipeline catalog refreshed');render();}catch(err){toast(err.message,false);}}}, 'Refresh Catalog'),
+        el('button', { class:'secondary', onclick:async()=>{try{state.datasetPipelineRules=await api('/api/dataset-pipeline/rules',{method:'POST',body:bodyBase()});toast('Rules packet created');render();}catch(err){toast(err.message,false);}}}, 'Build Caption/Tag Rules'),
+        el('button', { class:'secondary', onclick:async()=>{try{state.datasetPipelinePlan=await api('/api/dataset-pipeline/plan',{method:'POST',body:bodyBase()});toast('Pipeline plan created');render();}catch(err){toast(err.message,false);}}}, 'Create Pipeline Plan'),
+        el('button', { class:'primary', onclick:async()=>{try{state.datasetPipelineEval=await api('/api/dataset-pipeline/evaluate-branch',{method:'POST',body:bodyBase()});toast('Branch readiness evaluated');render();}catch(err){toast(err.message,false);}}}, 'Evaluate Branch Readiness'),
+        el('button', { class:'secondary', onclick:async()=>{try{state.datasetPipelinePrompt=await api('/api/pipeline-prep/build-prompt',{method:'POST',body:{...bodyBase(),max_items:40}});toast('Model/VLM prompt built');render();}catch(err){toast(err.message,false);}}}, 'Build Model/VLM Prompt'),
+        el('button', { class:'secondary', onclick:async()=>{try{state.datasetPipelineApply=await api('/api/pipeline-prep/apply-rules-now',{method:'POST',body:{...bodyBase(),dry_run:true,use_model:false}});toast('Dry-run label cleanup complete');render();}catch(err){toast(err.message,false);}}}, 'Dry-Run Label Rules'),
+        el('button', { class:'danger', onclick:async()=>{if(!confirm('Apply deterministic label-rule cleanup to branch sidecars? Global originals will not be modified.'))return;try{state.datasetPipelineApply=await api('/api/pipeline-prep/apply-rules',{method:'POST',body:{...bodyBase(),dry_run:false,use_model:false}});toast('Queued branch label-rule application');render();}catch(err){toast(err.message,false);}}}, 'Apply Rules to Branch'),
+        el('button', { class:'secondary', onclick:async()=>{try{state.datasetPipelineAugPlan=await api('/api/pipeline-prep/augmentation-plan',{method:'POST',body:{...bodyBase(),max_items:200,dry_run:true}});toast('LoRA augmentation plan created');render();}catch(err){toast(err.message,false);}}}, 'Plan LoRA Augmentations'),
+        el('button', { class:'danger', onclick:async()=>{if(!confirm('Create branch-local augmentation variants? Global originals will not be modified.'))return;try{state.datasetPipelineAugPlan=await api('/api/pipeline-prep/apply-augmentations',{method:'POST',body:{...bodyBase(),max_items:200,dry_run:false}});toast('Queued branch-local augmentation variants');render();}catch(err){toast(err.message,false);}}}, 'Create Branch Variants'),
+        el('button', { class:'secondary', onclick:async()=>{try{state.datasetPipelineRegPlan=await api('/api/pipeline-prep/regularization-plan',{method:'POST',body:{...bodyBase()}});toast('Regularization guidance built');render();}catch(err){toast(err.message,false);}}}, 'Regularization Plan')
+      ])
+    ]),
+    card('Stage Plan', [
+      stages.length ? el('table', {}, [el('thead', {}, el('tr', {}, ['Stage','Description','Outputs'].map(h=>el('th',{},h)))), el('tbody', {}, stages.map(st => el('tr', {}, [el('td', {}, st.label || st.key), el('td', {}, st.description || st.goal || ''), el('td', {}, Array.isArray(st.outputs) ? st.outputs.join(', ') : '')])))]) : el('p', { class:'muted' }, 'Create a plan or refresh the catalog to show stages.')
+    ]),
+    card('Rules for LLM/VLM/GLM Labeling', [
+      state.datasetPipelineRules ? el('div', {}, [
+        el('p', { class:'muted tiny' }, `Rules path: ${state.datasetPipelineRules.rules_path || '(runtime packet only)'}`),
+        el('pre', { class:'log compact' }, JSON.stringify(state.datasetPipelineRules, null, 2))
+      ]) : el('p', { class:'muted' }, 'Build rules to create a model-readable packet for local/cloud models that will rewrite or validate tags/captions.')
+    ]),
+    card('LoRA Augmentation and Regularization Automation', [
+      el('p', { class:'muted tiny' }, 'Plans branch-local variants based on LoRA type/purpose. Character and OC+style branches get headshot/upper-body crops; style/concept/control/embedding branches get different presets. Originals in the global dataset are not modified.'),
+      state.datasetPipelineAugPlan ? el('details', { open:true }, [el('summary', {}, `Augmentation plan/result · ${state.datasetPipelineAugPlan.planned_count || state.datasetPipelineAugPlan.created_count || 0}`), el('pre', { class:'log compact' }, JSON.stringify(state.datasetPipelineAugPlan, null, 2))]) : el('p', { class:'muted tiny' }, 'No augmentation plan yet.'),
+      state.datasetPipelineRegPlan ? el('details', { open:false }, [el('summary', {}, 'Regularization policy'), el('pre', { class:'log compact' }, JSON.stringify(state.datasetPipelineRegPlan, null, 2))]) : null
+    ]),
+    card('Model/VLM Prompt and Rule Application', [
+      el('p', { class:'muted tiny' }, 'The prompt packet is meant for a selected local/cloud model. Deterministic Apply Rules edits only branch sidecars; global originals remain untouched.'),
+      state.datasetPipelinePrompt ? el('details', { open:false }, [el('summary', {}, `Prompt packet · ${state.datasetPipelinePrompt.items_included || 0} item(s)`), el('textarea', { rows:'12', style:'width:100%;font-family:monospace' }, state.datasetPipelinePrompt.prompt || JSON.stringify(state.datasetPipelinePrompt, null, 2))]) : null,
+      state.datasetPipelineApply ? el('details', { open:true }, [el('summary', {}, `Last rule application · ${state.datasetPipelineApply.dry_run ? 'dry-run' : 'applied/queued'}`), el('pre', { class:'log compact' }, JSON.stringify(state.datasetPipelineApply, null, 2))]) : el('p', { class:'muted tiny' }, 'No rule application has run yet.')
+    ]),
+    card('Readiness Metrics', [
+      metrics ? el('div', {}, [
+        el('div', { class:'grid four' }, [
+          el('div', { class:'stat' }, [el('span', {}, 'Items'), el('strong', {}, metrics.item_count ?? 0)]),
+          el('div', { class:'stat' }, [el('span', {}, 'Trigger coverage'), el('strong', {}, metrics.trigger_coverage == null ? 'n/a' : `${Math.round(metrics.trigger_coverage * 100)}%`)]),
+          el('div', { class:'stat' }, [el('span', {}, 'Needs review'), el('strong', {}, metrics.manual_review_count ?? 0)]),
+          el('div', { class:'stat' }, [el('span', {}, 'Unique tags'), el('strong', {}, metrics.unique_tag_count ?? 0)])
+        ]),
+        (state.datasetPipelineEval.recommendations || []).length ? el('ul', {}, state.datasetPipelineEval.recommendations.map(x => el('li', {}, x))) : null,
+        el('details', {}, [el('summary', {}, 'Full readiness JSON'), el('pre', { class:'log compact' }, JSON.stringify(state.datasetPipelineEval, null, 2))])
+      ]) : el('p', { class:'muted' }, 'No readiness result yet.')
+    ]),
+    card('Export / External Training Tool Handoff', [
+      el('p', { class:'muted' }, 'Exports branch configs, editable sidecar copies, and optional media copies/hardlinks/symlinks. Training remains in external tools such as Kohya, OneTrainer, Diffusers scripts, LTX Trainer, ComfyUI nodes, or cloud training services.'),
+      el('div', { class:'row wrap' }, [
+        el('label', {}, ['Training tool ', mkSelect(state.datasetPipelineTrainingTool || 'generic', toolOptions, e => { state.datasetPipelineTrainingTool = e.target.value; })]),
+        (()=>{const sel=el('select',{onchange:e=>state.datasetPipelineLinkMode=e.target.value},['reference','copy','hardlink','symlink'].map(x=>el('option',{value:x},x)));sel.value=state.datasetPipelineLinkMode||'reference';return sel;})(),
+        el('label', {}, [el('input', { type:'checkbox', checked: Boolean(state.datasetPipelineIncludeMedia), onchange:e=>state.datasetPipelineIncludeMedia=e.target.checked }), ' include/media materialize files']),
+        el('button', { class:'primary', onclick:async()=>{try{state.datasetPipelineExport=await api('/api/dataset-pipeline/export-branch',{method:'POST',body:{...bodyBase(),training_tool:state.datasetPipelineTrainingTool||'generic',include_media:Boolean(state.datasetPipelineIncludeMedia),link_mode:state.datasetPipelineLinkMode||'reference'}});toast('Training export manifest created');render();}catch(err){toast(err.message,false);}}}, 'Export Branch Manifest'),
+        el('button', { class:'secondary', disabled: !state.datasetPipelineExport?.export_dir, onclick:async()=>{try{state.datasetPipelineExport.handoff=await api('/api/dataset-pipeline/trainer-handoff',{method:'POST',body:{training_tool:state.datasetPipelineTrainingTool||'generic',export_dir:state.datasetPipelineExport?.export_dir||''}});toast('Trainer handoff manifest created');render();}catch(err){toast(err.message,false);}}}, 'Create Trainer Handoff')
+      ]),
+      state.datasetPipelineExport ? el('pre', { class:'log compact' }, JSON.stringify(state.datasetPipelineExport, null, 2)) : el('p', { class:'muted tiny' }, 'No export created yet.')
+    ]),
+    card('3D Print / Slicer Handoff', [
+      el('p', { class:'muted' }, 'Package generated/imported 3D assets for user-approved conversion and slicing. The package is designed for Blender/MeshLab/ZBrush cleanup followed by PrusaSlicer, OrcaSlicer, Cura, Bambu Studio, or another slicer.'),
+      el('div', { class:'row wrap' }, [
+        el('input', { value: state.printAssetPath || state.threeDSelectedAsset || '', placeholder:'3D asset path (.glb/.obj/.fbx/.stl/.3mf)', style:'min-width:420px', oninput:e=>state.printAssetPath=e.target.value }),
+        el('input', { value: state.printPackageName || '', placeholder:'optional package name', oninput:e=>state.printPackageName=e.target.value }),
+        el('input', { value: state.printTargetFormats || 'stl, 3mf', placeholder:'target formats', oninput:e=>state.printTargetFormats=e.target.value })
+      ]),
+      el('div', { class:'row wrap' }, [
+        (()=>{const sel=el('select',{onchange:e=>state.printSlicer=e.target.value},['prusaslicer','orcaslicer','cura','bambu_studio','blender','meshlab','generic'].map(x=>el('option',{value:x},x)));sel.value=state.printSlicer||'prusaslicer';return sel;})(),
+        (()=>{const sel=el('select',{onchange:e=>state.printUnitScale=e.target.value},['millimeters','centimeters','meters','inches','asset_native'].map(x=>el('option',{value:x},x)));sel.value=state.printUnitScale||'millimeters';return sel;})(),
+        (()=>{const sel=el('select',{onchange:e=>state.printRepairPolicy=e.target.value},['make_manifold_if_needed','manual_review_only','decimate_and_make_manifold','none'].map(x=>el('option',{value:x},x)));sel.value=state.printRepairPolicy||'make_manifold_if_needed';return sel;})(),
+        el('button', { class:'primary', onclick:async()=>{try{const formats=parseTagString(state.printTargetFormats||'stl,3mf');state.datasetPipelinePrintPackage=await api('/api/dataset-pipeline/3d-print/package',{method:'POST',body:{asset_path:state.printAssetPath||state.threeDSelectedAsset||'',package_name:state.printPackageName||'',target_formats:formats.length?formats:['stl','3mf'],slicer:state.printSlicer||'prusaslicer',unit_scale:state.printUnitScale||'millimeters',repair_policy:state.printRepairPolicy||'make_manifold_if_needed'}});toast('3D print package created');render();}catch(err){toast(err.message,false);}}}, 'Create Print Package')
+      ]),
+      state.datasetPipelinePrintPackage ? el('pre', { class:'log compact' }, JSON.stringify(state.datasetPipelinePrintPackage, null, 2)) : el('details', {}, [el('summary', {}, 'Known print/slicer tools'), el('pre', { class:'log compact' }, JSON.stringify(state.datasetPipelinePrintTools || {}, null, 2))])
+    ])
+  ]);
+}
+
+function globalDatasetView() {
+  const s = state.globalDatasetStatus || {};
+  const branches = state.globalDatasetBranches || [];
+  const assets = state.globalDatasetAssets || { items: [], total: 0 };
+  const q = state.globalDatasetQuery || '';
+  const source = state.globalDatasetSource || '';
+  const tags = state.globalDatasetTags || '';
+  const branchName = state.globalDatasetBranchName || state.settings?.global_dataset_default_branch || 'default';
+  const rootValue = state.globalDatasetRootDraft ?? (s.root || state.settings?.global_dataset_root || '');
+  const assetRows = (assets.items || []).map(a => el('tr', {}, [
+    el('td', {}, a.id),
+    el('td', {}, [el('code', {}, String(a.sha256 || '').slice(0, 16))]),
+    el('td', {}, a.media_type || 'unknown'),
+    el('td', {}, a.source_site || ''),
+    el('td', {}, a.source_post_id || ''),
+    el('td', {}, a.original_filename || ''),
+    el('td', {}, a.variant_count || 0),
+    el('td', {}, [
+      el('button', { class: 'secondary', onclick: async () => { state.globalDatasetSelectedAsset = await api(`/api/global-dataset/assets/${a.id}`); render(); } }, 'Inspect'),
+      el('button', { class: 'secondary', onclick: async () => { await api('/api/global-dataset/branches/link', { method: 'POST', body: { branch_name: branchName || 'default', asset_ids: [a.id], copy_sidecars: true, note: 'linked from Global Dataset tab' } }); await refreshGlobalDataset(); toast('Linked asset to branch'); render(); } }, 'Link to Branch')
+    ])
+  ]));
+  const detail = state.globalDatasetSelectedAsset;
+  return el('div', {}, [
+    card('Global Dataset / Originals + Branches', [
+      el('p', { class: 'muted' }, 'Stores original media once by SHA-256, then uses branch manifests and editable sidecar copies for model-specific datasets. Augmented media is tracked as a branch variant of the original asset.'),
+      el('div', { class: 'grid four' }, [
+        el('div', { class: 'stat' }, [el('span', {}, 'Original assets'), el('strong', {}, s.asset_count ?? 0)]),
+        el('div', { class: 'stat' }, [el('span', {}, 'Branches'), el('strong', {}, s.branch_count ?? 0)]),
+        el('div', { class: 'stat' }, [el('span', {}, 'Variants'), el('strong', {}, s.variant_count ?? 0)]),
+        el('div', { class: 'stat' }, [el('span', {}, 'Source mappings'), el('strong', {}, s.source_mapping_count ?? 0)])
+      ]),
+      el('div', { class: 'row wrap' }, [
+        el('label', {}, [el('input', { type: 'checkbox', checked: Boolean(s.enabled ?? true), onchange: e => { state.globalDatasetEnabledDraft = e.target.checked; } }), ' Enabled']),
+        el('label', {}, [el('input', { type: 'checkbox', checked: Boolean(s.auto_register_downloads ?? true), onchange: e => { state.globalDatasetAutoRegisterDraft = e.target.checked; } }), ' Auto-register downloader originals']),
+        el('label', {}, [el('input', { type: 'checkbox', checked: Boolean(s.auto_link_downloads_to_branch ?? false), onchange: e => { state.globalDatasetAutoLinkDraft = e.target.checked; } }), ' Auto-link downloads to default branch'])
+      ]),
+      el('div', { class: 'row wrap' }, [
+        el('input', { value: rootValue, placeholder: 'Global dataset root folder', style: 'min-width:420px', oninput: e => { state.globalDatasetRootDraft = e.target.value; } }),
+        el('input', { value: branchName, placeholder: 'Default branch name', oninput: e => { state.globalDatasetBranchName = e.target.value; } }),
+        el('select', { value: s.ingest_copy_mode || 'copy', onchange: e => { state.globalDatasetCopyMode = e.target.value; } }, [
+          el('option', { value: 'copy' }, 'Ingest originals by copy'),
+          el('option', { value: 'hardlink' }, 'Reuse by hardlink when possible'),
+          el('option', { value: 'symlink' }, 'Reuse by symlink when possible'),
+          el('option', { value: 'reference' }, 'Reference existing file paths')
+        ]),
+        el('button', { onclick: async () => { await api('/api/global-dataset/settings', { method: 'PUT', body: { enabled: state.globalDatasetEnabledDraft ?? Boolean(s.enabled ?? true), root_path: state.globalDatasetRootDraft ?? null, auto_register_downloads: state.globalDatasetAutoRegisterDraft ?? Boolean(s.auto_register_downloads ?? true), auto_link_downloads_to_branch: state.globalDatasetAutoLinkDraft ?? Boolean(s.auto_link_downloads_to_branch ?? false), default_branch: state.globalDatasetBranchName || 'default', ingest_copy_mode: state.globalDatasetCopyMode || s.ingest_copy_mode || 'copy' } }); await refreshGlobalDataset(); toast('Global dataset settings saved'); render(); } }, 'Save Global Dataset Settings'),
+        el('button', { class: 'secondary', onclick: async () => { await refreshGlobalDataset(); render(); } }, 'Refresh')
+      ]),
+      el('p', { class: 'muted tiny' }, `Root: ${s.root || '(not initialized)'}`)
+    ]),
+    card('Ingest / Register Originals', [
+      el('div', { class: 'row wrap' }, [
+        el('input', { value: state.globalDatasetRegisterPath || '', placeholder: 'Single file path to register', style: 'min-width:420px', oninput: e => { state.globalDatasetRegisterPath = e.target.value; } }),
+        el('input', { value: state.globalDatasetRegisterTags || '', placeholder: 'Optional tags, comma-separated', style: 'min-width:260px', oninput: e => { state.globalDatasetRegisterTags = e.target.value; } }),
+        el('button', { onclick: async () => { const r = await api('/api/global-dataset/register-file', { method: 'POST', body: { path: state.globalDatasetRegisterPath || '', tags: String(state.globalDatasetRegisterTags || '').split(',').map(x => x.trim()).filter(Boolean), source: 'manual', copy_to_store: true } }); state.globalDatasetSelectedAsset = r; await refreshGlobalDataset(); toast(r.duplicate_avoided ? 'Existing original reused' : 'Original registered'); render(); } }, 'Register File')
+      ]),
+      el('div', { class: 'row wrap' }, [
+        el('input', { value: state.globalDatasetIngestFolder || '', placeholder: 'Folder path to ingest', style: 'min-width:420px', oninput: e => { state.globalDatasetIngestFolder = e.target.value; } }),
+        el('label', {}, [el('input', { type: 'checkbox', checked: state.globalDatasetIngestCreateBranch || false, onchange: e => { state.globalDatasetIngestCreateBranch = e.target.checked; } }), ' Link folder ingest to branch']),
+        el('button', { onclick: async () => { const r = await api('/api/global-dataset/ingest-folder', { method: 'POST', body: { root_path: state.globalDatasetIngestFolder || '', recursive: true, copy_to_store: true, create_branch: Boolean(state.globalDatasetIngestCreateBranch), branch_name: branchName || 'default', read_sidecars: true } }); toast(`Queued global ingest job ${r.job_id}`); state.jobs = await api('/api/jobs'); render(); } }, 'Queue Folder Ingest')
+      ])
+    ]),
+    card('Branches / Dataset Config Layer', [
+      el('div', { class: 'row wrap' }, [
+        el('input', { value: branchName, placeholder: 'Branch name', oninput: e => { state.globalDatasetBranchName = e.target.value; } }),
+        el('input', { value: state.globalDatasetBranchPurpose || '', placeholder: 'Purpose, e.g. character-lora-v1', style: 'min-width:280px', oninput: e => { state.globalDatasetBranchPurpose = e.target.value; } }),
+        el('button', { onclick: async () => { await api('/api/global-dataset/branches', { method: 'POST', body: { name: branchName || 'default', purpose: state.globalDatasetBranchPurpose || '', settings: {} } }); await refreshGlobalDataset(); toast('Branch ready'); render(); } }, 'Create / Update Branch')
+      ]),
+      el('table', {}, [el('thead', {}, el('tr', {}, ['ID','Name','Items','Variants','Root'].map(h => el('th', {}, h)))), el('tbody', {}, branches.map(b => el('tr', {}, [el('td', {}, b.id), el('td', {}, b.name), el('td', {}, b.item_count || 0), el('td', {}, b.variant_count || 0), el('td', {}, el('code', {}, b.root_path || ''))])))])
+    ]),
+    card('Search Global Originals', [
+      el('div', { class: 'row wrap' }, [
+        el('input', { value: q, placeholder: 'Search filename/path/post id/source URL', style: 'min-width:360px', oninput: e => { state.globalDatasetQuery = e.target.value; } }),
+        el('input', { value: source, placeholder: 'Source site, e.g. e621/danbooru', oninput: e => { state.globalDatasetSource = e.target.value; } }),
+        el('input', { value: tags, placeholder: 'Required tags, comma-separated', style: 'min-width:260px', oninput: e => { state.globalDatasetTags = e.target.value; } }),
+        el('button', { onclick: async () => { const p = new URLSearchParams(); if (state.globalDatasetQuery) p.set('q', state.globalDatasetQuery); if (state.globalDatasetSource) p.set('source_site', state.globalDatasetSource); if (state.globalDatasetTags) p.set('tags', state.globalDatasetTags); p.set('page_size','80'); state.globalDatasetAssets = await api(`/api/global-dataset/assets?${p.toString()}`); render(); } }, 'Search')
+      ]),
+      el('p', { class: 'muted tiny' }, `${assets.total || 0} original asset(s) matched. Branch edits only touch branch sidecars/configs, not the global original.`),
+      el('table', {}, [el('thead', {}, el('tr', {}, ['ID','SHA256','Type','Source','Post ID','Original filename','Variants','Actions'].map(h => el('th', {}, h)))), el('tbody', {}, assetRows)])
+    ]),
+    detail ? card('Selected Original Detail', [
+      el('div', { class: 'row wrap' }, [el('span', { class: 'badge' }, `Asset ${detail.id}`), el('span', { class: 'badge' }, detail.media_type || 'unknown'), el('span', { class: 'badge' }, `${(detail.variants || []).length} variant(s)`)]),
+      el('p', {}, [el('strong', {}, 'Path: '), el('code', {}, detail.path || '')]),
+      el('p', {}, [el('strong', {}, 'Tags: '), detail.tags?.length ? detail.tags.join(', ') : '(none)']),
+      el('details', {}, [el('summary', {}, 'Sources / branches / variants JSON'), el('pre', { class: 'log' }, JSON.stringify({ sources: detail.sources || [], branch_items: detail.branch_items || [], variants: detail.variants || [] }, null, 2))])
+    ]) : null
+  ]);
+}
+
+// legacy scroll test marker: if (!force && shouldSnapshot && recentUserScroll(1600)
 function render(shouldSnapshot = true, force = false) {
-  if (!force && shouldSnapshot && shouldDeferControlRender()) {
+  const hardForce = force === 'hard';
+  const softForce = Boolean(force) && !hardForce;
+  // Never replace the app shell while the user is actively scrolling or using a
+  // dropdown/select control. Automatic status refreshes often pass force=true;
+  // treat that as a soft force so polling cannot close open menus or snap nested
+  // model-tab scroll containers back to the top. Tab switches can still bypass
+  // this by passing shouldSnapshot=false, and rare explicit hard refreshes may
+  // pass force='hard'.
+  if (shouldSnapshot && !hardForce && typeof graphEditorHasActiveCanvasInteraction === 'function' && graphEditorHasActiveCanvasInteraction()) {
+    state.renderDeferredForEditing = false;
+    updateLiveStatusDom();
+    return false;
+  }
+  if (shouldSnapshot && !hardForce && recentUserScroll(1600) && state.pendingTabScrollRestore !== state.tab) {
     state.renderDeferredForEditing = true;
+    updateLiveStatusDom();
+    setTimeout(flushDeferredRenderWhenSafe, 750);
+    return false;
+  }
+  if (shouldSnapshot && !hardForce && shouldDeferControlRender()) {
+    state.renderDeferredForEditing = true;
+    updateLiveStatusDom();
+    setTimeout(flushDeferredRenderWhenSafe, 700);
     return false;
   }
   const tab = state.tab;
   const focusSnapshot = shouldSnapshot ? activeControlSnapshot(tab) : null;
   if (shouldSnapshot) {
     snapshotFormState(tab);
-    snapshotScrollState(tab);
+    snapshotScrollState(tab, { force: true });
   }
-  const views = { Dashboard: dashboard, Import: importView, Gallery: galleryView, 'Tag Editor': tagEditorView, 'Detection & Boxes': detectionEditorView, 'Segmentation & Masks': segmentationEditorView, 'Pose & 3D': poseEditorView, '3D Studio': threeDStudioView, '3D Viewport': threeDViewportView, 'ComfyUI Bridge': comfyBridgeView, FlexAvatar: flexAvatarView, 'Annotation Editor': detectionEditorView, Compare: compareView, 'Batch Tags': batchTagsView, 'Prediction Analytics': predictionAnalyticsView, 'Media Tools': mediaToolsView, 'Reference Finder': referenceFinderView, 'Source Browser': sourceBrowserView, Assistant: assistantView, Orchestrate: orchestrationView, Models: modelsView, Augment: augmentView, Downloads: downloadsView, Presets: presetsView, 'Tag Dictionaries': dictionaryView, Database: databaseView, 'Install Migration': migrationView, 'Code Assistant': codeAssistantView, 'Agent Tools': agentToolsView, 'Remote Devices': remoteDevicesView, 'MCP Tools': mcpToolsView, 'Future Modalities': futureModalitiesView, Settings: settingsView, 'Help & Workflows': helpWorkflowsView, Jobs: jobsView };
+  const views = { Dashboard: dashboard, Import: importView, Gallery: galleryView, 'Tag Editor': tagEditorView, 'Detection & Boxes': detectionEditorView, 'Segmentation & Masks': segmentationEditorView, 'Pose & 3D': poseEditorView, '3D Studio': threeDStudioView, '3D Viewport': threeDViewportView, 'ComfyUI Bridge': comfyBridgeView, FlexAvatar: flexAvatarView, 'Annotation Editor': detectionEditorView, Compare: compareView, 'Batch Tags': batchTagsView, 'Prediction Analytics': predictionAnalyticsView, 'Attention Visualizer': attentionVisualizerView, 'Media Tools': mediaToolsView, 'Reference Finder': referenceFinderView, 'Character Reference': characterReferenceView, 'Source Browser': sourceBrowserView, Assistant: assistantView, Orchestrate: orchestrationView, Models: modelsView, Augment: augmentView, Downloads: downloadsView, 'Global Dataset': globalDatasetView, 'Dataset Pipeline': datasetPipelineView, 'Multimodal Dataset Builder': multimodalDatasetBuilderView, 'Automation Workflows': automationWorkflowsView, 'Agentic Graph Editor': agenticGraphEditorView, 'Agentic Graph Chat': agenticGraphChatView, 'Agentic Workflow READMEs': agenticWorkflowReadmesView, Presets: presetsView, 'Tag Dictionaries': dictionaryView, Database: databaseView, 'Install Migration': migrationView, 'Code Assistant': codeAssistantView, 'Agent Tools': agentToolsView, 'Remote Devices': remoteDevicesView, 'MCP Tools': mcpToolsView, 'Future Modalities': futureModalitiesView, Settings: settingsView, 'Help & Workflows': helpWorkflowsView, Jobs: jobsView };
   try {
     document.getElementById('app').replaceChildren(shell((views[tab] || dashboard)()));
     if (typeof window !== 'undefined') window.__DCT_APP_RENDERED = true;
     restoreFormState(tab);
     restoreActiveControl(focusSnapshot, tab);
-    restoreScrollState(tab);
+    const tabSwitchRestore = state.pendingTabScrollRestore === tab;
+    if (hardForce || tabSwitchRestore || !recentUserScroll(900)) {
+      restoreScrollState(tab, { aggressive: hardForce || tabSwitchRestore });
+    }
+    restoreShellScrollState(null, { restoreMain: false });
+    if (tabSwitchRestore) state.pendingTabScrollRestore = null;
+    patchGlobalAssistantOverlays();
   } catch (err) {
     console.error(err);
     try {
@@ -8690,30 +14842,58 @@ function render(shouldSnapshot = true, force = false) {
       showFatalFrontendError(fatal, err);
     }
     restoreActiveControl(focusSnapshot, tab);
-    restoreScrollState(tab);
+    const tabSwitchRestore = state.pendingTabScrollRestore === tab;
+    if (hardForce || tabSwitchRestore || !recentUserScroll(900)) {
+      restoreScrollState(tab, { aggressive: hardForce || tabSwitchRestore });
+    }
+    restoreShellScrollState(null, { restoreMain: false });
+    if (tabSwitchRestore) state.pendingTabScrollRestore = null;
+    patchGlobalAssistantOverlays();
   }
 }
 
 async function boot() {
-  await refreshAll();
-  await Promise.all([loadMedia().catch(() => {}), loadDictionaryStatus().catch(() => {})]);
+  try {
+    await refreshEssentialState();
+  } catch (err) {
+    console.error('fast frontend boot failed; falling back to full refresh', err);
+    await refreshAll();
+  }
   render();
+  if (!state.globalAssistantOverlayTicker) state.globalAssistantOverlayTicker = setInterval(() => { try { patchGlobalAssistantOverlays(); patchContextBudgetPanels(); } catch (_) {} }, 850);
+  Promise.all([loadMedia({ force: true }).catch(() => {}), loadDictionaryStatus().catch(() => {})]).then(() => renderOrDeferForEditing());
+  refreshOptionalStateBackground({ renderAfter: true }).catch(err => {
+    console.warn('background frontend hydration failed', err);
+    state.frontendHydration = { ...(state.frontendHydration || {}), status: 'failed', error: err.message || String(err), message: 'Frontend catalog hydration failed', progress: Number(state.frontendHydration?.progress || 0), updated_at: new Date().toISOString() };
+    updateStartupProgressDom();
+  });
   state.lastCompletedModelJobIds = new Set((state.jobs || []).filter(isCompletedModelJob).map(j => j.id));
   setInterval(async () => {
-    const [jobs, modelStatuses] = await Promise.all([
+    try {
+    const [jobs, modelStatuses, startupStatus] = await Promise.all([
       api('/api/jobs').catch(() => state.jobs),
-      api('/api/models/status').catch(() => state.modelStatuses)
+      api('/api/models/status').catch(() => state.modelStatuses),
+      api('/api/system/startup-status').catch(() => state.startupStatus)
     ]);
+    state.startupStatus = startupStatus || state.startupStatus;
     const oldById = new Map((state.jobs || []).map(j => [j.id, j.status]));
     const completedModelJobs = (jobs || []).filter(j => isCompletedModelJob(j) && (oldById.get(j.id) !== j.status || !state.lastCompletedModelJobIds.has(j.id)));
     const completedDownloadLike = (jobs || []).filter(j => {
       const type = String(j.type || '');
       return j.status === 'completed' && oldById.get(j.id) !== j.status && (type.includes('download') || type.includes('tag_dictionary') || type.includes('db_export') || type.includes('migration'));
     });
+    const completedImportLike = (jobs || []).filter(j => {
+      const type = String(j.type || '');
+      return j.status === 'completed' && oldById.get(j.id) !== j.status && (type === 'dataset_import' || type === 'dataset_import_many');
+    });
     if (completedModelJobs.length) invalidateTagScoreCache();
+    if ((completedDownloadLike.length || completedImportLike.length) && ['Gallery','Tag Editor','Compare','Batch Tags','Prediction Analytics','Downloads','Import'].includes(state.tab)) {
+      await loadMedia({ force: true }).catch(() => null);
+      invalidateTagScoreCache();
+    }
     state.jobs = jobs;
     state.modelStatuses = modelStatuses || state.modelStatuses;
-    if (state.modelStatuses?.placement) state.modelResource = state.modelStatuses.placement;
+    syncCatalogLoadedStatusFromStatuses();
     const mediaRefreshed = await refreshMediaAfterCompletedModelJobs(completedModelJobs).catch(err => { console.warn('model media refresh failed', err); return false; });
     for (const job of completedModelJobs) state.lastCompletedModelJobIds.add(job.id);
     const modelRelatedTabs = ['Models', 'Tag Editor', 'Batch Tags', 'Compare', 'Assistant', 'Orchestrate', 'Jobs', 'Install Migration'];
@@ -8723,28 +14903,57 @@ async function boot() {
     });
     const shouldRefreshModelList = modelRelatedTabs.includes(state.tab) && (modelJobChanged || completedDownloadLike.length || Date.now() - Number(state.lastModelListRefreshAt || 0) > 12000);
     if (shouldRefreshModelList) {
-      const [models, assistantConfig, resource] = await Promise.all([
-        api('/api/models').catch(() => state.models || []),
-        api('/api/models/assistant-config').catch(() => state.assistantConfig),
-        api('/api/models/resource-status').catch(() => state.modelResource)
-      ]);
-      state.models = models || state.models || [];
-      state.assistantConfig = assistantConfig || state.assistantConfig;
-      state.modelResource = resource || state.modelResource;
-      state.lastModelListRefreshAt = Date.now();
+      await refreshModelsPanel({ force: Boolean(completedDownloadLike.length) }).catch(() => null);
     }
     updateLiveStatusDom();
     const jobsFingerprint = JSON.stringify((jobs || []).slice(0, 150).map(j => [j.id, j.type, j.status, Math.round(Number(j.progress || 0) * 100), j.message || '', Boolean(j.error)]));
-    const modelFingerprint = JSON.stringify({ aggregate: state.modelStatuses?.aggregate || {}, loaded: (state.models || []).filter(m => m.loaded).map(m => m.name).sort(), downloaded: (state.models || []).filter(m => m.downloaded).map(m => m.name).sort(), selected: state.modelRunSelection || '', tagSelection: state.tagSelectionModelSelection || '', quick: state.quickModelSelection || '', assistant: state.assistantModelSelection || '' });
+    const startupFingerprint = JSON.stringify([state.startupStatus?.status || '', Math.round(Number(state.startupStatus?.progress || 0) * 100), state.startupStatus?.message || '', state.startupStatus?.error || '']);
+    const modelFingerprint = JSON.stringify({ aggregate: state.modelStatuses?.aggregate || {}, loaded: (state.models || []).filter(m => m.loaded).map(m => m.name).sort(), downloaded: (state.models || []).filter(m => m.downloaded).map(m => m.name).sort(), selected: state.modelRunSelection || '', tagSelection: state.tagSelectionModelSelection || '', quick: state.quickModelSelection || '', assistant: state.assistantModelSelection || '', startup: startupFingerprint });
     const jobsChanged = jobsFingerprint !== state.lastJobsFingerprint;
     const modelsChanged = modelFingerprint !== state.lastModelStatusFingerprint;
     state.lastJobsFingerprint = jobsFingerprint;
     state.lastModelStatusFingerprint = modelFingerprint;
-    const renderTabs = ['Dashboard', 'Tag Editor', 'Batch Tags', 'Compare', 'Annotation Editor', 'Detection & Boxes', 'Segmentation & Masks', 'Pose & 3D'];
-    let shouldRender = renderTabs.includes(state.tab);
+    const liveMediaTabs = ['Gallery', 'Tag Editor', 'Batch Tags', 'Compare', 'Prediction Analytics', 'Annotation Editor', 'Detection & Boxes', 'Segmentation & Masks', 'Pose & 3D'];
+    // Polling should update status text/rings in place, not rebuild heavy media
+    // views every three seconds. The previous unconditional render for Gallery
+    // and editor tabs made button clicks feel delayed during model loading and
+    // import. Only repaint when a relevant job/model/media state actually
+    // changed.
+    let shouldRender = false;
+    if (state.tab === 'Dashboard') shouldRender = jobsChanged || startupFingerprint !== state.lastStartupStatusFingerprint;
+    if (state.tab === 'Downloads' || state.tab === 'Install Migration') shouldRender = jobsChanged || completedDownloadLike.length || completedImportLike.length;
+    if (liveMediaTabs.includes(state.tab)) shouldRender = Boolean(mediaRefreshed || completedImportLike.length || completedDownloadLike.length || modelsChanged);
+    if (state.tab === 'Multimodal Dataset Builder' && jobsChanged) { refreshMultimodalBuilder({ force: true }).catch(() => null); shouldRender = true; }
     if (state.tab === 'Jobs') shouldRender = state.jobsAutoRefresh !== false && jobsChanged;
     if (state.tab === 'Models') shouldRender = state.modelsAutoRefresh !== false && (modelsChanged || shouldRefreshModelList);
-    if (shouldRender || mediaRefreshed || (shouldRefreshModelList && state.tab !== 'Gallery')) renderOrDeferForEditing();
+    state.lastStartupStatusFingerprint = startupFingerprint;
+    if (mediaRefreshed && ['Tag Editor','Compare','Gallery','Batch Tags','Prediction Analytics'].includes(state.tab)) {
+      renderNowPreservingState(false);
+    } else if (shouldRender || mediaRefreshed || (shouldRefreshModelList && state.tab !== 'Gallery')) {
+      if (['Models','Jobs','Gallery','Tag Editor','Compare','Batch Tags','Prediction Analytics','Multimodal Dataset Builder','Import'].includes(state.tab) && (modelsChanged || jobsChanged || mediaRefreshed || shouldRefreshModelList || completedImportLike.length)) {
+        renderNowPreservingState(false);
+      } else {
+        renderOrDeferForEditing();
+      }
+    }
+    } catch (err) {
+      console.warn('background status/media/model poll failed; UI state preserved', err);
+      updateLiveStatusDom();
+    }
   }, 3000);
+  setInterval(() => { pollModelRuntimeLive().catch(err => console.warn('live model runtime poll failed', err)); }, 1000);
+  const startupProgressFastPoll = async () => {
+    try {
+      const runningMigration = (state.jobs || []).some(j => ['queued','running'].includes(j.status) && ['asset_migration','startup_initialization','tag_dictionary_sync','db_export_sync'].includes(String(j.type || '')));
+      const shouldPoll = state.tab === 'Dashboard' || runningMigration || state.startupStatus?.status === 'running';
+      if (!shouldPoll) return;
+      const before = JSON.stringify([state.startupStatus?.status || '', Math.round(Number(state.startupStatus?.progress || 0) * 1000), state.startupStatus?.message || '', state.startupStatus?.job_id || '', state.startupStatus?.job_type || '']);
+      await refreshStartupStatus({ force: true }).catch(() => {});
+      const after = JSON.stringify([state.startupStatus?.status || '', Math.round(Number(state.startupStatus?.progress || 0) * 1000), state.startupStatus?.message || '', state.startupStatus?.job_id || '', state.startupStatus?.job_type || '']);
+      updateStartupProgressDom();
+      if (state.tab === 'Dashboard' && before !== after) hardRefreshCurrentTab();
+    } catch (_) {}
+  };
+  setInterval(startupProgressFastPoll, 900);
 }
 boot().catch(err => showFatalFrontendError(err));

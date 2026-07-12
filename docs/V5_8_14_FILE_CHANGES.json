@@ -1,0 +1,35 @@
+{
+  "new": [
+    "DataCurationToolModern/docs/V5_8_14_FILE_CHANGES.json",
+    "DataCurationToolModern/docs/V5_8_14_LEGACY_TAGGER_SCROLL_FIXES.md",
+    "DataCurationToolModern/docs/wiki/44-Legacy-Tagger-Inference-and-Scroll-Stability-Fixes.md",
+    "DataCurationToolModern/tests/test_v607_legacy_tagger_preprocess_scroll_fix.py"
+  ],
+  "edited": [
+    "DataCurationToolModern/README.md",
+    "DataCurationToolModern/data_curation_tool/__init__.py",
+    "DataCurationToolModern/data_curation_tool/models/adapters.py",
+    "DataCurationToolModern/data_curation_tool/models/legacy_tagger_configs.py",
+    "DataCurationToolModern/data_curation_tool/static/app.js",
+    "DataCurationToolModern/docs/wiki/Home.md",
+    "DataCurationToolModern/docs/wiki/README.md",
+    "DataCurationToolModern/docs/wiki/_Sidebar.md",
+    "DataCurationToolModern/pyproject.toml",
+    "DataCurationToolModern/tests/test_v593_legacy_taggers_translation_release.py",
+    "DataCurationToolModern/tests/test_v594_character_reference_lora_augmentation.py",
+    "DataCurationToolModern/tests/test_v595_automation_workflows.py",
+    "DataCurationToolModern/tests/test_v596_agentic_graph_editor.py",
+    "DataCurationToolModern/tests/test_v597_hydra_pyvips_runtime_fix.py",
+    "DataCurationToolModern/tests/test_v598_hydra_windows_libvips_loader.py",
+    "DataCurationToolModern/tests/test_v599_hydra_queue_patch_z3d_removal.py",
+    "DataCurationToolModern/tests/test_v600_hydra_loader_alias_gallery_workflow_fixes.py",
+    "DataCurationToolModern/tests/test_v601_hydra_utf8_startup_progress.py",
+    "DataCurationToolModern/tests/test_v602_startup_time_import_fix.py",
+    "DataCurationToolModern/tests/test_v603_graph_editor_browser_mcp_integration.py",
+    "DataCurationToolModern/tests/test_v604_scroll_startup_resume.py",
+    "DataCurationToolModern/tests/test_v605_model_prediction_normalization_unload_ui.py",
+    "DataCurationToolModern/tests/test_v606_startup_attention_graph_functionality.py",
+    "DataCurationToolModern/tests/test_v606_startup_migration_heatmap_graph_runtime.py"
+  ],
+  "removed": []
+}

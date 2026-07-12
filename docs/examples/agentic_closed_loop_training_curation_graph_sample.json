@@ -1,0 +1,1887 @@
+{
+  "name": "Agentic curation graph",
+  "goal": "",
+  "instructions": "",
+  "branch_name": "default",
+  "target_model": "sdxl",
+  "adapter_type": "lora",
+  "dataset_goal": "character",
+  "training_tool": "generic",
+  "nodes": [
+    {
+      "id": "start",
+      "kind": "start",
+      "label": "Start / user goal",
+      "x": -1272,
+      "y": -757,
+      "config": {
+        "prompt": ""
+      },
+      "enabled": true,
+      "source_kind": "start",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": []
+    },
+    {
+      "id": "plan_augmentations_mrebr9pm_2",
+      "kind": "plan_augmentations",
+      "label": "Plan augmentations/upscaling",
+      "x": 757,
+      "y": -547,
+      "config": {
+        "max_items": 200
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "plan_augmentations",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "augmentation"
+      },
+      "source_kind": "plan_augmentations"
+    },
+    {
+      "id": "browser_search_mrebs126_3",
+      "kind": "browser_search",
+      "label": "Browser search / lookup",
+      "x": -442,
+      "y": -697,
+      "config": {
+        "browser": "browser_default",
+        "query": "",
+        "search_engine": "https://www.google.com/search?q={query}",
+        "local_only": false,
+        "requires_user_approval": true,
+        "private": true
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "browser"
+      },
+      "source_kind": "browser_search"
+    },
+    {
+      "id": "supervisor_control_mrebtma4_4",
+      "kind": "supervisor_controller",
+      "label": "Supervisor controller",
+      "x": -968,
+      "y": -455,
+      "config": {
+        "controller_model_ref_id": "dataset-assistant",
+        "controller_preset_id": "preset_supervisor_default",
+        "plan_mode": "manual",
+        "max_spawns": 4,
+        "channels": [
+          "user_prompt",
+          "events",
+          "alerts"
+        ],
+        "instruction_prefix": "You are the supervisor agent. Create an action plan using available actions. Return STRICT JSON only."
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "build_model_prompt",
+      "ports": {
+        "inputs": 1,
+        "outputs": "many"
+      },
+      "modalities_in": [
+        "text",
+        "json",
+        "multimodal"
+      ],
+      "modalities_out": [
+        "json",
+        "text"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "model"
+      },
+      "source_kind": "supervisor_controller"
+    },
+    {
+      "id": "manual_review_gate_mrebvpdg_6",
+      "kind": "manual_review_gate",
+      "label": "Manual review gate",
+      "x": -1194,
+      "y": -19,
+      "config": {
+        "message": "Review the previous step before continuing."
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "manual_review_gate"
+    },
+    {
+      "id": "model_call_mrebx28r_7",
+      "kind": "model_call",
+      "label": "Model call",
+      "x": 1767,
+      "y": -417,
+      "config": {
+        "model_ref_id": "dataset-assistant",
+        "preset_id": "",
+        "provider": "local_or_cloud",
+        "user_prompt": "",
+        "input_modalities": [
+          "text",
+          "json"
+        ],
+        "output_modalities": [
+          "text",
+          "json"
+        ],
+        "temperature": 0.2,
+        "max_tokens": 2048
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "assistant_refine_labels",
+      "ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "json",
+        "multimodal"
+      ],
+      "modalities_out": [
+        "text",
+        "json",
+        "tags",
+        "caption"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "model"
+      },
+      "source_kind": "model_call"
+    },
+    {
+      "id": "condition_gate_mreby14t_7",
+      "kind": "condition_gate",
+      "label": "Condition gate",
+      "x": -482,
+      "y": -446,
+      "config": {
+        "expression": "",
+        "true_label": "yes",
+        "false_label": "no"
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": 1,
+        "outputs": 2
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "condition_gate"
+    },
+    {
+      "id": "bundle_context_mreby9oq_8",
+      "kind": "bundle_context",
+      "label": "Bundle / context packer",
+      "x": 1863,
+      "y": -257,
+      "config": {
+        "mode": "array",
+        "object_keys_csv": "",
+        "max_items": 12,
+        "max_chars": 40000,
+        "policy": "drop_largest",
+        "text_only": false
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": "many",
+        "outputs": 1
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "json"
+      ],
+      "modalities_out": [
+        "json"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "context"
+      },
+      "source_kind": "bundle_context"
+    },
+    {
+      "id": "parallel_fanout_mrebygqm_9",
+      "kind": "parallel_fanout",
+      "label": "Parallel fan-out",
+      "x": 428,
+      "y": -259,
+      "config": {
+        "max_parallel": 4,
+        "join_policy": "wait_all"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "remote_dispatch_plan",
+      "ports": {
+        "inputs": 1,
+        "outputs": "many"
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "parallel_fanout"
+    },
+    {
+      "id": "join_merge_mrebyko1_10",
+      "kind": "join_merge",
+      "label": "Join / merge",
+      "x": 1505,
+      "y": -258,
+      "config": {
+        "mode": "array",
+        "max_chars": 40000,
+        "policy": "drop_largest"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": "many",
+        "outputs": 1
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "join_merge"
+    },
+    {
+      "id": "export_branch_mrec39at_11",
+      "kind": "export_branch",
+      "label": "Export training branch",
+      "x": 297,
+      "y": -1211,
+      "config": {
+        "include_media": false,
+        "link_mode": "reference"
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "export_branch",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "export"
+      },
+      "source_kind": "export_branch"
+    },
+    {
+      "id": "evaluate_branch_mrec499u_12",
+      "kind": "evaluate_branch",
+      "label": "Evaluate readiness",
+      "x": 2794,
+      "y": -427,
+      "config": {},
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "evaluate_branch",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "quality"
+      },
+      "source_kind": "evaluate_branch"
+    },
+    {
+      "id": "build_label_rules_mrec4pg5_13",
+      "kind": "build_label_rules",
+      "label": "Build tag/caption rules",
+      "x": -117,
+      "y": -443,
+      "config": {
+        "adapter_type": "lora",
+        "dataset_goal": "character"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "build_label_rules",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "labeling"
+      },
+      "source_kind": "build_label_rules"
+    },
+    {
+      "id": "video_input_mrec4v65_14",
+      "kind": "video_input",
+      "label": "Video input",
+      "x": 93,
+      "y": 414,
+      "config": {
+        "source": "user_manual",
+        "delivery": "oneshot",
+        "channel": "sensor/cam1_stream",
+        "stream": {
+          "enabled": false,
+          "cadence_ms": 250,
+          "mode": "latest"
+        }
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": null,
+      "ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "modalities_in": [
+        "video",
+        "json"
+      ],
+      "modalities_out": [
+        "video",
+        "json"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "input"
+      },
+      "source_kind": "video_input"
+    },
+    {
+      "id": "ingest_existing_da_mrec53ag_15",
+      "kind": "ingest_existing_dataset",
+      "label": "Ingest/link dataset",
+      "x": -96,
+      "y": -871,
+      "config": {
+        "source_dataset_id": null,
+        "branch_name": "default"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "ingest_existing_dataset",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "global_dataset"
+      },
+      "source_kind": "ingest_existing_dataset"
+    },
+    {
+      "id": "trainer_handoff_mrec5jd6_16",
+      "kind": "trainer_handoff",
+      "label": "External trainer handoff",
+      "x": 650,
+      "y": -1208,
+      "config": {
+        "training_tool": "generic"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "trainer_handoff",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "handoff"
+      },
+      "source_kind": "trainer_handoff"
+    },
+    {
+      "id": "image_input_mrec5qhj_17",
+      "kind": "image_input",
+      "label": "Image input",
+      "x": 87,
+      "y": 206,
+      "config": {
+        "source": "user_manual",
+        "delivery": "oneshot",
+        "channel": "sensor/cam1",
+        "stream": {
+          "enabled": false,
+          "cadence_ms": 500,
+          "mode": "latest"
+        }
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": null,
+      "ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "modalities_in": [
+        "image",
+        "json"
+      ],
+      "modalities_out": [
+        "image",
+        "json"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "input"
+      },
+      "source_kind": "image_input"
+    },
+    {
+      "id": "download_mrec5wu8_18",
+      "kind": "download",
+      "label": "Download/query source data",
+      "x": -414,
+      "y": -878,
+      "config": {
+        "source": "e621",
+        "logic_query": "",
+        "max_items": 100
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "download",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "download"
+      },
+      "source_kind": "download"
+    },
+    {
+      "id": "apply_label_rules_mrec8rqz_19",
+      "kind": "apply_label_rules",
+      "label": "Apply label rules",
+      "x": 91,
+      "y": -14,
+      "config": {},
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "apply_label_rules",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "labeling"
+      },
+      "source_kind": "apply_label_rules"
+    },
+    {
+      "id": "create_branch_mrec94u1_20",
+      "kind": "create_branch",
+      "label": "Create/update branch",
+      "x": 288,
+      "y": -781,
+      "config": {
+        "branch_name": "default"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "create_branch",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "global_dataset"
+      },
+      "source_kind": "create_branch"
+    },
+    {
+      "id": "ingest_existing_da_mrec9nke_21",
+      "kind": "ingest_existing_dataset",
+      "label": "Ingest/link dataset",
+      "x": -104,
+      "y": -695,
+      "config": {
+        "source_dataset_id": null,
+        "branch_name": "default"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "ingest_existing_dataset",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "global_dataset"
+      },
+      "source_kind": "ingest_existing_dataset"
+    },
+    {
+      "id": "assistant_refine_l_mreca7y3_23",
+      "kind": "assistant_refine_labels",
+      "label": "Assistant label refinement",
+      "x": 480,
+      "y": 413,
+      "config": {
+        "model": "dataset-assistant",
+        "prompt": "Refine labels according to the workflow rules."
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "assistant_refine_labels",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "labeling"
+      },
+      "source_kind": "assistant_refine_labels"
+    },
+    {
+      "id": "model_call_mrecb5n0_24",
+      "kind": "model_call",
+      "label": "Model call",
+      "x": 1764,
+      "y": -570,
+      "config": {
+        "model_ref_id": "dataset-assistant",
+        "preset_id": "",
+        "provider": "local_or_cloud",
+        "user_prompt": "",
+        "input_modalities": [
+          "text",
+          "json"
+        ],
+        "output_modalities": [
+          "text",
+          "json"
+        ],
+        "temperature": 0.2,
+        "max_tokens": 2048
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "assistant_refine_labels",
+      "ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "json",
+        "multimodal"
+      ],
+      "modalities_out": [
+        "text",
+        "json",
+        "tags",
+        "caption"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "model"
+      },
+      "source_kind": "model_call"
+    },
+    {
+      "id": "model_call_mrecbasv_25",
+      "kind": "model_call",
+      "label": "Model call",
+      "x": -760,
+      "y": -694,
+      "config": {
+        "model_ref_id": "dataset-assistant",
+        "preset_id": "",
+        "provider": "local_or_cloud",
+        "user_prompt": "",
+        "input_modalities": [
+          "text",
+          "json"
+        ],
+        "output_modalities": [
+          "text",
+          "json"
+        ],
+        "temperature": 0.2,
+        "max_tokens": 2048
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "assistant_refine_labels",
+      "ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "json",
+        "multimodal"
+      ],
+      "modalities_out": [
+        "text",
+        "json",
+        "tags",
+        "caption"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "model"
+      },
+      "source_kind": "model_call"
+    },
+    {
+      "id": "condition_gate_mreccd4e_26",
+      "kind": "condition_gate",
+      "label": "Condition gate",
+      "x": -487,
+      "y": -258,
+      "config": {
+        "expression": "",
+        "true_label": "yes",
+        "false_label": "no"
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": 1,
+        "outputs": 2
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "condition_gate"
+    },
+    {
+      "id": "manual_review_gate_mreccikb_27",
+      "kind": "manual_review_gate",
+      "label": "Manual review gate",
+      "x": -502,
+      "y": -124,
+      "config": {
+        "message": "Review the previous step before continuing."
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "manual_review_gate"
+    },
+    {
+      "id": "assistant_refine_l_mrecp8q5_28",
+      "kind": "assistant_refine_labels",
+      "label": "Assistant label refinement",
+      "x": 477,
+      "y": 207,
+      "config": {
+        "model": "dataset-assistant",
+        "prompt": "Refine labels according to the workflow rules."
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "assistant_refine_labels",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "labeling"
+      },
+      "source_kind": "assistant_refine_labels"
+    },
+    {
+      "id": "apply_label_rules_mrecqmos_29",
+      "kind": "apply_label_rules",
+      "label": "Apply label rules",
+      "x": 804,
+      "y": 204,
+      "config": {},
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "apply_label_rules",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "labeling"
+      },
+      "source_kind": "apply_label_rules"
+    },
+    {
+      "id": "apply_label_rules_mrecqxmg_30",
+      "kind": "apply_label_rules",
+      "label": "Apply label rules",
+      "x": 802,
+      "y": 418,
+      "config": {},
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "apply_label_rules",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "labeling"
+      },
+      "source_kind": "apply_label_rules"
+    },
+    {
+      "id": "create_branch_mrecrm37_31",
+      "kind": "create_branch",
+      "label": "Create/update branch",
+      "x": 1237,
+      "y": -14,
+      "config": {
+        "branch_name": "default"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "create_branch",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "global_dataset"
+      },
+      "source_kind": "create_branch"
+    },
+    {
+      "id": "manual_review_gate_mrecugl8_32",
+      "kind": "manual_review_gate",
+      "label": "Manual review gate",
+      "x": 1082,
+      "y": -531,
+      "config": {
+        "message": "Review the previous step before continuing."
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "manual_review_gate"
+    },
+    {
+      "id": "condition_gate_mrecuyyd_33",
+      "kind": "condition_gate",
+      "label": "Condition gate",
+      "x": 434,
+      "y": -530,
+      "config": {
+        "expression": "",
+        "true_label": "yes",
+        "false_label": "no"
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": 1,
+        "outputs": 2
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "condition_gate"
+    },
+    {
+      "id": "parallel_fanout_mrecyc9i_33",
+      "kind": "parallel_fanout",
+      "label": "Parallel fan-out",
+      "x": 1416,
+      "y": -536,
+      "config": {
+        "max_parallel": 4,
+        "join_policy": "wait_all"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "remote_dispatch_plan",
+      "ports": {
+        "inputs": 1,
+        "outputs": "many"
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "parallel_fanout"
+    },
+    {
+      "id": "model_call_mrecyoio_34",
+      "kind": "model_call",
+      "label": "Model call",
+      "x": 1766,
+      "y": -713,
+      "config": {
+        "model_ref_id": "dataset-assistant",
+        "preset_id": "",
+        "provider": "local_or_cloud",
+        "user_prompt": "",
+        "input_modalities": [
+          "text",
+          "json"
+        ],
+        "output_modalities": [
+          "text",
+          "json"
+        ],
+        "temperature": 0.2,
+        "max_tokens": 2048
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "assistant_refine_labels",
+      "ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "json",
+        "multimodal"
+      ],
+      "modalities_out": [
+        "text",
+        "json",
+        "tags",
+        "caption"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "model"
+      },
+      "source_kind": "model_call"
+    },
+    {
+      "id": "create_branch_mreczdc2_35",
+      "kind": "create_branch",
+      "label": "Create/update branch",
+      "x": 2464,
+      "y": -595,
+      "config": {
+        "branch_name": "default"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "create_branch",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "global_dataset"
+      },
+      "source_kind": "create_branch"
+    },
+    {
+      "id": "join_merge_mred0h0i_36",
+      "kind": "join_merge",
+      "label": "Join / merge",
+      "x": 2804,
+      "y": -821,
+      "config": {
+        "mode": "array",
+        "max_chars": 40000,
+        "policy": "drop_largest"
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": "many",
+        "outputs": 1
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "join_merge"
+    },
+    {
+      "id": "bundle_context_mred0lxt_37",
+      "kind": "bundle_context",
+      "label": "Bundle / context packer",
+      "x": 3183,
+      "y": -621,
+      "config": {
+        "mode": "array",
+        "object_keys_csv": "",
+        "max_items": 12,
+        "max_chars": 40000,
+        "policy": "drop_largest",
+        "text_only": false
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": "many",
+        "outputs": 1
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "json"
+      ],
+      "modalities_out": [
+        "json"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "context"
+      },
+      "source_kind": "bundle_context"
+    },
+    {
+      "id": "create_augmentatio_mred2qta_38",
+      "kind": "create_augmentation_variants",
+      "label": "Create branch variants",
+      "x": 2127,
+      "y": -598,
+      "config": {
+        "dry_run": false
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "create_augmentation_variants",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "augmentation"
+      },
+      "source_kind": "create_augmentation_variants"
+    },
+    {
+      "id": "condition_gate_mred4s5s_39",
+      "kind": "condition_gate",
+      "label": "Condition gate",
+      "x": -404,
+      "y": -1213,
+      "config": {
+        "expression": "",
+        "true_label": "yes",
+        "false_label": "no"
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": 1,
+        "outputs": 2
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "condition_gate"
+    },
+    {
+      "id": "manual_review_gate_mred4xcz_40",
+      "kind": "manual_review_gate",
+      "label": "Manual review gate",
+      "x": -47,
+      "y": -1213,
+      "config": {
+        "message": "Review the previous step before continuing."
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "manual_review_gate"
+    },
+    {
+      "id": "mcp_tool_mred65gx_41",
+      "kind": "mcp_tool",
+      "label": "MCP/tool call",
+      "x": 1328,
+      "y": -1344,
+      "config": {
+        "tool": "blender",
+        "action": "describe"
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "tool"
+      },
+      "source_kind": "mcp_tool"
+    },
+    {
+      "id": "shell_command_mred68wk_42",
+      "kind": "shell_command",
+      "label": "Approved shell command",
+      "x": 1327,
+      "y": -1067,
+      "config": {
+        "command": "",
+        "requires_user_approval": true
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "tool"
+      },
+      "source_kind": "shell_command"
+    },
+    {
+      "id": "condition_gate_mred6e0q_43",
+      "kind": "condition_gate",
+      "label": "Condition gate",
+      "x": 1044,
+      "y": -1205,
+      "config": {
+        "expression": "",
+        "true_label": "yes",
+        "false_label": "no"
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": 1,
+        "outputs": 2
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "condition_gate"
+    },
+    {
+      "id": "bundle_context_mred7v1f_44",
+      "kind": "bundle_context",
+      "label": "Bundle / context packer",
+      "x": 1639,
+      "y": -1197,
+      "config": {
+        "mode": "array",
+        "object_keys_csv": "",
+        "max_items": 12,
+        "max_chars": 40000,
+        "policy": "drop_largest",
+        "text_only": false
+      },
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": "many",
+        "outputs": 1
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "json"
+      ],
+      "modalities_out": [
+        "json"
+      ],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "context"
+      },
+      "source_kind": "bundle_context"
+    },
+    {
+      "id": "assistant_plan_mred8gfm_45",
+      "kind": "assistant_plan",
+      "label": "Assistant/orchestrator plan",
+      "x": -55,
+      "y": -1657,
+      "config": {
+        "model": "dataset-assistant",
+        "mode": "plan",
+        "max_tokens": 2048
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "build_model_prompt",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "model"
+      },
+      "source_kind": "assistant_plan"
+    },
+    {
+      "id": "evaluate_branch_mred8ot3_46",
+      "kind": "evaluate_branch",
+      "label": "Evaluate readiness",
+      "x": -422,
+      "y": -1535,
+      "config": {},
+      "enabled": true,
+      "requires_approval": false,
+      "workflow_step_type": "evaluate_branch",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "quality"
+      },
+      "source_kind": "evaluate_branch"
+    },
+    {
+      "id": "manual_review_gate_mred95pc_47",
+      "kind": "manual_review_gate",
+      "label": "Manual review gate",
+      "x": -55,
+      "y": -1419,
+      "config": {
+        "message": "Review the previous step before continuing."
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {},
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "manual_review_gate"
+    },
+    {
+      "id": "condition_gate_mred98yr_48",
+      "kind": "condition_gate",
+      "label": "Condition gate",
+      "x": -714,
+      "y": -1532,
+      "config": {
+        "expression": "",
+        "true_label": "yes",
+        "false_label": "no"
+      },
+      "enabled": true,
+      "requires_approval": true,
+      "workflow_step_type": "manual_review_gate",
+      "ports": {
+        "inputs": 1,
+        "outputs": 2
+      },
+      "modalities_in": [],
+      "modalities_out": [],
+      "ui": {
+        "created_from_palette": true,
+        "palette_category": "control"
+      },
+      "source_kind": "condition_gate"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_start_supervisor_control_mrebtma4_4_mrebtqb8",
+      "from": "start",
+      "to": "supervisor_control_mrebtma4_4",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_manual_review_gate_mrebvpdg_6_supervisor_control_mrebtma4_4_mrebwdxd",
+      "from": "manual_review_gate_mrebvpdg_6",
+      "to": "supervisor_control_mrebtma4_4",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_join_merge_mrebyko1_10_bundle_context_mreby9oq_8_mrebyndm",
+      "from": "join_merge_mrebyko1_10",
+      "to": "bundle_context_mreby9oq_8",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_supervisor_control_mrebtma4_4_condition_gate_mreby14t_7_mrec28pp",
+      "from": "supervisor_control_mrebtma4_4",
+      "to": "condition_gate_mreby14t_7",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_supervisor_control_mrebtma4_4_model_call_mrecbasv_25_mrecgwrk",
+      "from": "supervisor_control_mrebtma4_4",
+      "to": "model_call_mrecbasv_25",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_model_call_mrecbasv_25_browser_search_mrebs126_3_mrecgxrs",
+      "from": "model_call_mrecbasv_25",
+      "to": "browser_search_mrebs126_3",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_browser_search_mrebs126_3_ingest_existing_da_mrec9nke_21_mrech00y",
+      "from": "browser_search_mrebs126_3",
+      "to": "ingest_existing_da_mrec9nke_21",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_supervisor_control_mrebtma4_4_download_mrec5wu8_18_mrechf1i",
+      "from": "supervisor_control_mrebtma4_4",
+      "to": "download_mrec5wu8_18",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_download_mrec5wu8_18_ingest_existing_da_mrec53ag_15_mrechnqj",
+      "from": "download_mrec5wu8_18",
+      "to": "ingest_existing_da_mrec53ag_15",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_ingest_existing_da_mrec9nke_21_create_branch_mrec94u1_20_mrechpwx",
+      "from": "ingest_existing_da_mrec9nke_21",
+      "to": "create_branch_mrec94u1_20",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_ingest_existing_da_mrec53ag_15_create_branch_mrec94u1_20_mrechr7w",
+      "from": "ingest_existing_da_mrec53ag_15",
+      "to": "create_branch_mrec94u1_20",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_create_branch_mrec94u1_20_manual_review_gate_mrebvpdg_6_mrecibk3",
+      "from": "create_branch_mrec94u1_20",
+      "to": "manual_review_gate_mrebvpdg_6",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_condition_gate_mreby14t_7_build_label_rules_mrec4pg5_13_mrecjrul",
+      "from": "condition_gate_mreby14t_7",
+      "to": "build_label_rules_mrec4pg5_13",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_build_label_rules_mrec4pg5_13_condition_gate_mreccd4e_26_mreckca5",
+      "from": "build_label_rules_mrec4pg5_13",
+      "to": "condition_gate_mreccd4e_26",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_condition_gate_mreccd4e_26_parallel_fanout_mrebygqm_9_mrecl1tv",
+      "from": "condition_gate_mreccd4e_26",
+      "to": "parallel_fanout_mrebygqm_9",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_create_branch_mrec94u1_20_image_input_mrec5qhj_17_mrecls9p",
+      "from": "create_branch_mrec94u1_20",
+      "to": "image_input_mrec5qhj_17",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_create_branch_mrec94u1_20_video_input_mrec4v65_14_mreclu7q",
+      "from": "create_branch_mrec94u1_20",
+      "to": "video_input_mrec4v65_14",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_build_label_rules_mrec4pg5_13_manual_review_gate_mreccikb_27_mrecmsm3",
+      "from": "build_label_rules_mrec4pg5_13",
+      "to": "manual_review_gate_mreccikb_27",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_manual_review_gate_mreccikb_27_parallel_fanout_mrebygqm_9_mrecmv81",
+      "from": "manual_review_gate_mreccikb_27",
+      "to": "parallel_fanout_mrebygqm_9",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_parallel_fanout_mrebygqm_9_apply_label_rules_mrec8rqz_19_mrecnc1x",
+      "from": "parallel_fanout_mrebygqm_9",
+      "to": "apply_label_rules_mrec8rqz_19",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_video_input_mrec4v65_14_assistant_refine_l_mreca7y3_23_mrecpi4v",
+      "from": "video_input_mrec4v65_14",
+      "to": "assistant_refine_l_mreca7y3_23",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_image_input_mrec5qhj_17_assistant_refine_l_mrecp8q5_28_mrecpkui",
+      "from": "image_input_mrec5qhj_17",
+      "to": "assistant_refine_l_mrecp8q5_28",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_assistant_refine_l_mreca7y3_23_apply_label_rules_mrecqxmg_30_mrecr1ft",
+      "from": "assistant_refine_l_mreca7y3_23",
+      "to": "apply_label_rules_mrecqxmg_30",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_assistant_refine_l_mrecp8q5_28_apply_label_rules_mrecqmos_29_mrecr33a",
+      "from": "assistant_refine_l_mrecp8q5_28",
+      "to": "apply_label_rules_mrecqmos_29",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_parallel_fanout_mrebygqm_9_image_input_mrec5qhj_17_mrecrxxc",
+      "from": "parallel_fanout_mrebygqm_9",
+      "to": "image_input_mrec5qhj_17",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_parallel_fanout_mrebygqm_9_video_input_mrec4v65_14_mrecs0ag",
+      "from": "parallel_fanout_mrebygqm_9",
+      "to": "video_input_mrec4v65_14",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_apply_label_rules_mrec8rqz_19_create_branch_mrecrm37_31_mrecs7d2",
+      "from": "apply_label_rules_mrec8rqz_19",
+      "to": "create_branch_mrecrm37_31",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_apply_label_rules_mrecqmos_29_create_branch_mrecrm37_31_mrecs8qf",
+      "from": "apply_label_rules_mrecqmos_29",
+      "to": "create_branch_mrecrm37_31",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_apply_label_rules_mrecqxmg_30_create_branch_mrecrm37_31_mrecsc0x",
+      "from": "apply_label_rules_mrecqxmg_30",
+      "to": "create_branch_mrecrm37_31",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_create_branch_mrecrm37_31_join_merge_mrebyko1_10_mrectf2b",
+      "from": "create_branch_mrecrm37_31",
+      "to": "join_merge_mrebyko1_10",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_parallel_fanout_mrebygqm_9_join_merge_mrebyko1_10_mrectlko",
+      "from": "parallel_fanout_mrebygqm_9",
+      "to": "join_merge_mrebyko1_10",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_bundle_context_mreby9oq_8_supervisor_control_mrebtma4_4_mrecu1uv",
+      "from": "bundle_context_mreby9oq_8",
+      "to": "supervisor_control_mrebtma4_4",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_supervisor_control_mrebtma4_4_condition_gate_mrecuyyd_33_mrecv7qz",
+      "from": "supervisor_control_mrebtma4_4",
+      "to": "condition_gate_mrecuyyd_33",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_condition_gate_mrecuyyd_33_plan_augmentations_mrebr9pm_2_mrecvbxl",
+      "from": "condition_gate_mrecuyyd_33",
+      "to": "plan_augmentations_mrebr9pm_2",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_plan_augmentations_mrebr9pm_2_manual_review_gate_mrecugl8_32_mrecve18",
+      "from": "plan_augmentations_mrebr9pm_2",
+      "to": "manual_review_gate_mrecugl8_32",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_manual_review_gate_mrecugl8_32_parallel_fanout_mrecyc9i_33_mrecyghk",
+      "from": "manual_review_gate_mrecugl8_32",
+      "to": "parallel_fanout_mrecyc9i_33",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_parallel_fanout_mrecyc9i_33_model_call_mrecyoio_34_mrecyxp1",
+      "from": "parallel_fanout_mrecyc9i_33",
+      "to": "model_call_mrecyoio_34",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_parallel_fanout_mrecyc9i_33_model_call_mrecb5n0_24_mrecyyje",
+      "from": "parallel_fanout_mrecyc9i_33",
+      "to": "model_call_mrecb5n0_24",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_parallel_fanout_mrecyc9i_33_model_call_mrebx28r_7_mrecz18l",
+      "from": "parallel_fanout_mrecyc9i_33",
+      "to": "model_call_mrebx28r_7",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_create_branch_mreczdc2_35_join_merge_mred0h0i_36_mred0wer",
+      "from": "create_branch_mreczdc2_35",
+      "to": "join_merge_mred0h0i_36",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_join_merge_mred0h0i_36_bundle_context_mred0lxt_37_mred11lr",
+      "from": "join_merge_mred0h0i_36",
+      "to": "bundle_context_mred0lxt_37",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_create_branch_mreczdc2_35_evaluate_branch_mrec499u_12_mred1cq0",
+      "from": "create_branch_mreczdc2_35",
+      "to": "evaluate_branch_mrec499u_12",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_evaluate_branch_mrec499u_12_bundle_context_mred0lxt_37_mred1egw",
+      "from": "evaluate_branch_mrec499u_12",
+      "to": "bundle_context_mred0lxt_37",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_bundle_context_mred0lxt_37_supervisor_control_mrebtma4_4_mred1puf",
+      "from": "bundle_context_mred0lxt_37",
+      "to": "supervisor_control_mrebtma4_4",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_model_call_mrecyoio_34_create_augmentatio_mred2qta_38_mred35sq",
+      "from": "model_call_mrecyoio_34",
+      "to": "create_augmentatio_mred2qta_38",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_model_call_mrecb5n0_24_create_augmentatio_mred2qta_38_mred37eb",
+      "from": "model_call_mrecb5n0_24",
+      "to": "create_augmentatio_mred2qta_38",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_model_call_mrebx28r_7_create_augmentatio_mred2qta_38_mred39ir",
+      "from": "model_call_mrebx28r_7",
+      "to": "create_augmentatio_mred2qta_38",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_create_augmentatio_mred2qta_38_create_branch_mreczdc2_35_mred3jzy",
+      "from": "create_augmentatio_mred2qta_38",
+      "to": "create_branch_mreczdc2_35",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_supervisor_control_mrebtma4_4_condition_gate_mred4s5s_39_mred5e6m",
+      "from": "supervisor_control_mrebtma4_4",
+      "to": "condition_gate_mred4s5s_39",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_condition_gate_mred4s5s_39_manual_review_gate_mred4xcz_40_mred5fkk",
+      "from": "condition_gate_mred4s5s_39",
+      "to": "manual_review_gate_mred4xcz_40",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_manual_review_gate_mred4xcz_40_export_branch_mrec39at_11_mred5ix6",
+      "from": "manual_review_gate_mred4xcz_40",
+      "to": "export_branch_mrec39at_11",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_export_branch_mrec39at_11_trainer_handoff_mrec5jd6_16_mred5ni3",
+      "from": "export_branch_mrec39at_11",
+      "to": "trainer_handoff_mrec5jd6_16",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_condition_gate_mred6e0q_43_shell_command_mred68wk_42_mred747n",
+      "from": "condition_gate_mred6e0q_43",
+      "to": "shell_command_mred68wk_42",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_condition_gate_mred6e0q_43_mcp_tool_mred65gx_41_mred75cj",
+      "from": "condition_gate_mred6e0q_43",
+      "to": "mcp_tool_mred65gx_41",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_trainer_handoff_mrec5jd6_16_condition_gate_mred6e0q_43_mred7717",
+      "from": "trainer_handoff_mrec5jd6_16",
+      "to": "condition_gate_mred6e0q_43",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_shell_command_mred68wk_42_bundle_context_mred7v1f_44_mred7zil",
+      "from": "shell_command_mred68wk_42",
+      "to": "bundle_context_mred7v1f_44",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_mcp_tool_mred65gx_41_bundle_context_mred7v1f_44_mred80rl",
+      "from": "mcp_tool_mred65gx_41",
+      "to": "bundle_context_mred7v1f_44",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_bundle_context_mred7v1f_44_supervisor_control_mrebtma4_4_mreda1ij",
+      "from": "bundle_context_mred7v1f_44",
+      "to": "supervisor_control_mrebtma4_4",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_supervisor_control_mrebtma4_4_condition_gate_mred98yr_48_mreda63h",
+      "from": "supervisor_control_mrebtma4_4",
+      "to": "condition_gate_mred98yr_48",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_condition_gate_mred98yr_48_evaluate_branch_mred8ot3_46_mredc28v",
+      "from": "condition_gate_mred98yr_48",
+      "to": "evaluate_branch_mred8ot3_46",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_evaluate_branch_mred8ot3_46_assistant_plan_mred8gfm_45_mredc412",
+      "from": "evaluate_branch_mred8ot3_46",
+      "to": "assistant_plan_mred8gfm_45",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_evaluate_branch_mred8ot3_46_manual_review_gate_mred95pc_47_mredc5bc",
+      "from": "evaluate_branch_mred8ot3_46",
+      "to": "manual_review_gate_mred95pc_47",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_manual_review_gate_mred95pc_47_supervisor_control_mrebtma4_4_mredcqh9",
+      "from": "manual_review_gate_mred95pc_47",
+      "to": "supervisor_control_mrebtma4_4",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    },
+    {
+      "id": "edge_assistant_plan_mred8gfm_45_supervisor_control_mrebtma4_4_mredcvqj",
+      "from": "assistant_plan_mred8gfm_45",
+      "to": "supervisor_control_mrebtma4_4",
+      "label": "next",
+      "condition": "",
+      "source_port": "out",
+      "target_port": "in"
+    }
+  ],
+  "metadata": {
+    "source": "frontend_unsaved_graph"
+  },
+  "id": "graph_wf_Agentic_curation_graph_d70aa4e4_13fe71",
+  "created_at": "2026-07-10T03:22:14.267214+00:00",
+  "schema_version": 1,
+  "description": "",
+  "updated_at": "2026-07-10T03:22:14.377230+00:00",
+  "mermaid": "graph LR\n  start[\"Start / user goal\"]\n  plan_augmentations_mrebr9pm_2[\"Plan augmentations/upscaling\"]\n  browser_search_mrebs126_3[\"Browser search / lookup\"]\n  supervisor_control_mrebtma4_4[\"Supervisor controller\"]\n  manual_review_gate_mrebvpdg_6[\"Manual review gate\"]\n  model_call_mrebx28r_7[\"Model call\"]\n  condition_gate_mreby14t_7[\"Condition gate\"]\n  bundle_context_mreby9oq_8[\"Bundle / context packer\"]\n  parallel_fanout_mrebygqm_9[\"Parallel fan-out\"]\n  join_merge_mrebyko1_10[\"Join / merge\"]\n  export_branch_mrec39at_11[\"Export training branch\"]\n  evaluate_branch_mrec499u_12[\"Evaluate readiness\"]\n  build_label_rules_mrec4pg5_13[\"Build tag/caption rules\"]\n  video_input_mrec4v65_14[\"Video input\"]\n  ingest_existing_da_mrec53ag_15[\"Ingest/link dataset\"]\n  trainer_handoff_mrec5jd6_16[\"External trainer handoff\"]\n  image_input_mrec5qhj_17[\"Image input\"]\n  download_mrec5wu8_18[\"Download/query source data\"]\n  apply_label_rules_mrec8rqz_19[\"Apply label rules\"]\n  create_branch_mrec94u1_20[\"Create/update branch\"]\n  ingest_existing_da_mrec9nke_21[\"Ingest/link dataset\"]\n  assistant_refine_l_mreca7y3_23[\"Assistant label refinement\"]\n  model_call_mrecb5n0_24[\"Model call\"]\n  model_call_mrecbasv_25[\"Model call\"]\n  condition_gate_mreccd4e_26[\"Condition gate\"]\n  manual_review_gate_mreccikb_27[\"Manual review gate\"]\n  assistant_refine_l_mrecp8q5_28[\"Assistant label refinement\"]\n  apply_label_rules_mrecqmos_29[\"Apply label rules\"]\n  apply_label_rules_mrecqxmg_30[\"Apply label rules\"]\n  create_branch_mrecrm37_31[\"Create/update branch\"]\n  manual_review_gate_mrecugl8_32[\"Manual review gate\"]\n  condition_gate_mrecuyyd_33[\"Condition gate\"]\n  parallel_fanout_mrecyc9i_33[\"Parallel fan-out\"]\n  model_call_mrecyoio_34[\"Model call\"]\n  create_branch_mreczdc2_35[\"Create/update branch\"]\n  join_merge_mred0h0i_36[\"Join / merge\"]\n  bundle_context_mred0lxt_37[\"Bundle / context packer\"]\n  create_augmentatio_mred2qta_38[\"Create branch variants\"]\n  condition_gate_mred4s5s_39[\"Condition gate\"]\n  manual_review_gate_mred4xcz_40[\"Manual review gate\"]\n  mcp_tool_mred65gx_41[\"MCP/tool call\"]\n  shell_command_mred68wk_42[\"Approved shell command\"]\n  condition_gate_mred6e0q_43[\"Condition gate\"]\n  bundle_context_mred7v1f_44[\"Bundle / context packer\"]\n  assistant_plan_mred8gfm_45[\"Assistant/orchestrator plan\"]\n  evaluate_branch_mred8ot3_46[\"Evaluate readiness\"]\n  manual_review_gate_mred95pc_47[\"Manual review gate\"]\n  condition_gate_mred98yr_48[\"Condition gate\"]\n  start -->|\"next\"| supervisor_control_mrebtma4_4\n  manual_review_gate_mrebvpdg_6 -->|\"next\"| supervisor_control_mrebtma4_4\n  join_merge_mrebyko1_10 -->|\"next\"| bundle_context_mreby9oq_8\n  supervisor_control_mrebtma4_4 -->|\"next\"| condition_gate_mreby14t_7\n  supervisor_control_mrebtma4_4 -->|\"next\"| model_call_mrecbasv_25\n  model_call_mrecbasv_25 -->|\"next\"| browser_search_mrebs126_3\n  browser_search_mrebs126_3 -->|\"next\"| ingest_existing_da_mrec9nke_21\n  supervisor_control_mrebtma4_4 -->|\"next\"| download_mrec5wu8_18\n  download_mrec5wu8_18 -->|\"next\"| ingest_existing_da_mrec53ag_15\n  ingest_existing_da_mrec9nke_21 -->|\"next\"| create_branch_mrec94u1_20\n  ingest_existing_da_mrec53ag_15 -->|\"next\"| create_branch_mrec94u1_20\n  create_branch_mrec94u1_20 -->|\"next\"| manual_review_gate_mrebvpdg_6\n  condition_gate_mreby14t_7 -->|\"next\"| build_label_rules_mrec4pg5_13\n  build_label_rules_mrec4pg5_13 -->|\"next\"| condition_gate_mreccd4e_26\n  condition_gate_mreccd4e_26 -->|\"next\"| parallel_fanout_mrebygqm_9\n  create_branch_mrec94u1_20 -->|\"next\"| image_input_mrec5qhj_17\n  create_branch_mrec94u1_20 -->|\"next\"| video_input_mrec4v65_14\n  build_label_rules_mrec4pg5_13 -->|\"next\"| manual_review_gate_mreccikb_27\n  manual_review_gate_mreccikb_27 -->|\"next\"| parallel_fanout_mrebygqm_9\n  parallel_fanout_mrebygqm_9 -->|\"next\"| apply_label_rules_mrec8rqz_19\n  video_input_mrec4v65_14 -->|\"next\"| assistant_refine_l_mreca7y3_23\n  image_input_mrec5qhj_17 -->|\"next\"| assistant_refine_l_mrecp8q5_28\n  assistant_refine_l_mreca7y3_23 -->|\"next\"| apply_label_rules_mrecqxmg_30\n  assistant_refine_l_mrecp8q5_28 -->|\"next\"| apply_label_rules_mrecqmos_29\n  parallel_fanout_mrebygqm_9 -->|\"next\"| image_input_mrec5qhj_17\n  parallel_fanout_mrebygqm_9 -->|\"next\"| video_input_mrec4v65_14\n  apply_label_rules_mrec8rqz_19 -->|\"next\"| create_branch_mrecrm37_31\n  apply_label_rules_mrecqmos_29 -->|\"next\"| create_branch_mrecrm37_31\n  apply_label_rules_mrecqxmg_30 -->|\"next\"| create_branch_mrecrm37_31\n  create_branch_mrecrm37_31 -->|\"next\"| join_merge_mrebyko1_10\n  parallel_fanout_mrebygqm_9 -->|\"next\"| join_merge_mrebyko1_10\n  bundle_context_mreby9oq_8 -->|\"next\"| supervisor_control_mrebtma4_4\n  supervisor_control_mrebtma4_4 -->|\"next\"| condition_gate_mrecuyyd_33\n  condition_gate_mrecuyyd_33 -->|\"next\"| plan_augmentations_mrebr9pm_2\n  plan_augmentations_mrebr9pm_2 -->|\"next\"| manual_review_gate_mrecugl8_32\n  manual_review_gate_mrecugl8_32 -->|\"next\"| parallel_fanout_mrecyc9i_33\n  parallel_fanout_mrecyc9i_33 -->|\"next\"| model_call_mrecyoio_34\n  parallel_fanout_mrecyc9i_33 -->|\"next\"| model_call_mrecb5n0_24\n  parallel_fanout_mrecyc9i_33 -->|\"next\"| model_call_mrebx28r_7\n  create_branch_mreczdc2_35 -->|\"next\"| join_merge_mred0h0i_36\n  join_merge_mred0h0i_36 -->|\"next\"| bundle_context_mred0lxt_37\n  create_branch_mreczdc2_35 -->|\"next\"| evaluate_branch_mrec499u_12\n  evaluate_branch_mrec499u_12 -->|\"next\"| bundle_context_mred0lxt_37\n  bundle_context_mred0lxt_37 -->|\"next\"| supervisor_control_mrebtma4_4\n  model_call_mrecyoio_34 -->|\"next\"| create_augmentatio_mred2qta_38\n  model_call_mrecb5n0_24 -->|\"next\"| create_augmentatio_mred2qta_38\n  model_call_mrebx28r_7 -->|\"next\"| create_augmentatio_mred2qta_38\n  create_augmentatio_mred2qta_38 -->|\"next\"| create_branch_mreczdc2_35\n  supervisor_control_mrebtma4_4 -->|\"next\"| condition_gate_mred4s5s_39\n  condition_gate_mred4s5s_39 -->|\"next\"| manual_review_gate_mred4xcz_40\n  manual_review_gate_mred4xcz_40 -->|\"next\"| export_branch_mrec39at_11\n  export_branch_mrec39at_11 -->|\"next\"| trainer_handoff_mrec5jd6_16\n  condition_gate_mred6e0q_43 -->|\"next\"| shell_command_mred68wk_42\n  condition_gate_mred6e0q_43 -->|\"next\"| mcp_tool_mred65gx_41\n  trainer_handoff_mrec5jd6_16 -->|\"next\"| condition_gate_mred6e0q_43\n  shell_command_mred68wk_42 -->|\"next\"| bundle_context_mred7v1f_44\n  mcp_tool_mred65gx_41 -->|\"next\"| bundle_context_mred7v1f_44\n  bundle_context_mred7v1f_44 -->|\"next\"| supervisor_control_mrebtma4_4\n  supervisor_control_mrebtma4_4 -->|\"next\"| condition_gate_mred98yr_48\n  condition_gate_mred98yr_48 -->|\"next\"| evaluate_branch_mred8ot3_46\n  evaluate_branch_mred8ot3_46 -->|\"next\"| assistant_plan_mred8gfm_45\n  evaluate_branch_mred8ot3_46 -->|\"next\"| manual_review_gate_mred95pc_47\n  manual_review_gate_mred95pc_47 -->|\"next\"| supervisor_control_mrebtma4_4\n  assistant_plan_mred8gfm_45 -->|\"next\"| supervisor_control_mrebtma4_4\n",
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "Graph contains a cycle; topological conversion will append unresolved nodes after acyclic nodes."
+    ],
+    "node_count": 48,
+    "edge_count": 64,
+    "workflow_step_count": 45,
+    "workflow_validation": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "step_count": 45
+    }
+  },
+  "workflow_id": "wf_from_graph_wf_Agentic_curation_graph_d70aa4e4_13fe71"
+}

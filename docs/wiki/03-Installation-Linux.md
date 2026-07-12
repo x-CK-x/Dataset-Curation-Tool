@@ -67,6 +67,7 @@ A healthy GPU setup should report CUDA available from PyTorch and list the detec
 | `install_image_tools.sh` | External image/upscale/tool integrations. |
 | `install_geckodriver.sh` | Firefox geckodriver for Source Browser. |
 | `install_jtp3_runtime.sh` | JTP-3 tag/rating model runtime support. |
+| `install_hydra_runtime_deps.sh` | RedRocket Hydra 3.5 local inference runtime (`pyvips`/`libvips`) repair. |
 | `install_flexavatar.sh` | Isolated FlexAvatar runtime. |
 
 ## Stop the server

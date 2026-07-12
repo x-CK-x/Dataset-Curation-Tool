@@ -32,6 +32,16 @@ from .services.code_assistant_service import CodeAssistantService
 from .services.cloud_provider_service import CloudProviderService
 from .services.agent_tools_service import AgentToolsService
 from .services.mcp_tools_service import MCPToolsService
+from .services.global_dataset_service import GlobalDatasetService
+from .services.dataset_pipeline_service import DatasetPipelineService
+from .services.pipeline_prep_service import PipelinePrepService
+from .services.character_reference_service import CharacterReferenceService
+from .services.workflow_automation_service import WorkflowAutomationService
+from .services.graph_editor_service import GraphEditorService
+from .services.startup_progress_service import StartupProgressService
+from .services.attention_visualization_service import AttentionVisualizationService
+from .services.multimodal_dataset_service import MultimodalDatasetService
+from .services.integrity_classifier_service import IntegrityClassifierService
 
 
 @dataclass
@@ -66,3 +76,13 @@ class AppContext:
     cloud: CloudProviderService
     agent_tools: AgentToolsService
     mcp_tools: MCPToolsService
+    global_dataset: GlobalDatasetService
+    dataset_pipeline: DatasetPipelineService
+    pipeline_prep: PipelinePrepService
+    character_reference: CharacterReferenceService
+    workflows: WorkflowAutomationService
+    graph_editor: GraphEditorService
+    startup_progress: StartupProgressService
+    attention: AttentionVisualizationService
+    multimodal: MultimodalDatasetService
+    integrity_classifiers: IntegrityClassifierService

@@ -75,6 +75,23 @@ def _default_external_mcp_tools() -> dict[str, dict[str, Any]]:
         "audacity": ("Audacity", ""),
         "obs": ("OBS Studio", "ws://127.0.0.1:4455"),
         "comfyui": ("ComfyUI", "http://127.0.0.1:8188"),
+        "zbrush": ("ZBrush", ""),
+        "prusaslicer": ("PrusaSlicer", ""),
+        "orcaslicer": ("OrcaSlicer", ""),
+        "bambu_studio": ("Bambu Studio", ""),
+        "curaengine": ("CuraEngine", ""),
+        "slic3r": ("Slic3r", ""),
+        "kohya_ss": ("Kohya SS / sd-scripts", ""),
+        "onetrainer": ("OneTrainer", ""),
+        "diffusers_trainer": ("Hugging Face Diffusers Trainer Scripts", ""),
+        "ltx_trainer": ("LTX Trainer", ""),
+        "external_webscraper": ("External Webscraper Bridge", ""),
+        "browser_default": ("Default Browser MCP", ""),
+        "browser_edge": ("Microsoft Edge Browser MCP", ""),
+        "browser_chrome": ("Google Chrome Browser MCP", ""),
+        "browser_firefox": ("Mozilla Firefox Browser MCP", ""),
+        "browser_chromium": ("Chromium Browser MCP", ""),
+        "browser_tor": ("Tor Browser MCP", ""),
     }
     return {
         key: {
@@ -134,6 +151,11 @@ class AppSettings:
         "runpod": [],
         "vastai": [],
         "lambda_labs": [],
+        "meshy": [],
+        "tripo": [],
+        "rodin": [],
+        "krea": [],
+        "ideogram": [],
     })
     model_cache_dir: str | None = None
     external_model_roots: list[str] = field(default_factory=list)
@@ -151,7 +173,14 @@ class AppSettings:
     model_vram_cleanup_after_inference: bool = True
     model_vram_aggressive_gc_after_inference: bool = True
     model_vram_reset_peak_stats_after_inference: bool = True
-    model_vram_auto_cpu_offload_enabled: bool = True
+    model_vram_auto_cpu_offload_enabled: bool = False
+    # Skip CPU offload when system RAM is already pressured; CPU offload can
+    # otherwise turn a VRAM pressure fix into an overnight system-RAM exhaustion.
+    model_vram_skip_cpu_offload_when_system_ram_percent: float = 82.0
+    model_system_ram_cleanup_warning_percent: float = 88.0
+    model_system_ram_critical_percent: float = 94.0
+    model_chat_storage_max_context_chars: int = 60000
+    model_chat_storage_max_response_chars: int = 90000
     # disabled, on_pressure, after_chat, after_every_inference
     model_vram_auto_cpu_offload_policy: str = "on_pressure"
     model_vram_auto_cpu_offload_threshold: float = 0.82
@@ -173,7 +202,7 @@ class AppSettings:
     tag_text_mode_restart_required: bool = False
     model_temperature: float = 0.2
     model_max_new_tokens: int = 512
-    classifier_threshold: float = 0.35
+    classifier_threshold: float = 0.70
     backend_worker_count: int = 4
     max_concurrent_jobs: int = 4
     download_max_concurrent_items: int = 4
@@ -226,9 +255,19 @@ class AppSettings:
     migration_conflict_policy: str = "skip_existing"
     migration_newest_first: bool = True
     migration_delete_source_duplicates: bool = False
+    # Migration should reuse cached assets/database rows from the previous install
+    # and avoid network refreshes unless the user explicitly opts in.
+    migration_local_only_existing_assets: bool = True
+    migration_skip_post_online_tag_sync: bool = True
+    migration_parallel_file_transfers: bool = True
+    migration_file_transfer_workers: int = 4
+    migration_fast_same_volume_moves: bool = True
     auto_sync_tag_db_on_startup: bool = True
     tag_db_sync_if_empty_only: bool = False
-    tag_db_export_cache_hours: int = 336
+    tag_db_export_cache_hours: int = 168
+    # Startup network sync gate.  Even when a dictionary is stale/incomplete,
+    # automatic startup network checks should not run on every launch.
+    tag_db_startup_sync_interval_hours: int = 168
     import_worker_count: int = 0
     metadata_extract_on_import: bool = False
     metadata_apply_when_no_sidecar: bool = True
@@ -283,6 +322,8 @@ class AppSettings:
     agent_tools_app_gui_action_routing: bool = True
     agent_tools_show_tool_decision_badges: bool = True
     assistant_show_live_action_notes: bool = True
+    assistant_show_live_chain_of_thought: bool = True
+    assistant_show_live_reasoning_trace: bool = True
     # Local voice I/O.  The first implementation is deliberate push-to-record:
     # the browser records audio, the backend transcribes it with the selected STT
     # model, and the user can edit the generated text before sending it to any
@@ -343,6 +384,18 @@ class AppSettings:
     # missing tools remain visible with setup instructions.
     external_mcp_tools: dict[str, Any] = field(default_factory=_default_external_mcp_tools)
 
+    # Global original/branch dataset layer. Originals are stored once by SHA-256;
+    # model-specific datasets use lightweight branch manifests and editable sidecar copies.
+    global_dataset_enabled: bool = True
+    global_dataset_root: str | None = None
+    global_dataset_originals_dir: str = "originals"
+    global_dataset_branches_dir: str = "branches"
+    global_dataset_variant_dir: str = "variants"
+    global_dataset_ingest_copy_mode: str = "copy"  # copy, hardlink, symlink, reference
+    global_dataset_auto_register_downloads: bool = True
+    global_dataset_auto_link_downloads_to_branch: bool = False
+    global_dataset_default_branch: str = "default"
+
 
     @classmethod
     def load(cls, path: Path) -> "AppSettings":
@@ -354,12 +407,29 @@ class AppSettings:
             payload = json.load(f)
         allowed = {field_name for field_name in cls.__dataclass_fields__}
         cleaned = {k: v for k, v in payload.items() if k in allowed}
-        # v5.6 migration: DB export metadata should refresh after two weeks, not only when empty.
-        cleaned["tag_db_sync_if_empty_only"] = False
+        # Startup tag DB sync should be fast after first-run setup.  The UI can still disable
+        # empty-only mode when the user explicitly wants scheduled freshness checks.
+        cleaned.setdefault("tag_db_sync_if_empty_only", False)
         try:
-            cleaned["tag_db_export_cache_hours"] = max(336, int(cleaned.get("tag_db_export_cache_hours") or 336))
+            _tag_cache_hours = int(cleaned.get("tag_db_export_cache_hours") or 168)
+            # Older builds wrote 336 as the default.  The new policy is weekly
+            # startup refresh gating, so migrate that old default to 168.
+            if _tag_cache_hours == 336:
+                _tag_cache_hours = 168
+            cleaned["tag_db_export_cache_hours"] = max(24, _tag_cache_hours)
         except Exception:
-            cleaned["tag_db_export_cache_hours"] = 336
+            cleaned["tag_db_export_cache_hours"] = 168
+        cleaned.setdefault("migration_parallel_file_transfers", True)
+        cleaned.setdefault("migration_fast_same_volume_moves", True)
+        try:
+            cleaned["migration_file_transfer_workers"] = max(1, min(32, int(cleaned.get("migration_file_transfer_workers") or 4)))
+        except Exception:
+            cleaned["migration_file_transfer_workers"] = 4
+        cleaned.setdefault("tag_db_startup_sync_interval_hours", 168)
+        try:
+            cleaned["tag_db_startup_sync_interval_hours"] = max(24, int(cleaned.get("tag_db_startup_sync_interval_hours") or 168))
+        except Exception:
+            cleaned["tag_db_startup_sync_interval_hours"] = 168
         if str(cleaned.get("downloader_user_agent") or "").startswith("DataCurationTool/5."):
             cleaned["downloader_user_agent"] = "DataCurationTool/5.36.0"
         cleaned["backend_worker_count"] = max(1, int(cleaned.get("backend_worker_count") or 4))
@@ -381,9 +451,9 @@ class AppSettings:
         cleaned.setdefault("downloader_parallel_workers", 4)
         cleaned.setdefault("model_download_parallel_workers", 1)
         cleaned.setdefault("model_download_serial_queue", True)
-        cleaned.setdefault("api_token_profiles", {"huggingface": [], "openrouter": [], "openai": [], "anthropic": [], "xai": [], "runpod": [], "vastai": [], "lambda_labs": []})
+        cleaned.setdefault("api_token_profiles", {"huggingface": [], "openrouter": [], "openai": [], "anthropic": [], "xai": [], "runpod": [], "vastai": [], "lambda_labs": [], "meshy": [], "tripo": [], "rodin": [], "krea": [], "ideogram": []})
         if not isinstance(cleaned.get("api_token_profiles"), dict):
-            cleaned["api_token_profiles"] = {"huggingface": [], "openrouter": [], "openai": [], "anthropic": [], "xai": [], "runpod": [], "vastai": [], "lambda_labs": []}
+            cleaned["api_token_profiles"] = {"huggingface": [], "openrouter": [], "openai": [], "anthropic": [], "xai": [], "runpod": [], "vastai": [], "lambda_labs": [], "meshy": [], "tripo": [], "rodin": [], "krea": [], "ideogram": []}
         cleaned.setdefault("downloader_category_limit", 100)
         cleaned.setdefault("downloader_per_tag_limit", 10)
         cleaned.setdefault("downloader_api_delay_seconds", 7.0)
@@ -400,6 +470,8 @@ class AppSettings:
         cleaned.setdefault("migration_conflict_policy", "skip_existing")
         cleaned.setdefault("migration_newest_first", True)
         cleaned.setdefault("migration_delete_source_duplicates", False)
+        cleaned.setdefault("migration_local_only_existing_assets", True)
+        cleaned.setdefault("migration_skip_post_online_tag_sync", True)
         cleaned.setdefault("custom_models", [])
         cleaned.setdefault("external_model_roots", [])
         cleaned.setdefault("strict_driver_free_memory_checks", False)
@@ -457,7 +529,7 @@ class AppSettings:
         cleaned.setdefault("model_vram_cleanup_after_inference", True)
         cleaned.setdefault("model_vram_aggressive_gc_after_inference", True)
         cleaned.setdefault("model_vram_reset_peak_stats_after_inference", True)
-        cleaned.setdefault("model_vram_auto_cpu_offload_enabled", True)
+        cleaned.setdefault("model_vram_auto_cpu_offload_enabled", False)
         cleaned.setdefault("model_vram_auto_cpu_offload_policy", "on_pressure")
         if cleaned.get("model_vram_auto_cpu_offload_policy") not in {"disabled", "on_pressure", "after_chat", "after_every_inference"}:
             cleaned["model_vram_auto_cpu_offload_policy"] = "on_pressure"
@@ -465,6 +537,11 @@ class AppSettings:
         cleaned.setdefault("model_vram_idle_cpu_offload_seconds", 300)
         cleaned.setdefault("model_vram_disable_generation_cache_on_pressure", True)
         cleaned.setdefault("model_vram_context_pressure_threshold", 0.70)
+        cleaned.setdefault("model_vram_skip_cpu_offload_when_system_ram_percent", 82.0)
+        cleaned.setdefault("model_system_ram_cleanup_warning_percent", 88.0)
+        cleaned.setdefault("model_system_ram_critical_percent", 94.0)
+        cleaned.setdefault("model_chat_storage_max_context_chars", 60000)
+        cleaned.setdefault("model_chat_storage_max_response_chars", 90000)
         cleaned.setdefault("model_vram_cleanup_debug", False)
         try:
             cleaned["model_vram_auto_cpu_offload_threshold"] = max(0.50, min(0.98, float(cleaned.get("model_vram_auto_cpu_offload_threshold") or 0.82)))
@@ -478,6 +555,16 @@ class AppSettings:
             cleaned["model_vram_idle_cpu_offload_seconds"] = max(0, min(86400, int(cleaned.get("model_vram_idle_cpu_offload_seconds") or 300)))
         except Exception:
             cleaned["model_vram_idle_cpu_offload_seconds"] = 300
+        for _key, _default, _lo, _hi in (("model_vram_skip_cpu_offload_when_system_ram_percent", 82.0, 40.0, 99.0), ("model_system_ram_cleanup_warning_percent", 88.0, 40.0, 99.5), ("model_system_ram_critical_percent", 94.0, 50.0, 99.9)):
+            try:
+                cleaned[_key] = max(_lo, min(_hi, float(cleaned.get(_key) or _default)))
+            except Exception:
+                cleaned[_key] = _default
+        for _key, _default, _lo, _hi in (("model_chat_storage_max_context_chars", 60000, 12000, 500000), ("model_chat_storage_max_response_chars", 90000, 20000, 800000)):
+            try:
+                cleaned[_key] = max(_lo, min(_hi, int(cleaned.get(_key) or _default)))
+            except Exception:
+                cleaned[_key] = _default
         cleaned.setdefault("agent_tools_enabled", True)
         cleaned.setdefault("agent_tools_require_approval", True)
         cleaned.setdefault("agent_tools_allow_shell", True)
@@ -512,6 +599,8 @@ class AppSettings:
         cleaned.setdefault("agent_tools_app_gui_action_routing", True)
         cleaned.setdefault("agent_tools_show_tool_decision_badges", True)
         cleaned.setdefault("assistant_show_live_action_notes", True)
+        cleaned.setdefault("assistant_show_live_chain_of_thought", True)
+        cleaned.setdefault("assistant_show_live_reasoning_trace", True)
         try:
             cleaned["agent_tools_max_reattempts"] = max(0, min(10, int(cleaned.get("agent_tools_max_reattempts") or 0)))
         except Exception:
@@ -524,6 +613,17 @@ class AppSettings:
         cleaned.setdefault("flexavatar_default_device", "cuda:0")
         cleaned.setdefault("flexavatar_job_timeout_seconds", 86400)
         cleaned.setdefault("preferred_external_image_tool", "topaz_photo_ai")
+        cleaned.setdefault("global_dataset_enabled", True)
+        cleaned.setdefault("global_dataset_root", None)
+        cleaned.setdefault("global_dataset_originals_dir", "originals")
+        cleaned.setdefault("global_dataset_branches_dir", "branches")
+        cleaned.setdefault("global_dataset_variant_dir", "variants")
+        cleaned.setdefault("global_dataset_ingest_copy_mode", "copy")
+        if cleaned.get("global_dataset_ingest_copy_mode") not in {"copy", "hardlink", "symlink", "reference"}:
+            cleaned["global_dataset_ingest_copy_mode"] = "copy"
+        cleaned.setdefault("global_dataset_auto_register_downloads", True)
+        cleaned.setdefault("global_dataset_auto_link_downloads_to_branch", False)
+        cleaned.setdefault("global_dataset_default_branch", "default")
         return cls(**cleaned)
 
     def save(self, path: Path) -> None:
@@ -547,6 +647,11 @@ class AppSettings:
             "vast_ai": None,
             "lambda_labs": None,
             "lambda": None,
+            "meshy": None,
+            "tripo": None,
+            "rodin": None,
+            "krea": None,
+            "ideogram": None,
         }
         profiles = self.api_token_profiles or {}
         rows = list(profiles.get(key) or profiles.get(key.replace("_", "")) or [])

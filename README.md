@@ -1,12 +1,336 @@
-# Data Curation Tool
+# Data Curation Tool Modern
+
+## v5.8.48 Update
+
+- Adds app-wide active assistant overlays so live action notes are visible from any tab while a top-level assistant, Tag Editor assistant, Graph assistant, or Code assistant is running.
+- Adds a separate live chain-of-thought-style reasoning trace overlay that is enabled by default alongside action notes. This is the model/app-visible reasoning trace; provider/private hidden reasoning is not extracted.
+- Adds default settings and per-surface controls for the live reasoning overlay, plus Settings persistence for `assistant_show_live_chain_of_thought` and `assistant_show_live_reasoning_trace`.
+- Extends assistant planning responses with `visible_reasoning_trace` / `visible_chain_of_thought` metadata so completed turns preserve the visible trace next to the visible plan/action notes.
+- Keeps automatic token/context condensation enabled by default while showing live context-budget pressure in the global overlays and conversation panel.
+
+See `docs/V5_8_48_GLOBAL_ASSISTANT_ACTION_AND_REASONING_OVERLAYS.md` and `docs/wiki/78-Global-Assistant-Action-and-Reasoning-Overlays.md`.
+
+- Adds system-RAM guardrails for long-running LLM/VLM sessions and disables automatic CPU offload by default so a sharded/offloaded model cannot silently consume all system memory unless explicitly requested.
+- Bounds stored chat context/response payloads and loads conversation JSON with SQL-level truncation guards to reduce overnight assistant memory growth.
+- Expands the condensed conversation memory section with copy/download controls so long summaries are readable.
+- Wires Tag Editor assistant tag pruning to active Dataset Pipeline / LoRA rules and applies assistant JSON keep/remove/add/final_tags directives to the real media tag list.
+- Adds approved assistant/orchestrator model queue tools for model load, inference, unload, and wait-for-job workflows, surfaced through the same visible queue system as manual Quick Tag operations.
+
+See `docs/V5_8_47_MEMORY_GUARD_ASSISTANT_MODEL_TOOLS_TAG_PRUNING.md` and `docs/wiki/77-Memory-Guard-Assistant-Model-Tools-Tag-Pruning.md`.
+
+## v5.8.46 Update
+
+- Fixes the remaining Quick Tag multi-model unload path so Queue Unload Selected captures every highlighted model and sends every selected unload request through a shared batch endpoint.
+- Adds live token/context-budget progress while the Tag Editor Assistant is generating: the circular context meter updates during the request instead of appearing only after the response returns.
+- Keeps visible planning/action-note trace controls open and on by default for assistant conversations. This is user-facing visible reasoning/action trace, not provider/private hidden chain-of-thought.
+- Confirms and hardens automatic context condensation before and after assistant chat requests so near-limit conversations are summarized into compact memory and continued from the condensed state.
+- Adds regression coverage for multi-unload batching, live context-budget ticking, visible trace defaults, and auto-condense metadata.
+
+See `docs/V5_8_46_MULTI_UNLOAD_LIVE_TOKEN_CONTEXT.md` and `docs/wiki/76-Multi-Unload-Live-Token-Context.md`.
+
+## v5.8.45 Update
+
+- Improves attention heatmap overlays in Tag Editor, Compare, and Attention Visualizer with Hydra-demo-style signed CAM rendering: green indicates positive tag evidence and red indicates negative evidence.
+- Adds optional native Hydra CAM extraction when a compatible local RedRocket Hydra 3.5 model/repo is available; otherwise the attention service uses a deterministic signed fallback heatmap instead of the old single-color blob overlay.
+- Adds CAM depth and heat-strength controls to inline heatmap cards while keeping clustering/projection methods in the dedicated Attention Visualizer tab.
+- Hardens attention overlay dropdowns against background refresh so native dropdowns stay open while scrolling/selecting.
+- Reduces Quick Tag queue completed-row linger time and keeps the queue panel patching live so completed model rows clear without switching tabs.
+
+See `docs/V5_8_45_ATTENTION_HEATMAP_DROPDOWN_QUEUE_REFRESH.md` and `docs/wiki/75-Attention-Heatmap-Dropdown-Queue-Refresh.md`.
+
+## v5.8.44 Update
+
+- Keeps every selected Quick Tag model visible in the model queue while download, load, unload, and inference jobs are being submitted or running.
+- Clarifies **Submit queue requests in parallel** semantics: disabled means requests are submitted one by one, but all selected rows still appear immediately as queued placeholders.
+- Preserves client-side placeholder queue rows during live `/api/jobs` polling so slow backend responses cannot make multi-model Quick Tag queues collapse to a single row.
+- Restores hover prediction bars by patching per-media/model score data directly from completed inference job results before the slower full media refresh.
+- Reattaches recoverable model probabilities to normalized bare-string tags so each queued model applies only tags at or above its own threshold.
+- Extends the Nightshade/Glaze integrity classifier workflow to video by sampling frames with user-selectable FPS, max frames, PNG/JPEG/WebP output, compression/quality, and highest-quality presets.
+- Speeds Gallery thumbnail generation with a non-blocking thumbnail path plus OpenCV CPU/CUDA resize when available.
+
+See `docs/V5_8_44_QUICK_QUEUE_LIVE_ROWS_VIDEO_INTEGRITY_SCORES.md` and `docs/wiki/74-Quick-Queue-Live-Rows-Video-Integrity-Scores.md`.
+
+## v5.8.41 Update
+
+Improves Quick Tag queue selection and live model-state updates. The multi-model selector in the Tag Editor now explicitly supports Ctrl/Cmd-click toggling, Shift-click range selection, and Ctrl/Cmd+A select-all while preserving selected options during background status refreshes.
+
+The Quick Tag queue panel now shows download, load, unload, and inference jobs for the selected quick-tag-capable models. Model option rows are patched in place as each individual job changes state, so the dropdown no longer waits for the entire queue to finish before showing that a specific model has downloaded, loaded, unloaded, failed, or started inference.
+
+Improves Agentic Graph Editor node selection. Canvas nodes now support Ctrl/Cmd-click toggling and Shift-click range selection in addition to the existing Ctrl/Cmd drag selection box, copy, cut, paste, delete, and grouped dragging behavior.
+
+See `docs/V5_8_41_QUICK_TAG_MULTISELECT_LIVE_QUEUE_GRAPH_SELECTION.md` and `docs/wiki/71-Quick-Tag-Multiselect-Live-Queue-Graph-Selection.md`.
+
+## v5.8.39 Update
+
+Fixes the remaining live Models-tab refresh issue. Loaded model cards now patch their lifecycle circles, loaded/downloaded state, highlighted background, and active-model ordering in place as soon as the load/unload lifecycle reaches a terminal state; the update path preserves the Models tab scroll position and does not require a tab switch.
+
+Improves GPU/RAM resource visibility. The resource panel now shows actual driver/torch-used VRAM, actual free VRAM, torch allocated/reserved memory, app reservation budget, loaded model count, and system RAM in the live poller so the user and assistant/orchestrator can make placement decisions from current memory state rather than stale catalog flags.
+
+Hardens Gallery/media refresh behavior after model failures. Media loading now preserves the existing Gallery state and shows a non-blocking warning if a refresh fails, while background polling is isolated so failed model jobs cannot break Gallery rendering or general UI performance.
+
+Adds a model runtime planning context endpoint for assistant/orchestrator workflows. `/api/models/runtime-planning-context` exposes live resources, compact model metadata, strict-GPU placement policy, and sharding guidance so LLM/VLM/GLM/supervisor models can propose GPU IDs, sharding strategy, tensor-parallel settings, and queueable model jobs using the same resource data shown to the user.
+
+See `docs/V5_8_39_LIVE_MODEL_CARD_VRAM_GALLERY_RESILIENCE.md` and `docs/wiki/69-Live-Model-Card-VRAM-Gallery-Resilience.md`.
+
+## v5.8.38 Update
+
+Adds live model-runtime polling for model lifecycle, GPU VRAM reservations, driver-reported CUDA memory, and regular system RAM. Models, Tag Editor, Agent Tools, Jobs, and assistant/orchestration surfaces now patch status circles, model dropdown styling, and resource panels in place without requiring a tab switch and without forcing a full page render that would reset scroll position.
+
+Adds a queued **Quick Tag** inference workflow in the Tag Editor. The quick-tag card now supports a multi-select model queue, parallel enqueueing, active per-model progress rows, per-job ETAs, and an overall circular queue progress indicator. Completed jobs disappear from the active quick queue while remaining visible in the Jobs tab.
+
+Adds a global model-job queue panel to **Agent Tools** so assistant/orchestrator-driven model handoffs can be monitored separately from the quick-tag subset. The new generic `/api/models/queue-runs` backend endpoint queues multiple model inference jobs through the existing model-inference lane and exposes the same live progress/ETA UI used by Quick Tag.
+
+See `docs/V5_8_38_LIVE_MODEL_RUNTIME_QUEUES.md` and `docs/wiki/68-Live-Model-Runtime-Queues.md`.
+
+## v5.8.37 Update
+
+Fixes the Tag Editor **Quick Tag / Rating Model** feedback loop. Selecting a model in the dropdown now immediately swaps the lifecycle/progress circles to that exact model and refreshes status in place, so the user no longer has to switch tabs to see whether the selected model is loaded, downloading, loading, or ready.
+
+Fixes the post-inference refresh path for quick tag/rating runs. Completed model inference jobs now refresh the affected media rows, clear stale tag drafts, request prediction scores, and hard-refresh the active media review tab while preserving scroll position. The completed job payload now also includes full candidate/applied tag maps and candidate score rows so the frontend can optimistically patch the current image if the media fetch is slow.
+
+Tightens model-tag normalization for applied tags. Model-emitted tags/classes now continue through the selected tag profile with alias resolution and implication expansion enabled by default, then save with the selected tag text mode and ordering strategy. This keeps PixAI/WD/Thouph/Hydra/JTP outputs aligned with the user's active e621/e926/Danbooru/etc. dictionary preset instead of silently creating disconnected new tags when a known alias/implication path exists.
+
+See `docs/V5_8_37_QUICK_TAG_REFRESH_AND_ALIAS_SCORE_SYNC.md` and `docs/wiki/67-Quick-Tag-Refresh-and-Alias-Score-Sync.md`.
+
+## v5.8.33 Update
+
+Fixes model-download progress so Hugging Face snapshot downloads, small ONNX tagger repos, and local payload finalization now update the model download lifecycle circle and the Models tab without requiring a tab switch. The loader also reconciles a completed local payload before blocking a load on an apparently active download, so a model that finished downloading should not remain stuck behind a stale running circle.
+
+Adds three known-good Agentic Graph templates plus a new **Agentic Workflow READMEs** tab with rendered instructions, create/run buttons, expected results, and manual next steps. The baseline templates are intentionally local-only and dry-run-safe so the user can verify the graph runtime before expanding into model calls, media probing, downloader steps, MCP tools, shell commands, or trainer handoffs.
+
+See `docs/V5_8_33_DOWNLOAD_PROGRESS_AND_GUARANTEED_GRAPHS.md` and `docs/wiki/63-Download-Progress-and-Guaranteed-Agentic-Graphs.md`.
+
+## v5.8.32 Update
+
+Fixes migrated model detection so model folders copied or moved from an older install are loaded from local disk instead of falling back to a remote repo id and redownloading. The Models tab now has a **Rescan / Reconcile Migrated Models** button, load/chat paths use local-files-only resolution whenever a downloaded local payload is detected, and local model loads temporarily force Hugging Face/Transformers offline mode so helper libraries cannot silently fetch missing snapshots.
+
+See `docs/V5_8_32_MIGRATED_MODEL_DETECTION_NO_REDOWNLOAD.md` and `docs/wiki/62-Migrated-Model-Detection-No-Redownload.md`.
+
+## v5.8.31 Update
+
+Adds graph chunk-selection and grouped dragging with Ctrl+drag, graph-node copy/cut/paste shortcuts, searchable/filterable node palette menus with recent-node history, multi-input/multi-output port rendering, cursor-accurate right-click node menus, Attention Visualizer tag suggestions, an Augment-tab render fix, a closed-loop model-training improvement graph template, and isolated ONNX adapters for the PixAI and WD v3 tagger rows that previously failed with “Model adapter is not available.”
+
+See `docs/V5_8_31_GRAPH_SELECTION_MENU_WD_PIXAI_FIXES.md` and `docs/wiki/61-Graph-Selection-Menu-WD-PixAI-Fixes.md`.
+
+## v5.8.30 Update
+
+Fixes the Agentic Graph Editor refresh/input regression by separating graph clicks, right-clicks, node drags, port gestures, and graph zoom from actual page scrolling. Graph-local canvas and node-inspector updates now repaint immediately while preserving the tab scroll position. Also fixes the Agentic Graph Chat render failure in inline selected-model runtime controls.
+
+See `docs/V5_8_30_GRAPH_IMMEDIATE_INTERACTION_AND_CHAT_FIX.md` and `docs/wiki/60-Graph-Immediate-Interaction-and-Chat-Fix.md`.
+
+## v5.8.29 Update
+
+Moves heatmap-style attention review into the Tag Editor and Compare tabs as toggleable semi-transparent overlays, sets the default classifier/tagger threshold to **0.70**, fixes several Agentic Graph Editor canvas/menu/inspector interactions, and adds a graph-linked chat tab with visible plan/action-trace support.
+
+See `docs/V5_8_29_ATTENTION_OVERLAY_GRAPH_CHAT_THRESHOLD.md` and `docs/wiki/59-Attention-Overlay-Graph-Chat-Threshold.md`.
+
+## v5.8.28 Update
+
+Adds model-specific Thouph preprocessing, soft automatic refreshes that preserve Models-tab scroll/dropdowns, Tag Editor prediction sort modes, Agentic Graph Editor preset-render fixes, audio/voice/video+audio dataset scope additions, and LingBot-Video world-model catalog/runtime rows.
+
+See `docs/V5_8_28_PREPROCESS_SCROLL_GRAPH_WORLD_MODELS.md` and `docs/wiki/58-Preprocessing-Scroll-Graph-LingBot-World-Models.md`.
+
+## v5.8.27 Update
+
+Adds a new **Multimodal Dataset Builder** tab for image/video/audio dataset preparation, structured captions, LTX-2.3 exports, Wan 2.2 Musubi/DiffSynth/SimpleTuner/AI Toolkit exports, training MCP handoffs, explicit Tripo P1.0/Rodin/Hunyuan3D 3.1 3D provider rows, and Tag Editor model-score highlighting by one/multiple/all model prediction rows.
+
+See `docs/V5_8_27_MULTIMODAL_DATASET_BUILDER.md` and `docs/wiki/57-Multimodal-Dataset-Builder-LTX-Wan-MCP.md`.
+
+## v5.8.25 Update
+
+Fixes the remaining legacy EVA `attn_pool` inference compatibility error and corrects the frontend refresh/defer behavior that made Models, Gallery, Jobs, and log/error views look stale until switching tabs.
+
+See `docs/V5_8_25_EVA_ATTN_POOL_AND_LIVE_TAB_REFRESH_FIXES.md` and `docs/wiki/55-EVA-Attention-Pool-and-Live-Tab-Refresh-Fixes.md`.
+
+## v5.8.23 Update
+
+Migration tag-database import no longer stalls on stale `tag_export_files` metadata from older installs. Export-file metadata is rebuilt from migrated local cache files, the redundant legacy dictionary mirror is skipped when normalized dictionaries are present, and tag-table import now commits before progress callbacks so the Dashboard/Jobs progress indicator can update live instead of appearing stuck.
+
+See `docs/V5_8_23_MIGRATION_TAG_DB_STALL_FIX.md` and `docs/wiki/53-Migration-Tag-Database-Stall-Fix.md`.
+
 
 ![Data Curation Tool Modern visual index](docs/wiki/assets/images/repo_main_visual_index.png)
 
 Repository: https://github.com/x-CK-x/Dataset-Curation-Tool
 
-Data Curation Tool is a local-first dataset curation, tagging, model-management, downloader, 3D generation, media metadata, and tool-orchestration application. The current documentation set is stored in `docs/wiki/` and is designed to be pushed directly into the repository or copied into the GitHub Wiki.
+Data Curation Tool Modern is a local-first dataset curation, tagging, model-management, downloader, 3D generation, media metadata, and tool-orchestration application. The current documentation set is stored in `docs/wiki/` and is designed to be pushed directly into the repository or copied into the GitHub Wiki.
 
-## [WIKI & Tutorial](https://github.com/x-CK-x/Dataset-Curation-Tool/wiki)
+## v5.8.22 Update
+
+- Install Migration now treats complete model folders as atomic model groups and can move them as one fast same-drive directory operation instead of thousands of individual file transfers.
+- Existing complete target model groups are detected and skipped/deleted from the source when duplicate-source deletion is enabled.
+- Runtime duplicate checks prevent rewriting large model shards that are already present in the target install.
+- Migration progress no longer compresses the file-transfer stage into only 75% of the job, so long migrations should not appear stuck around 70–71%.
+
+See `docs/V5_8_22_MIGRATION_FAST_MODEL_GROUPS_AND_PROGRESS_FIX.md` and `docs/wiki/52-Migration-Fast-Model-Groups-and-Progress-Fix.md`.
+
+## v5.8.21 Update
+
+- Install Migration now uses fast same-drive moves in **Move** mode, enabled by default.
+- Large model files on the same SSD/volume are renamed into the new install instead of copied byte-for-byte and then deleted.
+- Cross-drive moves automatically fall back to the prior chunked copy-and-delete path.
+
+See `docs/V5_8_21_FAST_MODEL_MOVE_MIGRATION.md` and `docs/wiki/51-Fast-Same-Drive-Model-Migration.md`.
+
+
+## New in v5.8.19 — migration local-cache reuse and weekly startup sync
+
+- Migration now defaults to local-only cache reuse, so older-install tag exports/database rows are used instead of forcing a post-migration internet refresh.
+- Startup tag-dictionary network checks are now gated to once per week by default.
+- Cached `runtime/tag_exports/<profile>/` files can be imported directly into the current dictionary without downloading fresh copies.
+- Settings and Install Migration now expose controls for local-only migration and weekly tag-sync intervals.
+
+## New in v5.8.18 — EVA norm-pre and graph editor event-handler fixes
+
+- Fixed the remaining legacy EVA/timm inference failure where older pickled EVA models could miss `norm_pre`.
+- Added identity fallbacks for newer optional EVA fields used by current `timm` forward paths.
+- Restored missing Agentic Graph Editor frontend handlers for node update, node-kind change, and config JSON editing.
+- Graph canvas right-click, wheel zoom, pointer-drag pan, node creation, node movement, and node-port connection now render immediately without being blocked by page-scroll debounce protection.
+
+
+## New in v5.8.15 — dashboard migration progress refresh
+
+- Added a **Refresh Dashboard Now** control so the Dashboard can explicitly reload startup/migration maintenance state.
+- Manual migration now publishes an immediate startup-maintenance state when the migration job is queued.
+- Migration now emits live progress during previous-install scanning, large file copy/move operations, and migrated tag database imports.
+- Startup status requests are no-cache/cache-busted so the Dashboard does not display stale migration progress.
+
+
+## New in v5.8.14 — legacy tagger inference and scroll stability fixes
+
+- Fixed legacy EfficientNetV2-M inference so every image is converted to the static `1 x 3 x 448 x 448` tensor expected by its ONNX/PyTorch classifiers.
+- Fixed legacy EVA/timm pickle inference by patching nullable EVA attributes such as `reg_token` and `mask_token` when older serialized model objects do not contain them.
+- Reduced scrollbar jitter by deferring polling-driven renders while the user is actively scrolling and by replacing long delayed scroll-restore loops with short-lived tokenized restore passes.
+
+## New in v5.8.13 — startup migration progress, attention heatmaps, and functional graph runtime
+
+- Dashboard Startup Maintenance now mirrors manual migration jobs immediately, including queued/running progress, elapsed time, ETA, job id/type, and post-migration tag dictionary reconciliation.
+- The tab scroll restoration path was tightened again so switching tabs preserves the main scroll container instead of restoring the previous shell scroll position over the target tab.
+- Attention Visualizer now exposes immediate Grad-CAM/CAM, Hydra CAM/PCA, diffusion U-Net cross-attention, and t-SNE/embedding visualization artifacts with local overlay preview links.
+- Agentic Graph Editor now has local graph presets, export snapshots, edge metadata editing, graph-runtime session execution, selected-node execution, runtime result inspection, executable bundle-limit policies, supervisor fanout previews, model-call preview packets, and approval-gated browser/MCP/tool call previews.
+
+## New in v5.8.12 — model prediction normalization and unload UI fixes
+
+- Model-generated tags now pass through one canonical postprocessor before being stored, scored, shown, or applied.
+- Active tag text mode is respected, so underscore-emitting models no longer create duplicate “new” tags when the tool is configured for spaces.
+- Alias resolution and implication expansion now preserve prediction scores.
+- Tag-hover score panels show per-model colored rows and an average score when multiple model predictions exist for the same tag.
+- Model unload actions now surface immediately on the load/unload lifecycle circle across tabs.
+
+## New in v5.8.11 — Graph editor port, browser MCPs, scroll persistence, and startup resume
+
+- Expanded the integrated Agentic Graph Editor with the standalone graph-editor node concepts while keeping the existing dark/neon canvas style.
+- Added browser MCP entries for user-approved visible browsing/search handoff through default browser, Edge, Chrome, Firefox, Chromium, and Tor Browser.
+- Fixed tab switching so large tabs preserve scroll position instead of jumping back to the top.
+- Install Migration now mirrors progress into the Dashboard startup-maintenance card and resumes post-migration cache/dictionary reconciliation.
+- Agent tool smoke tests use cached results on future launches, making repeated startup maintenance faster.
+
+## New in v5.8.9 — Startup progress crash fix
+
+- Fixed the startup initialization job failure caused by the missing `time` import used by the live startup progress/ETA tracker.
+- Startup tag-dictionary sync now uses the package `__version__` for its default user-agent string instead of a hardcoded previous release value.
+
+## New in v5.8.8 — Hydra UTF-8 inference + startup progress fixes
+
+- Fixed the next local **RedRocket Hydra 3.5** inference failure on Windows where Hydra wrote Unicode tag labels to a CP1252 stdout stream and crashed with `UnicodeEncodeError`.
+- Hydra local inference now writes repo-native CSV output to a UTF-8 temporary file instead of stdout, while also forcing UTF-8 child-process environment variables.
+- Added a live Dashboard startup-maintenance indicator with a white circular progress ring, elapsed time, ETA, current phase, and recent startup steps.
+- Long startup maintenance now reports progress through `/api/system/startup-status` instead of leaving the user without feedback.
+- Kept the v5.8.7 workflow preset, scroll preservation, Gallery refresh, and page-limit fixes.
+- Bumped the release version to `5.8.8`.
+
+See [`docs/V5_8_8_HYDRA_UTF8_STARTUP_PROGRESS_GALLERY_FIXES.md`](docs/V5_8_8_HYDRA_UTF8_STARTUP_PROGRESS_GALLERY_FIXES.md) and [`docs/wiki/39-Hydra-UTF8-Startup-Progress-and-Gallery-Fixes.md`](docs/wiki/39-Hydra-UTF8-Startup-Progress-and-Gallery-Fixes.md).
+
+## New in v5.8.7 — Hydra loader compatibility + workflow/gallery UI fixes
+
+- Fixed another local **RedRocket Hydra 3.5** inference failure where upstream `inference.py` called `Loader.heuristic_max_workers(...)` while the downloaded `utils/loader.py` only exposed `heuristic_workers(...)`.
+- Extended the Hydra local-repo compatibility patch so it also accepts `Loader(..., max_workers=...)` in older loader snapshots.
+- Kept the unavailable Z3D/Zack3D model removed from the local tagger catalog.
+- Expanded Automation Workflow templates and goal dropdown coverage for style, concept, character, and character+style / OC+style prep.
+- Fixed Gallery/page navigation refresh behavior so explicit reload/page buttons force a render instead of being deferred by dense-tab interaction protection.
+- Added backend and frontend page clamping so the Gallery cannot browse past its last available page.
+- Bumped the release version to `5.8.7`.
+
+See [`docs/V5_8_7_HYDRA_LOADER_WORKFLOW_GALLERY_FIXES.md`](docs/V5_8_7_HYDRA_LOADER_WORKFLOW_GALLERY_FIXES.md) and [`docs/wiki/38-Hydra-Loader-Workflow-and-Gallery-Fixes.md`](docs/wiki/38-Hydra-Loader-Workflow-and-Gallery-Fixes.md).
+
+## New in v5.8.6 — Hydra Python 3.11 source patch + unavailable Z3D removal
+
+- Removed the unavailable Z3D/Zack3D legacy tagger entry from the Models catalog and legacy config registry.
+- Added an automatic Hydra local-repo compatibility patch for Python versions where `multiprocessing.Queue` cannot be used as `Queue[str]` in runtime annotations.
+- The Hydra adapter now patches the downloaded `utils/loader.py` before load/inference and writes a small patch marker so the same repo is not repeatedly modified.
+- Bumped the release version to `5.8.6`.
+
+See [`docs/V5_8_6_HYDRA_PY311_QUEUE_PATCH_AND_Z3D_REMOVAL.md`](docs/V5_8_6_HYDRA_PY311_QUEUE_PATCH_AND_Z3D_REMOVAL.md) and [`docs/wiki/37-Hydra-Python-Queue-Patch-and-Z3D-Removal.md`](docs/wiki/37-Hydra-Python-Queue-Patch-and-Z3D-Removal.md).
+
+## New in v5.8.5 — Hydra Windows libvips DLL loader fix
+
+- Fixed a second local **RedRocket Hydra 3.5** Windows runtime failure where `pyvips` was present but `libvips-42.dll` could not be loaded.
+- Kept Windows DLL-directory handles alive for the process instead of adding and immediately losing them.
+- Added broader Conda/PATH/manual-libvips probing and clearer diagnostics for missing `libvips` files.
+- Added model-load auto-repair for the `pyvips`/`libvips` chain using `pyvips[binary]>=3.0.0`, `pyvips-binary>=8.16.0`, and Conda fallback repair when Conda is visible.
+- Added `scripts/repair_hydra_runtime_dependencies.py` and updated `install.bat`, `update.bat`, `install.sh`, `update.sh`, and Hydra repair scripts to use it.
+- Bumped the release version to `5.8.5`.
+
+See [`docs/V5_8_5_HYDRA_WINDOWS_LIBVIPS_DLL_FIX.md`](docs/V5_8_5_HYDRA_WINDOWS_LIBVIPS_DLL_FIX.md) and [`docs/wiki/36-Hydra-Windows-libvips-DLL-Loader-Fix.md`](docs/wiki/36-Hydra-Windows-libvips-DLL-Loader-Fix.md).
+
+## New in v5.8.4 — Hydra runtime dependency fix
+
+- Fixed local **RedRocket Hydra 3.5** inference dependency handling so missing `pyvips`/`libvips` is detected before the native Hydra subprocess runs.
+- Added `pyvips` and `libvips` to the Conda environment so fresh installs and updates include Hydra's image-loading runtime.
+- Added `install_hydra_runtime_deps.bat` and `install_hydra_runtime_deps.sh` for repairing existing environments without reinstalling the whole tool.
+- Added `scripts/check_hydra_runtime_dependencies.py` to verify local Hydra inference prerequisites.
+- Bumped the release version to `5.8.4`.
+
+See [`docs/V5_8_4_HYDRA_RUNTIME_DEPENDENCY_FIX.md`](docs/V5_8_4_HYDRA_RUNTIME_DEPENDENCY_FIX.md) and [`docs/wiki/35-Hydra-Runtime-Dependency-Fix.md`](docs/wiki/35-Hydra-Runtime-Dependency-Fix.md).
+
+## New in v5.8.3 — Agentic Graph Editor
+
+- Added an **Agentic Graph Editor** tab for visual node/edge orchestration workflows.
+- Graphs can be created from workflow templates, edited manually, drafted/refined by the selected assistant/orchestrator model, validated, dry-run, converted to Automation Workflows, saved as reusable workflows, or queued through Jobs.
+- Graph execution reuses the Automation Workflow backend so approval gates, branch-safe global dataset behavior, and run manifests stay consistent.
+- Added persistent graph storage under `runtime/agentic_graphs/`, API routes under `/api/graph-editor/*`, and compatibility aliases under `/api/graphs/*` for older graph-editor style integrations.
+- Bumped the release version to `5.8.3`.
+
+See [`docs/V5_8_3_AGENTIC_GRAPH_EDITOR.md`](docs/V5_8_3_AGENTIC_GRAPH_EDITOR.md) and [`docs/wiki/34-Agentic-Graph-Editor.md`](docs/wiki/34-Agentic-Graph-Editor.md).
+
+## New in v5.8.1 — Character Reference and LoRA Augmentation Automation
+
+- Added a **Character Reference** tab for zero/one/few-shot character search, ranking, and pruning without training a new model.
+- Added reusable character profiles with positive and negative reference memory, branch-aware pruning plans, and optional DINOv2/CLIP/SigLIP/OWLv2/Grounding-DINO/SAM/SAM2 backend contracts.
+- Added LoRA augmentation and regularization automation in Dataset Pipeline / Pipeline Prep for character, character+style, style, concept, IC-LoRA, ControlNet, and embedding/textual-inversion datasets.
+- Branch-local variants can be generated for headshot/detail crops, upper-body crops, style/texture crops, concept/context crops, square/bucket-safe copies, light denoise, and conservative upscaling while keeping global originals read-only.
+- Bumped the release version to `5.8.1`.
+
+See [`docs/V5_8_1_CHARACTER_REFERENCE_LORA_AUGMENTATION.md`](docs/V5_8_1_CHARACTER_REFERENCE_LORA_AUGMENTATION.md).
+
+## New in v5.8.0 — Legacy local taggers and tag/caption translation
+
+- Added the legacy/local image taggers from the original model configuration to the Models catalog: Thouph EVA02-CLIP 7704, Thouph EVA02 ViT-Large 448 8046, and Thouph Experimental EfficientNetV2-M 8035.
+- Added a shared legacy tagger adapter that preserves model-specific preprocessing, thresholds, ONNX/PyTorch runtime selection, tag metadata ordering, placeholder output handling, and e621 alias/implication cleanup.
+- Added a profile-aware tag/caption translation tool in Tag Dictionaries for cross-booru tag conversion and caption-format conversion, with optional local/cloud model assistance for uncertain mappings.
+- Set the application release version to `5.8.0`.
+
+See [`docs/V5_8_0_LEGACY_TAGGERS_TAG_TRANSLATION.md`](docs/V5_8_0_LEGACY_TAGGERS_TAG_TRANSLATION.md).
+
+## New in v5.78.13 — Dataset Pipeline / Training Prep / 3D-Print Handoff
+
+- Added a **Dataset Pipeline** tab for repeatable pre-training dataset preparation on top of the Global Dataset branch layer.
+- Added rule presets and prompt packets for LoRA, IC-LoRA, ControlNet, embedding/textual-inversion, style, character, character+style, and concept datasets.
+- Added deterministic dry-run/apply rule cleanup for branch-local tag/caption sidecars while keeping global originals untouched.
+- Added external trainer handoff rows/MCP interfaces for Kohya SS, OneTrainer, Diffusers scripts, LTX Trainer, ComfyUI training nodes, cloud training providers, and future source-manifest/webscraper bridges.
+- Added 3D-print/slicer handoff support for Blender, ZBrush, MeshLab, PrusaSlicer, OrcaSlicer, CuraEngine/Cura, Bambu Studio, and Slic3r.
+
+See [`docs/V5_78_13_DATASET_PIPELINE_TRAINING_PREP_3D_PRINT.md`](docs/V5_78_13_DATASET_PIPELINE_TRAINING_PREP_3D_PRINT.md).
+
+## New in v5.78.12 — Global Dataset + 3D/ZBrush Expansion
+
+- Added a **Global Dataset** tab that stores original media once by SHA-256 and tracks source/post mappings to reduce duplicate downloads.
+- Added branch/model-dataset configs that point at global originals while keeping editable tag/caption sidecar copies separate from the original data layer.
+- Added augmented-media variant tracking so branch-generated variants remain linked to their source original.
+- Added Dream Textures, QuickMaker, Meshy official API, Blender MCP add-on/server, and ZBrush Python/MCP refinement rows to the 3D/MCP catalog.
+- Added `/api/global-dataset/*` endpoints for status, asset search, manual ingest, branch linking, and variant registration.
+
+See [`docs/V5_78_12_GLOBAL_DATASET_3D_MCP_ZBRUSH.md`](docs/V5_78_12_GLOBAL_DATASET_3D_MCP_ZBRUSH.md).
 
 ## Current highlights
 
@@ -16,6 +340,8 @@ Data Curation Tool is a local-first dataset curation, tagging, model-management,
 - MCP tool integration surfaces for Blender, Krita, Audacity, OBS Studio, and ComfyUI.
 - Downloader updates with e621/booru Boolean logic gates, presets, queues, deduplication, and tag dictionaries.
 - GitHub-ready visual documentation assets under `docs/wiki/assets/images/`.
+- Automation Workflows tab for user/model/co-edited curation pipelines, dry-runs, approval gates, branch-safe execution, and run manifests.
+- Agentic Graph Editor tab for visual user/model/co-edited orchestration graphs that compile into Automation Workflows.
 
 ## Visual documentation map
 
@@ -41,6 +367,14 @@ All visuals are stored in `docs/wiki/assets/images/` and are referenced with rep
 | Voice and roadmap | ![Voice roadmap](docs/wiki/assets/images/voice_roadmap_best_practices_faq_dev.png) | `docs/wiki/assets/images/voice_roadmap_best_practices_faq_dev.png` |
 | Voice model catalog | ![Voice model catalog](docs/wiki/assets/images/voice_model_catalog_hf_access.png) | `docs/wiki/assets/images/voice_model_catalog_hf_access.png` |
 | v5.78 3D/MCP/cloud/logic overview | ![v5.78 overview](docs/wiki/assets/images/v578_3d_cloud_mcp_logic_overview.png) | `docs/wiki/assets/images/v578_3d_cloud_mcp_logic_overview.png` |
+
+## v5.8.2 automation workflows
+
+- Added an Automation Workflows tab for template workflows, assistant/model workflow drafting, direct workflow JSON editing, validation, dry-run, queued execution, and run manifests.
+- Workflows can wrap global dataset branches, dataset pipeline rules, character-reference pruning, augmentation planning, regularization planning, export, and trainer/tool handoff.
+- Unsafe or expensive workflow steps keep approval gates by default.
+
+See [`docs/V5_8_2_AUTOMATION_WORKFLOWS.md`](docs/V5_8_2_AUTOMATION_WORKFLOWS.md) and [`docs/wiki/33-Automation-Workflows-and-Cooperative-Curation.md`](docs/wiki/33-Automation-Workflows-and-Cooperative-Curation.md).
 
 ## Historical patch notes
 
@@ -615,19 +949,7 @@ The frontend is plain modern browser JavaScript so it can run offline without No
 
 ## License
 
-This project is licensed under the terms of the
-[GNU General Public License v3.0](LICENSE).
-
-## Usage conditions
-By using this downloader, the user agrees that the author is not liable for any misuse of this downloader. This downloader is open-source and free to use.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+GPL-3.0-or-later.
 
 ## v5.7 media metadata, video/audio extraction, and Krita bridge pass
 
@@ -788,3 +1110,122 @@ See `docs/V5_35_METADATA_MODEL_CHAT_AUDIT.md`.
 - Added booru/e621 Boolean logic gates for Downloads and Presets, with preview expansion and raw append mode.
 - Updated the GitHub wiki docs under `docs/wiki/27-3D-Generation-MCP-Cloud-and-Booru-Logic.md`.
 
+
+### Dataset Pipeline / Training Prep / 3D Print Handoff
+
+The Dataset Pipeline tab prepares branch datasets for external training tools without mutating global originals. It can generate caption/tag rule packets and model/VLM prompts for LoRA, IC-LoRA, ControlNet, and embedding workflows; evaluate branch readiness; dry-run/apply deterministic cleanup to branch-local sidecars; export trainer manifests/config stubs for tools such as Kohya SS, OneTrainer, Diffusers scripts, LTX Trainer, ComfyUI training nodes, cloud trainers, or future source-manifest/webscraper bridges; and package 3D assets for Blender/ZBrush/MeshLab/slicer handoff. See `docs/wiki/29-Dataset-Pipeline-Training-Prep-and-3D-Print-Handoff.md`.
+
+### v5.78.14 — RedRocket Hydra 3.5, FLUX/Chroma prep, and remote tagger offload
+
+This build adds RedRocket Hydra 3.5 as a first-class tagger/rating classifier across Models, Tag Editor, Compare, Batch Tags, annotation quick-run cards, and prediction/tag-selection surfaces. Hydra can run locally through the downloaded repo-native `inference.py` path or remotely through `service.py` by setting `options.hydra_service_url`. Remote Devices can now start Hydra service processes, plan model-run shards, and dispatch tagger/model inference to configured worker APIs. Dataset Pipeline and Pipeline Prep also include FLUX.1 Dev/Schnell/Kontext/Fill/Depth/Canny/Redux plus Chroma/FLUX-tuned caption-rule targets. See `docs/wiki/30-Hydra-3-5-FLUX-Chroma-and-Remote-Tagger-Offload.md`.
+### v5.8.0 — Legacy local taggers and tag/caption translation
+
+This release adds the legacy/local image taggers from the original model configuration into the Models catalog, including Thouph EVA02-CLIP 7704, Thouph EVA02 ViT-Large 448 8046, and Thouph Experimental EfficientNetV2-M 8035. These models use a shared legacy adapter that preserves their original preprocessing, thresholds, ONNX/PyTorch runtime choices, tag metadata ordering, placeholder output handling, and e621 alias/implication cleanup. The Tag Dictionaries tab also now includes a profile-aware tag/caption translator for converting between booru profiles or caption formats, with optional local/cloud LLM/VLM handoff for uncertain mappings. See `docs/wiki/31-Legacy-Taggers-and-Tag-Caption-Translation.md`.
+
+
+- [v5.8.15 Dashboard Migration Progress Refresh](docs/V5_8_15_DASHBOARD_MIGRATION_PROGRESS_REFRESH.md)
+- [v5.8.14 Legacy Tagger Runtime and Scroll Stability Fixes](docs/V5_8_14_LEGACY_TAGGER_SCROLL_FIXES.md)
+- [v5.8.13 Startup Migration Progress, Attention Heatmaps, and Graph Runtime](docs/V5_8_13_STARTUP_MIGRATION_ATTENTION_GRAPH_RUNTIME.md)
+- [v5.8.12 Model Prediction Normalization and Unload UI Fixes](docs/V5_8_12_MODEL_PREDICTION_NORMALIZATION_AND_UNLOAD_UI_FIXES.md)
+- [v5.8.11 Graph Editor, Browser MCP, Scroll, and Startup Resume Fixes](docs/V5_8_11_GRAPH_SCROLL_STARTUP_RESUME_FIXES.md)
+- [v5.8.9 Startup Progress Time Import Fix](docs/V5_8_9_STARTUP_PROGRESS_TIME_IMPORT_FIX.md)
+- [v5.8.8 Hydra UTF-8, Startup Progress, and Gallery Fixes](docs/V5_8_8_HYDRA_UTF8_STARTUP_PROGRESS_GALLERY_FIXES.md)
+
+
+## v5.8.10 — Agentic Graph Editor and Browser MCPs
+
+- Ports standalone graph-editor concepts into the integrated Agentic Graph Editor while keeping the existing dark/neon canvas style.
+- Adds multimodal input nodes, bundle/context nodes, model-call nodes, supervisor nodes, external-tool nodes, event-console support, browser search/open nodes, port connections, pan/zoom, edge deletion, and flow animation.
+- Adds browser MCP entries for default browser, Edge, Chrome, Firefox, Chromium, and Tor Browser. Browser MCP actions are visible/user-approved handoffs, not hidden scraping.
+- See `docs/V5_8_10_AGENTIC_GRAPH_BROWSER_MCP.md` and `docs/wiki/40-Agentic-Graph-Editor-Standalone-Port-and-Browser-MCPs.md`.
+
+- **v5.8.11**: fixes tab scroll preservation and makes migration jobs resume the Dashboard startup-maintenance progress indicator after a cancelled first-run tag sync.
+
+
+### v5.8.13 Startup / Attention / Agentic Graph Functionality
+
+Adds live startup progress during migration, an Attention Visualizer tab for Grad-CAM/CAM/U-Net/t-SNE/cross-attention contracts, and deeper standalone graph-editor compatibility.
+
+
+### v5.8.15
+
+- Dashboard manual refresh and live manual-migration startup-maintenance progress.
+- Chunked migration copy/move progress and chunked migrated tag database import progress.
+- No-cache startup status polling.
+
+### v5.8.14
+
+- Fixed legacy EfficientNetV2-M preprocessing so ONNX/PyTorch inference always receives the required 448x448 tensor.
+- Patched legacy EVA/timm pickle compatibility for missing `reg_token`.
+- Reduced scroll jitter by replacing long multi-second restoration loops with short-lived tokenized scroll restores.
+
+
+## v5.8.16 Update
+
+- Agentic Graph Editor palette cards now expose standalone-style node categories and palette-driven customization fields.
+- Quick model inference completion now refreshes prediction scores and affected media more directly so Tag Editor hover cards update sooner.
+- Prediction hover rows use stable, unique per-model color variables with multi-model average rows.
+- Legacy EVA/TIMM taggers receive additional neutral compatibility defaults for newer runtime environments.
+
+See `docs/V5_8_16_GRAPH_PALETTE_PREDICTION_REFRESH_EVA_FIXES.md`.
+
+
+## v5.8.17 Update
+
+This update fixes the Agentic Graph Editor interaction layer, migration-finalization progress, and the post-100% frontend hydration stall. The graph canvas now supports background drag panning, cursor-centered wheel zoom, right-click node selection menus, port-based node connection, node context menus, and smoother direct-manipulation updates without replacing the existing dark/neon visual theme. Manual migration progress is also remapped so the raw file-copy phase no longer shows as 100% while reconciliation and post-migration tag/model checks are still running. The browser now renders dashboard essentials first and hydrates optional catalogs in the background while the Dashboard startup-maintenance circle displays a `frontend_hydration` phase.
+
+See `docs/V5_8_17_GRAPH_CANVAS_AND_MIGRATION_FINALIZATION.md`.
+
+
+## v5.8.18 Update
+
+- [v5.8.18 EVA Norm-Pre and Graph Editor Event Handler Fixes](docs/V5_8_18_EVA_NORM_PRE_AND_GRAPH_EDITOR_EVENT_HANDLERS.md)
+
+## v5.8.19 Update
+
+- [v5.8.19 Migration Local Cache Reuse and Weekly Startup Sync](docs/V5_8_19_MIGRATION_LOCAL_CACHE_WEEKLY_SYNC.md)
+
+
+## v5.8.20 Update
+
+- Install Migration now supports parallel file transfers, enabled by default with four workers for SSD migrations.
+- New installs with no migrated/local tag dictionary rows bootstrap the active/default tag dictionary immediately.
+- Startup tag dictionary network checks remain gated to once per week by default, can be disabled, and can be forced manually from Settings or Tag Dictionaries.
+
+See `docs/V5_8_20_PARALLEL_MIGRATION_AND_FIRST_RUN_SYNC.md` and `docs/wiki/50-Parallel-Migration-and-First-Run-Tag-Sync.md`.
+### v5.8.24 runtime and UI fixes
+
+- Hydra 3.5 is treated as a local tagger by default rather than an MCP/API-oriented catalog row.
+- Legacy EVA taggers include additional newer-timm compatibility shims.
+- Explicit GPU assignments are stricter for legacy PyTorch/ONNX taggers, including ONNX CUDA device IDs.
+- Model-page interactions use short catalog caching, and gallery/tag tabs refresh more reliably after completed jobs.
+
+
+### v5.8.25 EVA compatibility and live refresh fixes
+
+- Adds the remaining neutral EVA/timm compatibility defaults for the Thouph EVA02 legacy tagger, including `attn_pool`, `head_drop`, and `pos_drop`.
+- Explicit model, gallery, and job refresh actions now force state-preserving UI repaint instead of waiting for tab-switch refresh.
+- Completed inference jobs trigger a faster visible refresh of model/tag/gallery state.
+
+See `docs/V5_8_25_EVA_ATTENTION_POOL_AND_LIVE_REFRESH_FIXES.md` and `docs/wiki/55-EVA-Attention-Pool-and-Live-Refresh-Fixes.md`.
+
+## v5.8.26 Update
+
+- Fixes the app-wide scroll jump caused by automatic polling refreshes restoring stale shell/window scroll state.
+- Restores the legacy EfficientNetV2-M tagger to the original PyTorch-first runtime preference.
+- Updates ONNX model dependencies to use `onnxruntime-gpu` so ONNX taggers can use CUDA providers after running the updater.
+- Allows ONNX-only legacy rows to remain loadable with an explicit CPU fallback warning if the CUDA provider is still unavailable.
+
+See `docs/V5_8_26_SCROLL_AND_LEGACY_ONNX_GPU_FIXES.md`.
+
+### v5.8.47 memory guard, assistant model tools, and tag pruning
+
+- Added system-RAM guardrails for long-running LLM/VLM sessions. Automatic CPU offload is disabled by default and skipped under RAM pressure.
+- Bounded stored chat context/response payloads to reduce overnight memory growth.
+- Expanded the condensed conversation memory panel so it can be read, copied, or downloaded without truncation.
+- Wired Tag Editor assistant pruning to active Dataset Pipeline / LoRA rules and real tag-list updates.
+- Added approved assistant/orchestrator model queue tools for model load, inference, unload, and wait-for-job operations.
+
+## v5.8.47 Update
+
+Memory guard, assistant model tools, and Tag Editor tag pruning fixes.

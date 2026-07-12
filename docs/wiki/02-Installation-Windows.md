@@ -104,6 +104,7 @@ These scripts install optional feature groups:
 | `install_image_tools.bat` | External image/upscale/tool integrations. |
 | `install_geckodriver.bat` | Firefox geckodriver for Source Browser. |
 | `install_jtp3_runtime.bat` | JTP-3 tag/rating model runtime support. |
+| `install_hydra_runtime_deps.bat` | RedRocket Hydra 3.5 local inference runtime (`pyvips`/`libvips`) repair. |
 | `install_flexavatar.bat` | Isolated FlexAvatar runtime. |
 
 ## Stop the server

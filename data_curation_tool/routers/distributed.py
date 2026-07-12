@@ -32,6 +32,19 @@ class RemoteStartRequest(BaseModel):
     user_approved: bool = False
 
 
+class HydraServiceStartRequest(BaseModel):
+    name: str
+    host: str = "0.0.0.0"
+    port: int = 8080
+    hydra_repo_path: str = ""
+    device: str = "cuda"
+    batch_size: int = 1
+    seqlen: int = 1024
+    varlen: bool = False
+    timeout_seconds: int = 30
+    user_approved: bool = False
+
+
 class ScpTransferRequest(BaseModel):
     name: str
     local_path: str = ""
@@ -48,6 +61,17 @@ class DownloadPlanRequest(BaseModel):
 
 
 class DownloadDispatchRequest(DownloadPlanRequest):
+    parallel: bool = True
+    timeout_seconds: int = 30
+
+
+class ModelRunPlanRequest(BaseModel):
+    payload: dict[str, Any] = Field(default_factory=dict)
+    node_names: list[str] = Field(default_factory=list)
+    include_local: bool = False
+
+
+class ModelRunDispatchRequest(ModelRunPlanRequest):
     parallel: bool = True
     timeout_seconds: int = 30
 
@@ -90,6 +114,11 @@ def start_tool(payload: RemoteStartRequest, request: Request):
     return ctx(request).distributed.start_tool(payload.name, user_approved=payload.user_approved, host=payload.host, port=payload.port, worker_mode=payload.worker_mode, timeout_seconds=payload.timeout_seconds)
 
 
+@router.post("/start-hydra-service")
+def start_hydra_service(payload: HydraServiceStartRequest, request: Request):
+    return ctx(request).distributed.start_hydra_service(payload.name, user_approved=payload.user_approved, host=payload.host, port=payload.port, hydra_repo_path=payload.hydra_repo_path, device=payload.device, batch_size=payload.batch_size, seqlen=payload.seqlen, varlen=payload.varlen, timeout_seconds=payload.timeout_seconds)
+
+
 @router.post("/scp-upload")
 def scp_upload(payload: ScpTransferRequest, request: Request):
     return ctx(request).distributed.scp_upload(payload.name, payload.local_path, payload.remote_path, recursive=payload.recursive, user_approved=payload.user_approved, timeout_seconds=payload.timeout_seconds)
@@ -108,6 +137,16 @@ def download_plan(payload: DownloadPlanRequest, request: Request):
 @router.post("/download-dispatch")
 def download_dispatch(payload: DownloadDispatchRequest, request: Request):
     return ctx(request).distributed.dispatch_download(payload.payload, node_names=payload.node_names, include_local=payload.include_local, parallel=payload.parallel, timeout_seconds=payload.timeout_seconds)
+
+
+@router.post("/model-run-plan")
+def model_run_plan(payload: ModelRunPlanRequest, request: Request):
+    return ctx(request).distributed.plan_model_run_shards(payload.payload, node_names=payload.node_names, include_local=payload.include_local)
+
+
+@router.post("/model-run-dispatch")
+def model_run_dispatch(payload: ModelRunDispatchRequest, request: Request):
+    return ctx(request).distributed.dispatch_model_run(payload.payload, node_names=payload.node_names, include_local=payload.include_local, parallel=payload.parallel, timeout_seconds=payload.timeout_seconds)
 
 
 @router.post("/merge-back")

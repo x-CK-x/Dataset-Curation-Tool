@@ -13,6 +13,7 @@ imageio>=2.34
 imageio-ffmpeg>=0.5
 pyarrow>=16.0
 huggingface_hub>=0.23
+onnxruntime-gpu[cuda,cudnn]>=1.21,<1.23
 transformers>=4.57
 accelerate>=0.30
 safetensors>=0.4

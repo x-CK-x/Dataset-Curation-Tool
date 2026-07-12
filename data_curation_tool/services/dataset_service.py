@@ -117,7 +117,18 @@ class DatasetService:
         errors: list[dict[str, str]] = []
         sha_seen: dict[str, int] = {}
         if compute_sha256:
-            existing = self.db.query("SELECT id, sha256 FROM media WHERE dataset_id=? AND sha256 IS NOT NULL", (dataset_id,))
+            # "Skip exact duplicates" is expected to keep the Gallery from
+            # showing repeated copies after a user imports/migrates a dataset
+            # that overlaps an existing install.  The previous implementation
+            # seeded this map only from the just-created dataset, so a re-import
+            # of the same folder inserted another active Gallery row for every
+            # file.  Use all active media rows when duplicate skipping is on;
+            # dataset-local upsert semantics still handle edits within the same
+            # dataset normally.
+            if request.skip_duplicates:
+                existing = self.db.query("SELECT id, sha256 FROM media WHERE active=1 AND sha256 IS NOT NULL")
+            else:
+                existing = self.db.query("SELECT id, sha256 FROM media WHERE dataset_id=? AND sha256 IS NOT NULL", (dataset_id,))
             for row in existing:
                 if row.get("sha256"):
                     sha_seen[str(row["sha256"])] = int(row["id"])
@@ -179,6 +190,17 @@ class DatasetService:
                 self.tag_service.set_tags_many(tag_items, source="import", profile_key=profile_key, order_strategy=order_strategy)
             if captions:
                 self.db.upsert_captions_many(captions)
+            # Prewarm thumbnails for the batch on the CPU pool.  This keeps the
+            # Gallery from doing one expensive thumbnail conversion per <img>
+            # request after a large import.
+            try:
+                thumb_rows = []
+                for inspected, media_id in zip(kept, media_ids):
+                    payload = inspected.get("payload") or {}
+                    thumb_rows.append({"id": int(media_id), "path": payload.get("path"), "media_type": payload.get("media_type")})
+                self.media_service.schedule_thumbnail_prewarm(thumb_rows)
+            except Exception:
+                pass
             imported += len(media_ids)
 
         inspected_batch: list[dict[str, Any]] = []

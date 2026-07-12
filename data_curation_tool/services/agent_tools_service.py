@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 
 from ..config import AppSettings
 from ..paths import AppPaths
-from ..schemas import ModelChatRequest
+from ..schemas import ModelChatRequest, ModelLoadRequest, ModelRunRequest
 from .browser_service import BrowserService
 from .model_service import ModelService
 
@@ -45,6 +45,7 @@ class AgentToolsService:
     settings: AppSettings
     model_service: ModelService
     browser: BrowserService | None = None
+    jobs: Any | None = None
 
     @property
     def workspace(self) -> Path:
@@ -279,6 +280,26 @@ class AgentToolsService:
                 "name": "run_model_chat",
                 "description": "Run another approved local/cloud LLM/VLM/chat-capable model as a subtask and return its response to the orchestrator conversation.",
                 "parameters": {"type": "object", "properties": {"model_name": {"type": "string"}, "prompt": {"type": "string"}, "media_ids": {"type": "array", "items": {"type": "integer"}}, "external_paths": {"type": "array", "items": {"type": "string"}}, "device": {"type": "string"}, "device_ids": {"type": "array", "items": {"type": "integer"}}, "sharding_strategy": {"type": "string"}, "torch_dtype": {"type": "string"}, "quantization": {"type": "string"}, "runtime_engine": {"type": "string"}, "tensor_parallel_size": {"type": "integer"}, "max_new_tokens": {"type": "integer"}}, "required": ["model_name", "prompt"]},
+            },
+            {
+                "name": "queue_model_load",
+                "description": "Queue loading one or more app catalog models into CPU/CUDA/selected sharded placement. The jobs appear in the normal Jobs/model lifecycle UI.",
+                "parameters": {"type": "object", "properties": {"model_names": {"type": "array", "items": {"type": "string"}}, "model_name": {"type": "string"}, "device": {"type": "string"}, "device_ids": {"type": "array", "items": {"type": "integer"}}, "sharding_strategy": {"type": "string"}, "torch_dtype": {"type": "string"}, "quantization": {"type": "string"}, "runtime_engine": {"type": "string"}, "tensor_parallel_size": {"type": "integer"}}, "required": []},
+            },
+            {
+                "name": "queue_model_inference",
+                "description": "Queue classifier/tagger/captioner/detector inference jobs on selected media. Use this for model-assisted curation subtasks so the user can see progress in the Jobs/Quick Tag queues.",
+                "parameters": {"type": "object", "properties": {"model_names": {"type": "array", "items": {"type": "string"}}, "model_name": {"type": "string"}, "media_ids": {"type": "array", "items": {"type": "integer"}}, "dataset_id": {"type": "integer"}, "task": {"type": "string"}, "threshold": {"type": "number"}, "apply_tags": {"type": "boolean"}, "apply_caption": {"type": "boolean"}, "device": {"type": "string"}, "device_ids": {"type": "array", "items": {"type": "integer"}}, "use_loaded_placement": {"type": "boolean"}, "sharding_strategy": {"type": "string"}, "parallel_workers": {"type": "integer"}}, "required": ["media_ids"]},
+            },
+            {
+                "name": "queue_model_unload",
+                "description": "Queue unload of one or more app catalog models from RAM/VRAM. The jobs appear in the normal Jobs/model lifecycle UI.",
+                "parameters": {"type": "object", "properties": {"model_names": {"type": "array", "items": {"type": "string"}}, "model_name": {"type": "string"}}, "required": []},
+            },
+            {
+                "name": "wait_for_jobs",
+                "description": "Wait for queued app jobs to complete and return their final results/errors to the orchestrator.",
+                "parameters": {"type": "object", "properties": {"job_ids": {"type": "array", "items": {"type": "integer"}}, "timeout_seconds": {"type": "integer"}, "poll_seconds": {"type": "number"}}, "required": ["job_ids"]},
             },
             {
                 "name": "app_gui_action",
@@ -1529,6 +1550,85 @@ User goal:
         result = self.model_service.chat(req)
         return {"ok": True, "type": "model_chat", "model_name": req.model_name, "response": result.get("response"), "conversation_id": result.get("conversation_id"), "context_budget": result.get("context_budget"), "suggested_tags": result.get("suggested_tags") or [], "suggested_caption": result.get("suggested_caption")}
 
+    def _model_names_from_args(self, model_name: str | None = None, model_names: list[str] | None = None) -> list[str]:
+        names = []
+        for value in (model_names or []):
+            text = str(value or "").strip()
+            if text and text not in names:
+                names.append(text)
+        one = str(model_name or "").strip()
+        if one and one not in names:
+            names.append(one)
+        return names
+
+    def _require_jobs(self):
+        if self.jobs is None or not hasattr(self.jobs, "submit_with_job_id"):
+            raise AgentToolSafetyError("Agent model queue tools need the shared JobManager, but it is not available in this app context.")
+        return self.jobs
+
+    def queue_model_load(self, *, model_name: str | None = None, model_names: list[str] | None = None, device: str = "auto", device_ids: list[int] | None = None, sharding_strategy: str = "none", torch_dtype: str = "auto", quantization: str = "none", runtime_engine: str = "transformers", tensor_parallel_size: int = 1) -> dict[str, Any]:
+        if not bool(getattr(self.settings, "agent_tools_orchestrator_can_spawn_models", True)):
+            raise AgentToolSafetyError("Orchestrator model spawning is disabled in Settings.")
+        jobs = self._require_jobs()
+        queued = []
+        for name in self._model_names_from_args(model_name, model_names):
+            payload = ModelLoadRequest(model_name=name, device=device or "auto", device_ids=[int(x) for x in (device_ids or []) if str(x).strip()], sharding_strategy=sharding_strategy or "none", torch_dtype=torch_dtype or "auto", quantization=quantization or "none", runtime_engine=runtime_engine or "transformers", tensor_parallel_size=int(tensor_parallel_size or 1), options={"queued_by_agent_tool": True})
+            def task(progress, job_id: int, payload=payload):
+                return self.model_service.load(payload, progress=progress, job_id=job_id)
+            job_id = jobs.submit_with_job_id("agent_model_load", payload.model_dump(), task)
+            queued.append({"model_name": name, "job_id": job_id, "type": "agent_model_load"})
+        return {"ok": True, "queued": queued, "count": len(queued)}
+
+    def queue_model_unload(self, *, model_name: str | None = None, model_names: list[str] | None = None) -> dict[str, Any]:
+        jobs = self._require_jobs()
+        names = self._model_names_from_args(model_name, model_names)
+        if not names:
+            names = list(self.model_service.registry.loaded_names()) if hasattr(self.model_service.registry, "loaded_names") else []
+        queued = []
+        for name in names:
+            def task(progress, job_id: int, name=name):
+                return self.model_service.unload(name, progress=progress, job_id=job_id)
+            job_id = jobs.submit_with_job_id("agent_model_unload", {"model_name": name, "queued_by_agent_tool": True}, task)
+            queued.append({"model_name": name, "job_id": job_id, "type": "agent_model_unload"})
+        return {"ok": True, "queued": queued, "count": len(queued)}
+
+    def queue_model_inference(self, *, model_name: str | None = None, model_names: list[str] | None = None, media_ids: list[int] | None = None, dataset_id: int | None = None, task: str = "classify", threshold: float = 0.70, apply_tags: bool = True, apply_caption: bool = False, device: str = "auto", device_ids: list[int] | None = None, use_loaded_placement: bool = True, sharding_strategy: str = "none", parallel_workers: int = 1) -> dict[str, Any]:
+        if not bool(getattr(self.settings, "agent_tools_orchestrator_can_spawn_models", True)):
+            raise AgentToolSafetyError("Orchestrator model spawning is disabled in Settings.")
+        jobs = self._require_jobs()
+        names = self._model_names_from_args(model_name, model_names)
+        if not names:
+            raise ValueError("queue_model_inference requires model_name or model_names.")
+        allowed_tasks = {"tag", "caption", "classify", "rating", "embed", "segment", "caption_split"}
+        task_value = str(task or "classify").strip().lower().replace("-", "_")
+        task_aliases = {"tags": "tag", "auto_tag": "tag", "tagging": "tag", "classification": "classify", "classifier": "classify", "detect": "classify", "detection": "classify", "segmentation": "segment", "captioning": "caption"}
+        task_value = task_aliases.get(task_value, task_value)
+        if task_value not in allowed_tasks:
+            task_value = "classify"
+        queued = []
+        for name in names:
+            opts = {"queued_by_agent_tool": True, "quick_tag_surface": True, "use_loaded_placement": bool(use_loaded_placement), "threshold": float(threshold or 0.70)}
+            payload = ModelRunRequest(model_name=name, media_ids=[int(x) for x in (media_ids or []) if str(x).strip()], dataset_id=dataset_id, task=task_value, device=device or "auto", device_ids=[int(x) for x in (device_ids or []) if str(x).strip()], sharding_strategy=sharding_strategy or "none", threshold=float(threshold or 0.70), apply_tags=bool(apply_tags), apply_caption=bool(apply_caption), parallel_workers=max(1, int(parallel_workers or 1)), options=opts)
+            def task_fn(progress, job_id: int, payload=payload):
+                return self.model_service.run(payload, job_id, progress)
+            job_id = jobs.submit_with_job_id("agent_model_inference", payload.model_dump(), task_fn)
+            queued.append({"model_name": name, "job_id": job_id, "type": "agent_model_inference"})
+        return {"ok": True, "queued": queued, "count": len(queued)}
+
+    def wait_for_jobs(self, *, job_ids: list[int], timeout_seconds: int = 1800, poll_seconds: float = 1.0) -> dict[str, Any]:
+        jobs = self._require_jobs()
+        ids = [int(x) for x in (job_ids or []) if int(x) > 0]
+        deadline = time.time() + max(1, min(int(timeout_seconds or 1800), 86400))
+        terminal = {"completed", "failed", "cancelled"}
+        last = []
+        while time.time() < deadline:
+            last = [jobs.get_job(job_id) for job_id in ids]
+            last = [row for row in last if row]
+            if len(last) == len(ids) and all(str(row.get("status")) in terminal for row in last):
+                return {"ok": all(str(row.get("status")) == "completed" for row in last), "jobs": last, "completed": [row for row in last if str(row.get("status")) == "completed"], "failed": [row for row in last if str(row.get("status")) == "failed"], "cancelled": [row for row in last if str(row.get("status")) == "cancelled"]}
+            time.sleep(max(0.2, min(float(poll_seconds or 1.0), 10.0)))
+        return {"ok": False, "timeout": True, "jobs": last, "job_ids": ids}
+
     def app_gui_action(self, *, action: str, target: str | None = None, arguments: dict[str, Any] | None = None, note: str = "", approved: bool = False) -> dict[str, Any]:
         """Record a safe in-app action request from an assistant plan.
 
@@ -1562,7 +1662,7 @@ User goal:
     def execute_tool_call(self, call: dict[str, Any], *, approved: bool, allow_high_risk: bool = False, confirmation_text: str = "", progress: ProgressCallback | None = None) -> dict[str, Any]:
         tool = str(call.get("tool") or call.get("name") or "").strip()
         args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {k: v for k, v in call.items() if k not in {"tool", "name"}}
-        aliases = {"run_shell_command": "run_shell_command", "shell": "run_shell_command", "command": "run_shell_command", "run_python_script": "run_python_script", "python": "run_python_script", "list_path": "list_path", "read_file": "read_file", "write_file": "write_file", "fetch_url_text": "fetch_url_text", "open_browser": "open_browser", "app_gui_action": "app_gui_action", "gui_action": "app_gui_action", "app_action": "app_gui_action", "internal_app_action": "app_gui_action", "inspect_model_resources": "inspect_model_resources", "model_resources": "inspect_model_resources", "run_model_chat": "run_model_chat", "run_model": "run_model_chat"}
+        aliases = {"run_shell_command": "run_shell_command", "shell": "run_shell_command", "command": "run_shell_command", "run_python_script": "run_python_script", "python": "run_python_script", "list_path": "list_path", "read_file": "read_file", "write_file": "write_file", "fetch_url_text": "fetch_url_text", "open_browser": "open_browser", "app_gui_action": "app_gui_action", "gui_action": "app_gui_action", "app_action": "app_gui_action", "internal_app_action": "app_gui_action", "inspect_model_resources": "inspect_model_resources", "model_resources": "inspect_model_resources", "run_model_chat": "run_model_chat", "run_model": "run_model_chat", "queue_model_load": "queue_model_load", "load_model": "queue_model_load", "queue_load_model": "queue_model_load", "queue_model_unload": "queue_model_unload", "unload_model": "queue_model_unload", "queue_unload_model": "queue_model_unload", "queue_model_inference": "queue_model_inference", "run_model_inference": "queue_model_inference", "queue_inference": "queue_model_inference", "wait_for_jobs": "wait_for_jobs"}
         key = aliases.get(tool, tool)
         if key == "run_shell_command": return self.run_command(command=args.get("command", ""), shell=args.get("shell", "auto"), cwd=args.get("cwd"), timeout_seconds=args.get("timeout_seconds"), approved=approved, allow_high_risk=allow_high_risk, confirmation_text=confirmation_text, progress=progress)
         if key == "run_python_script": return self.run_python(script=args.get("script", ""), cwd=args.get("cwd"), timeout_seconds=args.get("timeout_seconds"), approved=approved, allow_high_risk=allow_high_risk, confirmation_text=confirmation_text, progress=progress, requirements=args.get("requirements") or args.get("pip_requirements") or [], create_venv=args.get("create_venv"))
@@ -1576,4 +1676,16 @@ User goal:
         if key == "run_model_chat":
             self._require_approval(approved, "run another model as orchestrator subtask")
             return self.run_model_chat_subtask(model_name=args.get("model_name", ""), prompt=args.get("prompt", ""), media_ids=args.get("media_ids") or [], external_paths=args.get("external_paths") or [], device=args.get("device", "auto"), device_ids=args.get("device_ids") or [], sharding_strategy=args.get("sharding_strategy", "none"), torch_dtype=args.get("torch_dtype", "auto"), quantization=args.get("quantization", "none"), runtime_engine=args.get("runtime_engine", "transformers"), tensor_parallel_size=int(args.get("tensor_parallel_size") or 1), max_new_tokens=int(args.get("max_new_tokens") or 1024))
+        if key == "queue_model_load":
+            self._require_approval(approved, "queue model load job(s)")
+            return self.queue_model_load(model_name=args.get("model_name"), model_names=args.get("model_names") or args.get("models") or [], device=args.get("device", "auto"), device_ids=args.get("device_ids") or [], sharding_strategy=args.get("sharding_strategy", "none"), torch_dtype=args.get("torch_dtype", "auto"), quantization=args.get("quantization", "none"), runtime_engine=args.get("runtime_engine", "transformers"), tensor_parallel_size=int(args.get("tensor_parallel_size") or 1))
+        if key == "queue_model_unload":
+            self._require_approval(approved, "queue model unload job(s)")
+            return self.queue_model_unload(model_name=args.get("model_name"), model_names=args.get("model_names") or args.get("models") or [])
+        if key == "queue_model_inference":
+            self._require_approval(approved, "queue model inference job(s)")
+            return self.queue_model_inference(model_name=args.get("model_name"), model_names=args.get("model_names") or args.get("models") or [], media_ids=args.get("media_ids") or [], dataset_id=args.get("dataset_id"), task=args.get("task", "classify"), threshold=float(args.get("threshold") if args.get("threshold") is not None else 0.70), apply_tags=bool(args.get("apply_tags", True)), apply_caption=bool(args.get("apply_caption", False)), device=args.get("device", "auto"), device_ids=args.get("device_ids") or [], use_loaded_placement=bool(args.get("use_loaded_placement", True)), sharding_strategy=args.get("sharding_strategy", "none"), parallel_workers=int(args.get("parallel_workers") or 1))
+        if key == "wait_for_jobs":
+            self._require_approval(approved, "wait for queued model/app jobs")
+            return self.wait_for_jobs(job_ids=args.get("job_ids") or [], timeout_seconds=int(args.get("timeout_seconds") or 1800), poll_seconds=float(args.get("poll_seconds") or 1.0))
         raise ValueError(f"Unknown agent tool call: {tool}")

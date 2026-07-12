@@ -1,0 +1,61 @@
+{
+  "version": "5.8.43",
+  "artifact": "DataCurationToolModern_v5_8_43_thumbnails_multiselect_booru_reset_integrity.zip",
+  "summary": "Non-blocking/GPU-assisted thumbnail hydration, Quick Tag multi-select deselection repair, job-backed booru tag reset, and Nightshade/Glaze integrity classifier scaffolding.",
+  "new_files": [
+    "data_curation_tool/services/integrity_classifier_service.py",
+    "data_curation_tool/routers/integrity_classifiers.py",
+    "docs/V5_8_43_THUMBNAILS_MULTISELECT_BOORU_RESET_INTEGRITY.md",
+    "docs/V5_8_43_FILE_CHANGES.json",
+    "docs/wiki/73-Thumbnails-Multiselect-Booru-Reset-Integrity.md",
+    "tests/test_v637_thumbnails_multiselect_booru_integrity.py"
+  ],
+  "edited_files": [
+    "README.md",
+    "pyproject.toml",
+    "data_curation_tool/__init__.py",
+    "data_curation_tool/app.py",
+    "data_curation_tool/context.py",
+    "data_curation_tool/routers/media.py",
+    "data_curation_tool/services/media_service.py",
+    "data_curation_tool/static/app.js",
+    "data_curation_tool/static/styles.css",
+    "docs/wiki/Home.md",
+    "docs/wiki/README.md",
+    "docs/wiki/_Sidebar.md",
+    "tests/test_v619_scroll_onnx_gpu_legacy_load_regression.py",
+    "tests/test_v620_multimodal_builder_3d_mcp_tag_highlight.py",
+    "tests/test_v621_thouph_preprocess_scroll_graph_sort_world_models.py",
+    "tests/test_v622_attention_overlay_graph_chat_threshold.py",
+    "tests/test_v623_graph_editor_immediate_render_and_chat_fix.py",
+    "tests/test_v624_graph_editor_partial_region_refresh.py",
+    "tests/test_v625_graph_selection_menu_wd_pixai_augment_attention.py",
+    "tests/test_v626_migrated_model_local_load_no_redownload.py",
+    "tests/test_v627_download_progress_guaranteed_graphs.py",
+    "tests/test_v628_graph_edges_model_lifecycle_onnx_workflows.py",
+    "tests/test_v629_download_finalize_cuda12_onnx_refresh.py",
+    "tests/test_v630_import_gallery_pixai_nchw_responsiveness.py",
+    "tests/test_v631_quick_tag_refresh_alias_score_sync.py",
+    "tests/test_v632_live_model_runtime_queues.py",
+    "tests/test_v633_live_model_card_vram_gallery_resilience.py",
+    "tests/test_v634_gallery_prediction_scores_quick_tag_workflows.py",
+    "tests/test_v635_quick_tag_multiselect_live_queue_graph_selection.py",
+    "tests/test_v636_quick_tag_queue_loaded_placement_booru_reset.py"
+  ],
+  "removed_files": [],
+  "validation": [
+    "python -m py_compile data_curation_tool/routers/media.py data_curation_tool/services/media_service.py data_curation_tool/services/integrity_classifier_service.py data_curation_tool/routers/integrity_classifiers.py data_curation_tool/app.py data_curation_tool/context.py",
+    "python -m compileall -q data_curation_tool integrations scripts tests",
+    "node --check data_curation_tool/static/app.js",
+    "bash -n install.sh update.sh",
+    "pytest -q tests/test_v637_thumbnails_multiselect_booru_integrity.py tests/test_v636_quick_tag_queue_loaded_placement_booru_reset.py tests/test_v635_quick_tag_multiselect_live_queue_graph_selection.py tests/test_v634_gallery_prediction_scores_quick_tag_workflows.py",
+    "pytest -q tests/test_v619_scroll_onnx_gpu_legacy_load_regression.py tests/test_v620_multimodal_builder_3d_mcp_tag_highlight.py tests/test_v621_thouph_preprocess_scroll_graph_sort_world_models.py tests/test_v622_attention_overlay_graph_chat_threshold.py tests/test_v623_graph_editor_immediate_render_and_chat_fix.py tests/test_v624_graph_editor_partial_region_refresh.py tests/test_v625_graph_selection_menu_wd_pixai_augment_attention.py tests/test_v626_migrated_model_local_load_no_redownload.py tests/test_v627_download_progress_guaranteed_graphs.py tests/test_v628_graph_edges_model_lifecycle_onnx_workflows.py tests/test_v629_download_finalize_cuda12_onnx_refresh.py tests/test_v630_import_gallery_pixai_nchw_responsiveness.py tests/test_v631_quick_tag_refresh_alias_score_sync.py tests/test_v632_live_model_runtime_queues.py tests/test_v633_live_model_card_vram_gallery_resilience.py tests/test_v634_gallery_prediction_scores_quick_tag_workflows.py tests/test_v635_quick_tag_multiselect_live_queue_graph_selection.py tests/test_v636_quick_tag_queue_loaded_placement_booru_reset.py tests/test_v637_thumbnails_multiselect_booru_integrity.py",
+    "unzip -tq /mnt/data/DataCurationToolModern_v5_8_43_thumbnails_multiselect_booru_reset_integrity.zip"
+  ],
+  "notes": [
+    "Thumbnail rendering is now non-blocking for Gallery tiles and can opportunistically use OpenCV CUDA when available.",
+    "Quick Tag multi-select persistence now uses the live DOM-selected option set so deselection is not re-unioned with stale state.",
+    "Booru reset now has a job-backed endpoint so the Jobs list and live status can show progress immediately.",
+    "Integrity classifier support is scaffolding-ready for user-provided EfficientNet/EfficientNetV2 Nightshade/Glaze classifiers and labels. Actual custom model inference depends on the user supplying compatible weights and labels."
+  ]
+}

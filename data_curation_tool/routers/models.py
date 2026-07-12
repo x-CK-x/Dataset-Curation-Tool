@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import traceback
 import json
+import shlex
+import subprocess
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -36,6 +39,79 @@ class OpenRouterVideoGenerationRequest(BaseModel):
     input_references: list[dict] = Field(default_factory=list)
     provider_options: dict = Field(default_factory=dict)
     timeout: int = 120
+
+
+
+
+class LingBotCommandRequest(BaseModel):
+    model_name: str
+    runtime_dir: str = ""
+    mode: str = "t2v"
+    prompt_json: str = "prompt.json"
+    negative_prompt_json: str | None = "negative.json"
+    output: str = "outputs/base.mp4"
+    refiner_output: str | None = "outputs/refined.mp4"
+    backend: str = "diffusers"
+    height: int = 480
+    width: int = 832
+    fps: int = 24
+    steps: int = 40
+    run_refiner: bool | None = None
+    extra: dict = Field(default_factory=dict)
+    timeout_seconds: int = 0
+
+
+def _command_line(cmd: list[str]) -> str:
+    try:
+        return shlex.join([str(x) for x in cmd])
+    except Exception:
+        return " ".join(str(x) for x in cmd)
+
+
+def _lingbot_runtime_cwd(payload: LingBotCommandRequest, request_context) -> str:
+    candidates: list[Path] = []
+    if payload.runtime_dir:
+        candidates.append(Path(payload.runtime_dir).expanduser())
+    for root in getattr(request_context.registry, "external_model_roots", []) or []:
+        candidates.extend([Path(root), Path(root) / "lingbot-video", Path(root) / "LingBot-Video"] )
+    candidates.extend([
+        request_context.paths.models / "lingbot-video-runtime-repo",
+        request_context.paths.models / "lingbot-video",
+        request_context.paths.root / "lingbot-video",
+    ])
+    for candidate in candidates:
+        try:
+            if (candidate / "scripts" / "inference.py").exists():
+                return str(candidate.resolve(strict=False))
+        except Exception:
+            continue
+    if payload.runtime_dir:
+        raise ValueError(f"LingBot runtime_dir does not contain scripts/inference.py: {payload.runtime_dir}")
+    raise ValueError("Set runtime_dir to a local LingBot-Video repository containing scripts/inference.py before launching inference.")
+
+
+def _lingbot_command_payload(payload: LingBotCommandRequest, request_context) -> tuple[object, list[str]]:
+    adapter = request_context.registry._loaded.get(payload.model_name) if hasattr(request_context.registry, "_loaded") else None
+    if adapter is None:
+        record = request_context.registry.get_record(payload.model_name)
+        adapter = getattr(record, "adapter", None)
+    if adapter is None or not hasattr(adapter, "build_command"):
+        raise ValueError(f"{payload.model_name} is not a LingBot-Video runtime row.")
+    cmd = adapter.build_command(
+        mode=payload.mode,
+        prompt_json=payload.prompt_json,
+        negative_prompt_json=payload.negative_prompt_json,
+        output=payload.output,
+        refiner_output=payload.refiner_output,
+        backend=payload.backend,
+        height=payload.height,
+        width=payload.width,
+        fps=payload.fps,
+        steps=payload.steps,
+        run_refiner=payload.run_refiner,
+        extra=payload.extra,
+    )
+    return adapter, cmd
 
 
 class CustomModelCreate(BaseModel):
@@ -90,9 +166,16 @@ class OrchestratorQueueRunsRequest(BaseModel):
     runs: list[ModelRunRequest] = Field(default_factory=list)
 
 
+class ModelQueueRunsRequest(BaseModel):
+    runs: list[ModelRunRequest] = Field(default_factory=list)
+    queue_source: str = "user"
+    user_approved: bool = True
+    remove_completed_from_active_queue: bool = True
+
+
 @router.get("")
-def list_models(request: Request):
-    return ctx(request).models.list_models()
+def list_models(request: Request, force: bool = False):
+    return ctx(request).models.list_models(force=force)
 
 
 @router.post("/custom")
@@ -148,9 +231,27 @@ def model_resource_status(request: Request):
     return ctx(request).models.model_resource_status()
 
 
+@router.get("/runtime-planning-context")
+def model_runtime_planning_context(request: Request, limit: int = 250):
+    return ctx(request).models.model_runtime_planning_context(limit=limit)
+
+
 @router.post("/rescan")
 def rescan_local_models(request: Request):
-    return ctx(request).models.reconcile_local_assets()
+    c = ctx(request)
+    c.models.invalidate_model_catalog_cache()
+    return c.models.reconcile_local_assets()
+
+
+@router.post("/reconcile/{model_name}")
+def reconcile_single_model(model_name: str, request: Request, job_id: int | None = None):
+    c = ctx(request)
+    try:
+        return c.models.reconcile_model_local_asset(model_name, job_id=job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/external-roots")
@@ -253,6 +354,49 @@ def _orchestrator_model_candidates(c, payload: OrchestratorRunPlanRequest) -> li
     return selected[: max(1, min(64, int(payload.max_models or 12)))]
 
 
+
+
+@router.post("/lingbot/command")
+def lingbot_command(payload: LingBotCommandRequest, request: Request):
+    c = ctx(request)
+    try:
+        _adapter, cmd = _lingbot_command_payload(payload, c)
+        cwd = None
+        if payload.runtime_dir:
+            cwd = _lingbot_runtime_cwd(payload, c)
+        return {"ok": True, "model_name": payload.model_name, "runtime_dir": cwd, "command": cmd, "command_line": _command_line(cmd)}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/lingbot/run")
+def lingbot_run(payload: LingBotCommandRequest, request: Request):
+    c = ctx(request)
+    try:
+        _adapter, cmd = _lingbot_command_payload(payload, c)
+        cwd = _lingbot_runtime_cwd(payload, c)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    params = payload.model_dump()
+    params["runtime_dir"] = cwd
+    params["command"] = cmd
+
+    def task(progress):
+        progress(0.05, "Launching LingBot-Video inference command")
+        timeout = int(payload.timeout_seconds or 0) or None
+        proc = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
+        output = proc.stdout or ""
+        progress(0.95, "LingBot-Video command finished")
+        result = {"returncode": proc.returncode, "runtime_dir": cwd, "command": cmd, "command_line": _command_line(cmd), "output_tail": output[-12000:]}
+        if proc.returncode != 0:
+            raise RuntimeError(f"LingBot-Video command failed with exit code {proc.returncode}.\n{output[-12000:]}")
+        return result
+
+    job_id = c.jobs.submit("lingbot_video_inference", params, task)
+    return {"ok": True, "job_id": job_id, "model_name": payload.model_name, "runtime_dir": cwd, "command": cmd, "command_line": _command_line(cmd)}
+
+
 @router.post("/orchestrator/plan")
 @router.post("/orchestrator/run-plan")
 def orchestrator_run_plan(payload: OrchestratorRunPlanRequest, request: Request):
@@ -330,6 +474,8 @@ def orchestrator_run_plan(payload: OrchestratorRunPlanRequest, request: Request)
         "context": payload.context or "assistant/orchestrator",
         "media_ids": payload.media_ids,
         "recommendations": recommendations,
+        "runtime_planning_context": c.models.model_runtime_planning_context(limit=120),
+        "resource_status": c.models.model_resource_status(),
         "message": "Review this plan before queueing. No model runs were started by this endpoint.",
     }
 
@@ -358,7 +504,26 @@ def orchestrator_queue_runs(payload: OrchestratorQueueRunsRequest, request: Requ
         job_id = c.jobs.submit_with_job_id("model_inference", {**run.model_dump(), "orchestrator_model_name": orchestrator}, task)
         c.models.lifecycle.update(run.model_name, "inference", job_id=job_id)
         queued.append({"job_id": job_id, "model_name": run.model_name, "task": run.task})
-    return {"orchestrator_model_name": orchestrator, "queued": queued, "count": len(queued)}
+    return {"orchestrator_model_name": orchestrator, "queued": queued, "count": len(queued), "runtime_resources": c.models.model_resource_status()}
+
+
+@router.post("/queue-runs")
+def queue_model_runs(payload: ModelQueueRunsRequest, request: Request):
+    c = ctx(request)
+    if not payload.runs:
+        raise HTTPException(status_code=400, detail="No model runs were requested.")
+    queued = []
+    for run in payload.runs:
+        c.models.lifecycle.update(run.model_name, "inference", state="queued", progress=0.0, message=f"Inference queued from {payload.queue_source}")
+
+        def task(progress, job_id: int, _run=run):
+            return c.models.run(_run, job_id, progress)
+
+        params = {**run.model_dump(), "queue_source": payload.queue_source, "user_approved": payload.user_approved}
+        job_id = c.jobs.submit_with_job_id("model_inference", params, task)
+        c.models.lifecycle.update(run.model_name, "inference", job_id=job_id)
+        queued.append({"job_id": job_id, "model_name": run.model_name, "task": run.task, "queue_source": payload.queue_source})
+    return {"queued": queued, "count": len(queued), "queue_source": payload.queue_source}
 
 
 @router.post("/run")
@@ -563,6 +728,33 @@ def unload_model(payload: dict, request: Request):
     for name in targets:
         c.models.lifecycle.update(name, "load", job_id=job_id)
     return {"job_id": job_id, "status": "queued", "targets": targets}
+
+
+@router.post("/unload-many")
+def unload_many_models(payload: dict, request: Request):
+    c = ctx(request)
+    raw_names = payload.get("model_names") or payload.get("models") or payload.get("names") or []
+    if isinstance(raw_names, str):
+        raw_names = [x.strip() for x in raw_names.split(",") if x.strip()]
+    names: list[str] = []
+    for value in raw_names or []:
+        name = str(value or "").strip()
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        raise HTTPException(status_code=400, detail="No model names were requested for unload.")
+    queue_source = str(payload.get("queue_source") or "quick_tag").strip() or "quick_tag"
+    queued = []
+    for model_name in names:
+        c.models.lifecycle.update(model_name, "load", state="unloading", progress=0.0, message="Model unload queued")
+
+        def task(progress, job_id: int, _model_name=model_name):
+            return c.models.unload(_model_name, progress=progress, job_id=job_id)
+
+        job_id = c.jobs.submit_with_job_id("model_unload", {"model_name": model_name, "queue_source": queue_source, "batch_unload": True}, task)
+        c.models.lifecycle.update(model_name, "load", job_id=job_id)
+        queued.append({"job_id": job_id, "model_name": model_name, "status": "queued", "queue_source": queue_source})
+    return {"queued": queued, "count": len(queued), "queue_source": queue_source}
 
 
 @router.get("/tag-scores/{media_id}")

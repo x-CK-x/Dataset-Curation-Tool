@@ -63,6 +63,25 @@ class ThreeDRigPayload(BaseModel):
     options: dict[str, Any] = Field(default_factory=dict)
 
 
+
+
+class ThreeDPrintHandoffPayload(BaseModel):
+    provider: str = "prusaslicer"
+    asset_path: str = ""
+    input_path: str = ""
+    output_dir: str = ""
+    output_path: str = ""
+    output_format: str = "gcode"
+    executable_path: str = ""
+    slicer_executable: str = ""
+    profile_path: str = ""
+    config_path: str = ""
+    extra_args: list[str] | str = Field(default_factory=list)
+    dry_run: bool = True
+    run: bool = False
+    user_approved: bool = False
+    timeout_seconds: int = Field(default=3600, ge=30, le=86400)
+
 class ThreeDImportPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -132,6 +151,20 @@ def rig(payload: ThreeDRigPayload, request: Request):
     job_id = c.jobs.submit("3d_rigging", c.three_d._redact(params), task)
     return {"ok": True, "job_id": job_id, "provider": payload.provider}
 
+
+
+
+@router.get("/print-providers")
+def print_providers(request: Request):
+    return {"providers": ctx(request).three_d.print_providers()}
+
+
+@router.post("/print-handoff")
+def print_handoff(payload: ThreeDPrintHandoffPayload, request: Request):
+    try:
+        return ctx(request).three_d.prepare_print_handoff(payload.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @router.post("/open-in-blender")
 def open_in_blender(payload: BlenderOpenPayload, request: Request):

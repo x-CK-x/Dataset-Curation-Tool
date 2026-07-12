@@ -8,7 +8,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import requests
@@ -18,7 +18,10 @@ from ..jobs import CancelledJobError
 from ..schemas import DownloadRequest
 from ..utils import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, normalize_tag, tag_for_source_query, tag_string, write_text
 from .preset_service import PresetService
-from .tag_service import TagService
+from .tag_service import TagService, TAG_INDEX_API_PROFILES, EXPECTED_EXPORT_ROLES_BY_PROFILE
+
+if TYPE_CHECKING:
+    from .global_dataset_service import GlobalDatasetService
 
 
 def _raise_if_cancelled(progress=None) -> None:
@@ -84,10 +87,17 @@ BOORU_SOURCES: dict[str, dict[str, Any]] = {
         "tags_param": "tags",
         "limit_param": "limit",
         "page_param": "page",
-        "max_limit": 200,
+        # Danbooru rejects over-large page sizes with HTTP 422.  Keep this
+        # profile at 100 even when other booru profiles can fetch more per page.
+        "max_limit": 100,
         "delay_seconds": 1.0,
-        "sort_newest": "order:id_desc",
+        # Newest-first is Danbooru's default posts.json order.  Do not append a
+        # redundant order:id_desc term because anonymous Danbooru searches have
+        # tight tag/metatag limits.
+        "sort_newest": None,
         "sort_oldest": "order:id_asc",
+        "source_tag_limit": 2,
+        "notes": "Danbooru posts.json has a 100-result page cap. Anonymous searches are also limited in tag/metatag complexity; use fewer terms or authenticated access if the source returns 422.",
     },
     "gelbooru": {
         "label": "Gelbooru DAPI JSON",
@@ -487,6 +497,11 @@ def source_definitions() -> list[dict[str, Any]]:
             "rating_filter_keys": ["safe", "questionable", "explicit"],
             "logic_gate_modes": ["boolean_expand", "raw_append"],
             "logic_gate_syntax": "AND / OR / NOT / parentheses; lower-case and/or/not, && || ! commas and -tag aliases are accepted. Whitespace inside tag names is preserved; whitespace alone is not a separator. Quote tags that literally contain operator words. OR expands into multiple deduped source queries.",
+            "tag_profile_key": key if key != "generic-json" else "custom",
+            "supports_tag_dictionary_sync": key in TAG_INDEX_API_PROFILES or key in {"e621", "e926", "danbooru"},
+            "tag_sync_strategy": "db_export" if key in {"e621", "e926"} else "db_export_or_api" if key == "danbooru" else "tag_index_api" if key in TAG_INDEX_API_PROFILES else "manual",
+            "tag_index_api_url": (TAG_INDEX_API_PROFILES.get(key) or {}).get("url", ""),
+            "expected_tag_export_roles": list(EXPECTED_EXPORT_ROLES_BY_PROFILE.get(key, ("tags",))),
             "default_delay_seconds": value.get("delay_seconds", 1.0),
             "default_timeout_seconds": value.get("timeout_seconds", 60),
         }
@@ -647,12 +662,78 @@ def _sample_item_for_source(key: str) -> dict[str, Any]:
         return {"file_url": f"https://example.invalid/{key}.jpg", "tags": "solo blue_hair"}
     return {"file_url": "https://example.invalid/generic.jpg", "tags": ["solo", "blue_hair"]}
 
+
+def _sanitize_source_params(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+    """Clamp per-source request parameters before making an HTTP call.
+
+    This protects users from source-specific API rejections such as Danbooru's
+    100-post page cap.  The caller already computes per_page from cfg, but this
+    second clamp catches older payloads, generic callers, and tests/plugins that
+    invoke _fetch_page directly.
+    """
+    out = dict(params or {})
+    limit_key = str(cfg.get("limit_param") or "limit")
+    max_limit = int(cfg.get("max_limit") or 0)
+    if max_limit and limit_key in out:
+        try:
+            out[limit_key] = min(max(1, int(out[limit_key])), max_limit)
+        except Exception:
+            out[limit_key] = max_limit
+    tags_key = str(cfg.get("tags_param") or "tags")
+    if tags_key in out:
+        out[tags_key] = _normalize_source_query_spacing(str(out.get(tags_key) or ""))
+    return out
+
+
+def _normalize_source_query_spacing(query: str) -> str:
+    return " ".join(str(query or "").replace("+", " ").split())
+
+
+def _friendly_source_error(exc: Exception, *, source: str, preset: dict[str, Any] | None = None, cfg: dict[str, Any] | None = None) -> str:
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    body = ""
+    try:
+        if response is not None:
+            body = str(response.text or "").strip()[:500]
+    except Exception:
+        body = ""
+    source_label = str((cfg or {}).get("label") or source)
+    query_hint = ""
+    try:
+        positives = list((preset or {}).get("positive_tags") or [])
+        negatives = list((preset or {}).get("negative_tags") or [])
+        if positives or negatives:
+            query_hint = f" Query terms: +{positives} -{negatives}."
+    except Exception:
+        query_hint = ""
+    if str(source).lower() == "danbooru" and status == 422:
+        return (
+            f"{source_label} rejected the query with HTTP 422. The downloader now clamps Danbooru to its 100-post page cap and avoids the redundant newest-sort metatag; "
+            f"if this still happens, the search is likely over Danbooru's anonymous tag/metatag limit or includes a source-specific-invalid term. Try fewer terms, quote/verify tags, or use authenticated access when support is added."
+            f"{query_hint}"
+            + (f" Source said: {body}" if body else "")
+        )
+    if status:
+        return f"{source_label} request failed with HTTP {status}.{query_hint}" + (f" Source said: {body}" if body else f" {exc}")
+    return f"{source_label} request failed: {exc}"
+
 class DownloaderService:
-    def __init__(self, db: Database, presets: PresetService, user_agent: str = "DataCurationTool/5.36.0", tags: TagService | None = None):
+    def __init__(
+        self,
+        db: Database,
+        presets: PresetService,
+        user_agent: str = "DataCurationTool/5.36.0",
+        tags: TagService | None = None,
+        global_dataset: "GlobalDatasetService | None" = None,
+        settings: Any | None = None,
+    ):
         self.db = db
         self.presets = presets
         self.user_agent = user_agent
         self.tags = tags
+        self.global_dataset = global_dataset
+        self.settings = settings
 
     def validate_source_configurations(self, live: bool = False) -> dict[str, Any]:
         result = validate_source_configs()
@@ -775,6 +856,7 @@ class DownloaderService:
         if source not in BOORU_SOURCES:
             raise ValueError(f"Unsupported source plugin: {source}")
         cfg = dict(BOORU_SOURCES[source])
+        cfg["_source"] = source
         cfg.update(preset_options)
         # Apply preset-local output settings before request-level settings.
         #
@@ -819,6 +901,7 @@ class DownloaderService:
         total_seen = 0
         total_pages = 0
         rows: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
         global_keys: set[str] = set()
         started = time.time()
         for idx, preset in enumerate(presets, start=1):
@@ -837,7 +920,14 @@ class DownloaderService:
                     break
                 pages += 1
                 total_pages += 1
-                batch = self._fetch_page(resolved_preset, cfg, api_url, per_page, page if page_param else None, request=request, progress=progress)
+                try:
+                    batch = self._fetch_page(resolved_preset, cfg, api_url, per_page, page if page_param else None, request=request, progress=progress)
+                except Exception as exc:
+                    message = _friendly_source_error(exc, source=source, preset=resolved_preset, cfg=cfg)
+                    errors.append({"preset": resolved_preset.get("name"), "source": source, "page": page, "error": message})
+                    if progress:
+                        progress(min(0.99, idx / max(len(presets), 1)), f"Preflight warning for {source}: {message}")
+                    break
                 if not batch:
                     break
                 for item in batch:
@@ -879,6 +969,9 @@ class DownloaderService:
             "source_blacklists_applied": bool(request.apply_source_blacklists),
             "blacklists_applied_by_default": False,
             "rows": rows,
+            "errors": errors,
+            "ok": not errors,
+            "elapsed_seconds": round(time.time() - started, 3),
         }
 
     def run(self, request: DownloadRequest, progress) -> dict[str, Any]:
@@ -1222,6 +1315,7 @@ class DownloaderService:
         if page is not None and cfg.get("page_param"):
             params[cfg["page_param"]] = page
         params.update(cfg.get("extra_params") or {})
+        params = _sanitize_source_params(cfg, params)
         response = self._request_with_retries(
             "GET",
             api_url,
@@ -1299,29 +1393,48 @@ class DownloaderService:
         if bool(cfg.get("force_download")) and target.exists():
             target.unlink()
         if not target.exists():
-            _raise_if_cancelled(progress)
-            with self._request_with_retries(
-                "GET",
-                str(file_url),
-                headers={"User-Agent": self.user_agent},
-                stream=True,
-                timeout=int(cfg.get("timeout_seconds", 90) or 90),
-                max_retries=int(cfg.get("max_retries", 3) or 0),
-                backoff_seconds=float(cfg.get("retry_backoff_seconds", 2.0) or 0.0),
-                progress=progress,
-            ) as r:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                tmp = target.with_suffix(target.suffix + ".part")
-                with tmp.open("wb") as f:
-                    for chunk in r.iter_content(chunk_size=1024 * 1024):
-                        _raise_if_cancelled(progress)
-                        if chunk:
-                            f.write(chunk)
-                tmp.replace(target)
-            delay = float(cfg.get("file_delay_seconds", 0.0) or 0.0)
-            if delay > 0:
-                _cancelable_sleep(delay, progress)
+            existing_global_asset = None
+            if self.global_dataset is not None and bool(getattr(self.settings, "global_dataset_enabled", True)) and bool(getattr(self.settings, "global_dataset_auto_register_downloads", True)) and not bool(cfg.get("force_download")):
+                try:
+                    existing_global_asset = self.global_dataset.find_existing_for_item(item, cfg, preset, file_url=str(file_url))
+                except Exception:
+                    existing_global_asset = None
+            if existing_global_asset is not None:
+                mode = str(getattr(self.settings, "global_dataset_ingest_copy_mode", "hardlink") or "hardlink")
+                materialized = self.global_dataset.materialize_existing_asset(existing_global_asset, target, mode=mode if mode != "reference" else "hardlink")
+                if materialized:
+                    if progress:
+                        progress(None, f"Reused global original for {target.name}; skipped network media download")
+            if not target.exists():
+                _raise_if_cancelled(progress)
+                with self._request_with_retries(
+                    "GET",
+                    str(file_url),
+                    headers={"User-Agent": self.user_agent},
+                    stream=True,
+                    timeout=int(cfg.get("timeout_seconds", 90) or 90),
+                    max_retries=int(cfg.get("max_retries", 3) or 0),
+                    backoff_seconds=float(cfg.get("retry_backoff_seconds", 2.0) or 0.0),
+                    progress=progress,
+                ) as r:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    tmp = target.with_suffix(target.suffix + ".part")
+                    with tmp.open("wb") as f:
+                        for chunk in r.iter_content(chunk_size=1024 * 1024):
+                            _raise_if_cancelled(progress)
+                            if chunk:
+                                f.write(chunk)
+                    tmp.replace(target)
+                delay = float(cfg.get("file_delay_seconds", 0.0) or 0.0)
+                if delay > 0:
+                    _cancelable_sleep(delay, progress)
         self._write_metadata_sidecars(target, item, cfg, preset)
+        if self.global_dataset is not None:
+            try:
+                self.global_dataset.register_downloaded_file(target, item, cfg, preset)
+            except Exception as exc:
+                if progress:
+                    progress(None, f"Global dataset registration skipped for {target.name}: {exc}")
         return str(target)
 
     def _request_with_retries(self, method: str, url: str, *, timeout: int = 60, max_retries: int = 3, backoff_seconds: float = 2.0, progress=None, **kwargs):

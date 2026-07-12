@@ -15,9 +15,17 @@ echo Updating Conda environment: %DCT_ENV_NAME%
 call :ensure_conda_env || (pause & exit /b 1)
 call scripts\activate_data_curation_env.bat || exit /b 1
 python -m pip install --upgrade pip
+python scripts\repair_onnxruntime_runtime.py --ensure-gpu || exit /b 1
 python -m pip install -r requirements.txt --upgrade-strategy only-if-needed || exit /b 1
+python scripts\repair_onnxruntime_runtime.py --ensure-gpu || exit /b 1
+python -m pip install "pyvips[binary]>=3.0.0" --upgrade-strategy only-if-needed || exit /b 1
 python -m pip install -e . --no-deps || exit /b 1
+rem Hydra repair fallback uses pyvips[binary]>=3.0.0 pyvips-binary>=8.16.0 cffi>=1.17.1
 python scripts\check_core_dependencies.py || exit /b 1
+python scripts\repair_hydra_runtime_dependencies.py
+if errorlevel 1 (
+  echo [WARN] Hydra pyvips/libvips auto-repair did not complete. Run install_hydra_runtime_deps.bat before using RedRocket Hydra 3.5 locally.
+)
 if "%DCT_INSTALL_TORCH%"=="" set "DCT_INSTALL_TORCH=auto"
 set "TORCH_MODE=%DCT_INSTALL_TORCH%"
 if /I "%TORCH_MODE%"=="auto" (
@@ -63,7 +71,7 @@ if errorlevel 1 (
   echo.
   echo [ERROR] Conda failed to create/update %DCT_ENV_NAME%.
   echo Check the dependency name above, then run: conda clean --all
-  echo Note: the importable Python module soundfile is installed via conda package pysoundfile and/or pip package soundfile.
+  echo Note: soundfile uses conda package pysoundfile; Hydra local inference uses conda-forge pyvips/libvips plus pip pyvips[binary] fallback.
   exit /b 1
 )
 exit /b 0

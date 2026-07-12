@@ -6,6 +6,7 @@ import gc
 import json
 import math
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import RLock
@@ -36,6 +37,9 @@ class ModelService:
         # loaded models, and the UI status panel.
         self._resource_lock = self._placement_lock
         self._loading_reservations = self._pending_placements
+        self._catalog_cache_rows: list[dict[str, Any]] | None = None
+        self._catalog_cache_ts: float = 0.0
+        self._catalog_cache_ttl: float = 20.0
         self.ensure_chat_tables()
 
     def ensure_chat_tables(self) -> None:
@@ -504,13 +508,48 @@ class ModelService:
         except Exception:
             pass
 
+    def _system_ram_guard(self, *, label: str = "runtime", model_name: str | None = None) -> dict[str, Any]:
+        snap = self._system_memory_snapshot()
+        percent = snap.get("percent")
+        try:
+            percent_f = float(percent) if percent is not None else 0.0
+        except Exception:
+            percent_f = 0.0
+        warn = self._settings_float("model_system_ram_cleanup_warning_percent", 88.0)
+        critical = self._settings_float("model_system_ram_critical_percent", 94.0)
+        actions: list[str] = []
+        if percent_f >= warn:
+            try:
+                gc.collect()
+                actions.append("gc.collect")
+            except Exception:
+                pass
+            try:
+                if hasattr(self.registry, "cleanup_cuda_memory"):
+                    self.registry.cleanup_cuda_memory(reset_peak_stats=True)
+                    actions.append("registry.cleanup_cuda_memory")
+            except Exception:
+                pass
+        return {
+            "label": label,
+            "model_name": model_name,
+            "system_ram": snap,
+            "warning_threshold_percent": warn,
+            "critical_threshold_percent": critical,
+            "warning": percent_f >= warn,
+            "critical": percent_f >= critical,
+            "actions": actions,
+            "note": "System-RAM guard prevents unbounded assistant/chat payload growth and skips CPU offload when RAM is pressured.",
+        }
+
     def _cleanup_after_model_call(self, model_name: str, stage: str = "inference", *, device: str = "auto", before: dict[str, Any] | None = None, options: dict[str, Any] | None = None) -> dict[str, Any]:
         opts = dict(options or {})
         cleanup_enabled = opts.get("cleanup_vram_after_inference")
         if cleanup_enabled is None:
             cleanup_enabled = self._settings_bool("model_vram_cleanup_after_inference", True)
+        ram_guard_before_offload = self._system_ram_guard(label=f"before_{stage}_cleanup", model_name=model_name)
         if not cleanup_enabled:
-            return {"cleanup_enabled": False, "before": before, "after": self._cuda_memory_snapshot()}
+            return {"cleanup_enabled": False, "before": before, "after": self._cuda_memory_snapshot(), "system_ram_guard": ram_guard_before_offload}
         reset_peak = self._settings_bool("model_vram_reset_peak_stats_after_inference", True)
         try:
             cleanup = self.registry.cleanup_cuda_memory(reset_peak_stats=reset_peak) if hasattr(self.registry, "cleanup_cuda_memory") else {}
@@ -518,8 +557,21 @@ class ModelService:
             cleanup = {"ok": False, "error": str(exc)}
         after = self._cuda_memory_snapshot()
         policy = str(opts.get("auto_cpu_offload_policy") or self._settings_str("model_vram_auto_cpu_offload_policy", "on_pressure")).lower()
-        auto_offload = bool(opts.get("auto_cpu_offload", self._settings_bool("model_vram_auto_cpu_offload_enabled", True)))
+        auto_offload = bool(opts.get("auto_cpu_offload", self._settings_bool("model_vram_auto_cpu_offload_enabled", False)))
         offload_result: dict[str, Any] | None = None
+        ram_snap = ram_guard_before_offload.get("system_ram") or {}
+        try:
+            ram_percent = float(ram_snap.get("percent") or 0.0)
+        except Exception:
+            ram_percent = 0.0
+        skip_ram_threshold = self._settings_float("model_vram_skip_cpu_offload_when_system_ram_percent", 82.0)
+        if auto_offload and ram_percent >= skip_ram_threshold:
+            offload_result = {
+                "skipped": True,
+                "reason": f"system RAM pressure {ram_percent:.1f}% >= {skip_ram_threshold:.1f}%",
+                "note": "CPU offload was skipped because moving model weights/KV state into system RAM could exhaust RAM.",
+            }
+            auto_offload = False
         if auto_offload and policy != "disabled" and self.registry.is_loaded(model_name):
             should = policy in {"after_chat", "after_every_inference"}
             reason = policy
@@ -540,7 +592,7 @@ class ModelService:
                     after = self._cuda_memory_snapshot()
                 except Exception as exc:
                     offload_result = {"ok": False, "error": str(exc)}
-        result = {"cleanup_enabled": True, "model_name": model_name, "stage": stage, "before": before, "cleanup": cleanup, "after": after, "cpu_offload": offload_result}
+        result = {"cleanup_enabled": True, "model_name": model_name, "stage": stage, "before": before, "cleanup": cleanup, "after": after, "cpu_offload": offload_result, "system_ram_guard": ram_guard_before_offload}
         return result
 
     def _registry_chat_with_vram_guard(self, model_name: str, prompt: str, *, context: dict[str, Any], device: str = "auto", options: dict[str, Any] | None = None, **runtime: Any) -> dict[str, Any]:
@@ -622,8 +674,15 @@ class ModelService:
     def _request_device_ids(self, request: Any, available: dict[int, dict[str, Any]] | None = None) -> list[int]:
         ids = self._parse_device_ids_value(getattr(request, "device_ids", None))
         device = str(getattr(request, "device", "auto") or "auto").strip().lower()
-        if not ids and device.startswith("cuda:"):
-            ids = self._parse_device_ids_value(device)
+        explicit_ids = self._parse_device_ids_value(device) if device.startswith("cuda:") else []
+        explicit_id = explicit_ids[0] if explicit_ids else None
+        if ids and explicit_id is not None and explicit_id not in ids:
+            raise RuntimeError(
+                f"GPU selection conflict: device={device!r} but device_ids={ids}. "
+                "Use matching values so the selected model cannot be placed on a different GPU."
+            )
+        if not ids and explicit_id is not None:
+            ids = [explicit_id]
         if not ids and device not in {"cpu", "mps"}:
             ids = self._parse_device_ids_value(getattr(self.settings, "default_model_device_ids", []) if self.settings else [])
         if not ids and device not in {"cpu", "mps"} and available:
@@ -882,6 +941,20 @@ class ModelService:
             raise RuntimeError("Model GPU placement would exceed the available/selected VRAM budget. " + " ".join(errors))
         return plan
 
+    def invalidate_model_catalog_cache(self) -> None:
+        self._catalog_cache_rows = None
+        self._catalog_cache_ts = 0.0
+
+    def _static_model_catalog_rows(self, *, force: bool = False) -> list[dict[str, Any]]:
+        now = time.monotonic()
+        if (not force) and self._catalog_cache_rows is not None and (now - self._catalog_cache_ts) < self._catalog_cache_ttl:
+            return deepcopy(self._catalog_cache_rows)
+        self.reconcile_local_assets()
+        rows = self.registry.list()
+        self._catalog_cache_rows = deepcopy(rows)
+        self._catalog_cache_ts = now
+        return deepcopy(rows)
+
     def reconcile_local_assets(self) -> dict[str, Any]:
         """Rescan local model folders and reconcile lifecycle download circles."""
         reconciled: list[str] = []
@@ -906,6 +979,89 @@ class ModelService:
                 )
                 reconciled.append(name)
         return {"reconciled_models": reconciled, "count": len(reconciled)}
+
+    def reconcile_model_local_asset(self, model_name: str, *, job_id: int | None = None) -> dict[str, Any]:
+        """Rescan one model row and patch its download lifecycle immediately.
+
+        This is intentionally narrower than ``/api/models?force=true``.  A full
+        catalog scan can be slow when the user has migrated many large model
+        folders.  The frontend calls this endpoint right after a download job
+        reaches a terminal state so badges such as NOT DOWNLOADED and
+        INCOMPLETE/CORRUPT disappear without waiting for the next full refresh.
+        """
+        name = self.lifecycle.normalize_model_name(model_name)
+        record = self.registry.get_record(name)
+        row = record.to_dict(self.registry.model_root, self.registry.external_model_roots)
+        self.lifecycle.ensure_model(name)
+        stage = self.lifecycle.model_status(name).get("stages", {}).get("download", {})
+        state = str(stage.get("state") or "idle").lower()
+        if row.get("downloaded"):
+            self.lifecycle.complete(
+                name,
+                "download",
+                message="Local model payload verified; download status refreshed",
+                job_id=job_id or stage.get("job_id"),
+                result={"downloaded": True, "local_path": row.get("local_path"), "reconciled_single_model": True},
+            )
+            self.invalidate_model_catalog_cache()
+        elif state == "completed":
+            issues = (row.get("download_integrity") or {}).get("issues") or row.get("local_integrity_issues") or []
+            if issues:
+                self.lifecycle.update(
+                    name,
+                    "download",
+                    state="failed",
+                    progress=1.0,
+                    job_id=job_id or stage.get("job_id"),
+                    message="Download finished but local integrity validation still reports: " + "; ".join(str(x) for x in issues),
+                    error="; ".join(str(x) for x in issues),
+                )
+        statuses = self.lifecycle.all_statuses().get("models", {})
+        row = self._augment_model_row_status(row, statuses)
+        return {"ok": bool(row.get("downloaded")), "model_name": name, "model": row, "lifecycle": self.lifecycle.model_status(name)}
+
+    def _complete_active_download_if_local_payload_ready(self, model_name: str | None = None) -> list[str]:
+        """Unstick active download circles when the local model payload is already usable.
+
+        Hugging Face downloads can occasionally leave the browser seeing a
+        running lifecycle row after the files are already present, especially
+        for small ONNX/tagger repos that complete between polling cycles.  The
+        model loader should not remain blocked when the registry's own integrity
+        checks say the local payload is complete.
+        """
+        names: list[str]
+        if model_name:
+            names = [self.lifecycle.normalize_model_name(model_name)]
+        else:
+            names = list((self.lifecycle.all_statuses().get("models") or {}).keys())
+        completed: list[str] = []
+        for name in names:
+            try:
+                record = self.registry.get_record(name)
+            except Exception:
+                continue
+            if getattr(record, "cloud", False) or not getattr(record, "download_supported", False):
+                continue
+            stage = self.lifecycle.model_status(name).get("stages", {}).get("download", {})
+            state = str(stage.get("state") or "idle").lower()
+            if not (stage.get("active") or state in {"queued", "running"}):
+                continue
+            try:
+                local = record.complete_local_dir(self.registry.model_root, self.registry.external_model_roots)
+            except Exception:
+                local = None
+            if local and local.exists():
+                self.lifecycle.complete(
+                    name,
+                    "download",
+                    message="Local model payload detected; download marked complete",
+                    job_id=stage.get("job_id"),
+                    result={"downloaded": True, "local_path": str(local), "reconciled_active_download": True},
+                )
+                completed.append(name)
+        if completed:
+            self.invalidate_model_catalog_cache()
+        return completed
 
     def _assistant_model_candidates(self) -> list[dict[str, Any]]:
         candidates = []
@@ -1112,9 +1268,50 @@ class ModelService:
             "message": "This is a recommended plan only. Nothing runs until the user approves/queues specific steps.",
             "steps": steps,
             "resource_status": self.model_resource_status(),
+            "runtime_planning_context": self.model_runtime_planning_context(limit=80),
             "selected_orchestrator": by_name.get(orchestrator_name, {"name": orchestrator_name}),
         }
 
+
+
+    def model_runtime_planning_context(self, limit: int = 250) -> dict[str, Any]:
+        """Compact live resource context for assistant/orchestrator placement decisions."""
+        resources = self.model_resource_status()
+        rows = self.list_models()
+        compact_models: list[dict[str, Any]] = []
+        for row in rows[: max(1, int(limit or 250))]:
+            compact_models.append({
+                "name": row.get("name"),
+                "label": row.get("label"),
+                "kind": row.get("kind"),
+                "provider": row.get("provider"),
+                "downloaded": row.get("downloaded"),
+                "loaded": row.get("loaded"),
+                "loaded_instance_count": row.get("loaded_instance_count"),
+                "vram_gb": row.get("vram_gb"),
+                "size_gb": row.get("size_gb"),
+                "supports_sharding": row.get("supports_sharding"),
+                "min_gpus": row.get("min_gpus"),
+                "max_gpus": row.get("max_gpus"),
+                "recommended_backend": row.get("recommended_backend"),
+                "capabilities": row.get("capabilities") or [],
+                "cloud": row.get("cloud"),
+            })
+        return {
+            "resource_status": resources,
+            "loaded_models": resources.get("loaded_models") or [],
+            "available_models": compact_models,
+            "placement_policy": {
+                "strict_gpu_assignment": True,
+                "no_silent_cpu_fallback_for_explicit_cuda": True,
+                "user_can_select_device_ids": True,
+                "assistant_can_select_device_ids": True,
+                "assistant_can_request_sharding": True,
+                "supported_sharding_strategies": ["none", "auto", "balanced", "balanced_low_0", "sequential", "custom"],
+                "supported_runtime_engines": ["transformers", "vllm", "sglang", "llama.cpp", "cloud", "auto"],
+                "guidance": "Use resource_status.devices actual_used/free plus app_reserved/planning_available to choose device_ids. Use balanced/auto sharding for models larger than one selected GPU budget or when the registry marks supports_sharding=true. Never queue a local load on CPU when the user explicitly requested cuda:N unless the user changes placement.",
+            },
+        }
 
     def add_custom_model(self, payload: Any) -> dict[str, Any]:
         data = payload.model_dump() if hasattr(payload, "model_dump") else dict(payload or {})
@@ -1130,6 +1327,7 @@ class ModelService:
             existing.insert(0, row_payload)
             self.settings.custom_models = existing
         self.lifecycle.ensure_model(record.name)
+        self.invalidate_model_catalog_cache()
         if record.is_downloaded(self.registry.model_root):
             self.lifecycle.complete(record.name, "download", message="Custom model files found; marked downloaded", result={"downloaded": True, "custom": True})
         return record.to_dict(self.registry.model_root)
@@ -1143,6 +1341,7 @@ class ModelService:
         self.registry._records.pop(model_name, None)
         if self.settings is not None:
             self.settings.custom_models = [r for r in (getattr(self.settings, "custom_models", []) or []) if str(r.get("name") or "") != model_name]
+        self.invalidate_model_catalog_cache()
         return {"deleted": model_name, "remaining": len(getattr(self.settings, "custom_models", []) or []) if self.settings else None}
 
     def _augment_model_row_status(self, row: dict[str, Any], statuses: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1215,9 +1414,13 @@ class ModelService:
         })
         return row
 
-    def list_models(self) -> list[dict[str, Any]]:
-        self.reconcile_local_assets()
-        rows = self.registry.list()
+    def list_models(self, *, force: bool = False) -> list[dict[str, Any]]:
+        self._complete_active_download_if_local_payload_ready(None)
+        # The model page can call this endpoint frequently.  A full registry.list()
+        # scans large model folders to determine downloaded/integrity status; doing
+        # that on every button press makes the UI feel frozen.  Cache the static
+        # catalog briefly and always layer live lifecycle/loaded status over it.
+        rows = self._static_model_catalog_rows(force=force)
         statuses = self.lifecycle.all_statuses().get("models", {})
         for row in rows:
             name = row.get("name")
@@ -1226,12 +1429,21 @@ class ModelService:
         return rows
 
     def lifecycle_status(self, model_name: str | None = None) -> dict[str, Any]:
-        self.reconcile_local_assets()
-        # Ensure catalog rows exist in the lifecycle payload even before the first
-        # operation so every model card can render all four circles.
-        for row in self.registry.list():
-            self.lifecycle.ensure_model(row.get("name"))
+        # /api/models/status is polled frequently by the UI.  Do not rescan large
+        # model folders here; that made model-page interactions feel frozen and
+        # also delayed visible state changes until the user switched tabs.  The
+        # static catalog cache is refreshed by /api/models?force=true, explicit
+        # rescans, downloads, and load/unload operations; status polling only
+        # overlays live lifecycle/placement state.
+        if model_name:
+            self.lifecycle.ensure_model(model_name)
+        else:
+            # Avoid ModelRecord.to_dict()/filesystem checks on the hot status
+            # endpoint.  The registry keeps the static record map in memory.
+            for name in list(getattr(self.registry, "_records", {}) or {}):
+                self.lifecycle.ensure_model(name)
         self._sync_lifecycle_from_jobs(model_name)
+        self._complete_active_download_if_local_payload_ready(model_name)
         if model_name:
             status = self.lifecycle.model_status(model_name)
             try:
@@ -1450,14 +1662,96 @@ class ModelService:
                     reservations.setdefault(idx, []).append({"model_name": name, "label": row.get("label") or name, "source": source, "reserved_gb": share, "sharding_strategy": row.get("sharding_strategy") or "none"})
         return reservations
 
+
+    def _system_memory_snapshot(self) -> dict[str, Any]:
+        """Return a lightweight system-RAM snapshot without requiring psutil.
+
+        The frontend polls model resource state while models are loading or being
+        used.  Keep this best-effort and dependency-free so it cannot block the
+        model lifecycle UI if psutil is not installed.
+        """
+        try:
+            try:
+                import psutil  # type: ignore
+                vm = psutil.virtual_memory()
+                return {
+                    "ok": True,
+                    "source": "psutil",
+                    "total_gb": round(float(vm.total) / (1024 ** 3), 3),
+                    "available_gb": round(float(vm.available) / (1024 ** 3), 3),
+                    "used_gb": round(float(vm.used) / (1024 ** 3), 3),
+                    "percent": float(vm.percent),
+                }
+            except Exception:
+                pass
+            import os
+            if hasattr(os, "sysconf"):
+                names = os.sysconf_names
+                if "SC_PAGE_SIZE" in names and "SC_PHYS_PAGES" in names:
+                    page = float(os.sysconf("SC_PAGE_SIZE"))
+                    total = page * float(os.sysconf("SC_PHYS_PAGES"))
+                    available = None
+                    if "SC_AVPHYS_PAGES" in names:
+                        available = page * float(os.sysconf("SC_AVPHYS_PAGES"))
+                    used = max(0.0, total - float(available or 0.0)) if available is not None else None
+                    return {
+                        "ok": True,
+                        "source": "os.sysconf",
+                        "total_gb": round(total / (1024 ** 3), 3),
+                        "available_gb": round(float(available or 0.0) / (1024 ** 3), 3) if available is not None else None,
+                        "used_gb": round(float(used or 0.0) / (1024 ** 3), 3) if used is not None else None,
+                        "percent": round((float(used or 0.0) / total) * 100, 2) if used is not None and total else None,
+                    }
+            # Windows fallback using GlobalMemoryStatusEx.
+            try:
+                import ctypes
+                class MEMORYSTATUSEX(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength", ctypes.c_ulong),
+                        ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+                stat = MEMORYSTATUSEX()
+                stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+                if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                    total = float(stat.ullTotalPhys)
+                    available = float(stat.ullAvailPhys)
+                    used = max(0.0, total - available)
+                    return {
+                        "ok": True,
+                        "source": "GlobalMemoryStatusEx",
+                        "total_gb": round(total / (1024 ** 3), 3),
+                        "available_gb": round(available / (1024 ** 3), 3),
+                        "used_gb": round(used / (1024 ** 3), 3),
+                        "percent": float(stat.dwMemoryLoad),
+                    }
+            except Exception:
+                pass
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": "System RAM snapshot unavailable"}
+
     def model_resource_status(self) -> dict[str, Any]:
         gpu_devices, raw = self._detected_cuda_devices()
+        torch_snapshot = self._cuda_memory_snapshot()
+        torch_by_index = {
+            int(d.get("index")): d
+            for d in torch_snapshot.get("devices", [])
+            if isinstance(d, dict) and d.get("index") is not None
+        }
         fraction = self._vram_fraction()
         reservations = self._current_app_reservations_by_gpu()
         device_rows: list[dict[str, Any]] = []
         for idx in sorted(gpu_devices):
             row = dict(gpu_devices[idx])
-            total = self._as_float(row.get("total_memory_gb"), 0.0)
+            torch_row = torch_by_index.get(idx, {})
+            total = self._as_float(row.get("total_memory_gb"), 0.0) or self._as_float(torch_row.get("total_gb"), 0.0)
             app_rows = reservations.get(idx, [])
             app_reserved = round(sum(self._as_float(r.get("reserved_gb"), 0.0) for r in app_rows), 2)
             physical_available = max(0.0, round(total - app_reserved, 2)) if total else 0.0
@@ -1469,6 +1763,13 @@ class ModelService:
                 driver_limited = max(0.0, round(min(app_available, free_detected * fraction), 2))
             strict_driver = bool(getattr(self.settings, "strict_driver_free_memory_checks", False)) if self.settings else False
             estimated_available = driver_limited if strict_driver else app_available
+            driver_used = self._memory_value_gb(row.get("used_memory_gb"))
+            driver_free = free_detected
+            torch_used = self._memory_value_gb(torch_row.get("used_gb"))
+            torch_free = self._memory_value_gb(torch_row.get("free_gb"))
+            actual_used = driver_used if driver_used is not None else (torch_used if torch_used is not None else app_reserved)
+            actual_free = driver_free if driver_free is not None else (torch_free if torch_free is not None else max(0.0, total - actual_used))
+            actual_source = "nvidia-smi" if driver_used is not None or driver_free is not None else ("torch" if torch_row else "app_reservation")
             row.update({
                 "physical_total_memory_gb": total,
                 "physical_available_gb": physical_available,
@@ -1480,6 +1781,16 @@ class ModelService:
                 "availability_basis": "driver_free_strict" if strict_driver else "app_reservation_budget",
                 "strict_driver_free_memory_checks": strict_driver,
                 "driver_free_memory_warning": (free_detected is not None and driver_limited + 0.25 < app_available),
+                "driver_used_memory_gb": driver_used,
+                "driver_free_memory_gb": driver_free,
+                "torch_free_gb": torch_free,
+                "torch_used_gb": torch_used,
+                "torch_allocated_gb": self._memory_value_gb(torch_row.get("torch_allocated_gb")),
+                "torch_reserved_gb": self._memory_value_gb(torch_row.get("torch_reserved_gb")),
+                "torch_max_allocated_gb": self._memory_value_gb(torch_row.get("torch_max_allocated_gb")),
+                "actual_used_memory_gb": round(float(actual_used or 0.0), 3),
+                "actual_free_memory_gb": round(float(actual_free or 0.0), 3),
+                "actual_memory_source": actual_source,
                 "reservations": app_rows,
                 "reservation_count": len(app_rows),
             })
@@ -1494,6 +1805,9 @@ class ModelService:
             "vram_fraction": fraction,
             "loaded_models": loaded,
             "loading_reservations": loading,
+            "system_ram": self._system_memory_snapshot(),
+            "torch_cuda_snapshot": torch_snapshot,
+            "actual_memory_poll_at": time.time(),
             "warnings": raw.get("warnings") or [],
         }
 
@@ -1501,17 +1815,30 @@ class ModelService:
         device = str(getattr(request, "device", "auto") or "auto").strip().lower()
         if device == "cpu" or not self._runtime_provider_uses_local_vram(record, request):
             return []
+        explicit_idx = self._gpu_index_from_id(device)
         raw_ids = list(getattr(request, "device_ids", []) or [])
         if raw_ids:
-            ids = [self._gpu_index_from_id(x) for x in raw_ids]
-            return [idx for idx in ids if idx is not None]
-        idx = self._gpu_index_from_id(device)
-        if idx is not None:
-            return [idx]
+            parsed = [self._gpu_index_from_id(x) for x in raw_ids]
+            ids: list[int] = []
+            for idx in parsed:
+                if idx is not None and idx not in ids:
+                    ids.append(idx)
+            if explicit_idx is not None and explicit_idx not in ids:
+                raise RuntimeError(
+                    f"GPU selection conflict: device={device!r} but device_ids={ids}. "
+                    "Use matching values so the selected model cannot be placed on a different GPU."
+                )
+            return ids
+        if explicit_idx is not None:
+            return [explicit_idx]
         default_ids = list(getattr(self.settings, "default_model_device_ids", []) or []) if self.settings else []
         if default_ids:
-            ids = [self._gpu_index_from_id(x) for x in default_ids]
-            return [idx for idx in ids if idx is not None]
+            ids: list[int] = []
+            for value in default_ids:
+                idx = self._gpu_index_from_id(value)
+                if idx is not None and idx not in ids:
+                    ids.append(idx)
+            return ids
         return [sorted(gpu_devices.keys())[0]] if gpu_devices else []
 
     def _placement_for_request(self, request: Any) -> tuple[str, dict[str, Any], dict[str, Any]]:
@@ -1682,6 +2009,13 @@ class ModelService:
         model_name = getattr(request, "model_name", None)
         if not model_name or not self.registry.is_loaded(model_name):
             return
+        opts = getattr(request, "options", {}) or {}
+        if isinstance(opts, dict) and opts.get("use_loaded_model_placement"):
+            # Quick Tag/agent queues can intentionally ignore newly selected
+            # placement controls and use the already-loaded residency for this
+            # model. This prevents a stale cuda:# control from blocking a run
+            # against a model the user already loaded elsewhere.
+            return
         placement = self.registry.loaded_placement(model_name) if hasattr(self.registry, "loaded_placement") else None
         if not placement:
             return
@@ -1770,6 +2104,13 @@ class ModelService:
                 progress=tracker,
                 parallel_downloads=request.parallel_downloads,
             )
+            if tracker:
+                tracker(0.98, "Finalizing local model catalog entry")
+            try:
+                self.reconcile_local_assets()
+            except Exception:
+                pass
+            self.invalidate_model_catalog_cache()
             self.lifecycle.complete(model_name, "download", message="Download dry-run completed" if request.dry_run else "Model download completed", job_id=job_id, result=result)
             return result
         except Exception as exc:
@@ -1777,6 +2118,7 @@ class ModelService:
             raise
 
     def load(self, request: ModelLoadRequest, progress=None, job_id: int | None = None) -> dict[str, Any]:
+        self._complete_active_download_if_local_payload_ready(request.model_name)
         if self.lifecycle.is_active(request.model_name, "download"):
             raise RuntimeError(f"{request.model_name} is still downloading. Wait for the download status circle to finish before loading it.")
         if self.registry.is_loaded(request.model_name):
@@ -1822,6 +2164,53 @@ class ModelService:
             opts.update(runtime_opts)
             opts["placement"] = placement
             try:
+                record_for_load = self.registry.get_record(model_name)
+            except Exception:
+                record_for_load = None
+            if record_for_load is not None and not getattr(record_for_load, "cloud", False) and getattr(record_for_load, "download_supported", False):
+                local_ready = False
+                local_path = None
+                try:
+                    local = record_for_load.complete_local_dir(self.registry.model_root, self.registry.external_model_roots)
+                    # A migrated install may have just been copied in while the
+                    # app is already running.  If the cached catalog did not know
+                    # about it, reconcile once before deciding Load is impossible.
+                    if not local:
+                        self.invalidate_model_catalog_cache()
+                        try:
+                            self.reconcile_local_assets()
+                        except Exception:
+                            pass
+                        local = record_for_load.complete_local_dir(self.registry.model_root, self.registry.external_model_roots)
+                    local_ready = bool(local and local.exists())
+                    local_path = str(local) if local else None
+                    if local_ready and local_path:
+                        # Force every adapter/HF helper to use the exact local
+                        # snapshot/file.  Without this, Transformers can fall
+                        # through to repo_id and silently redownload weights.
+                        opts.setdefault("model_id", local_path)
+                        opts.setdefault("dct_resolved_local_model_path", local_path)
+                        opts.setdefault("local_files_only", True)
+                        opts.setdefault("allow_support_file_repair", False)
+                        opts.setdefault("prevent_automatic_download", True)
+                except Exception:
+                    local_ready = False
+                allow_remote = bool(opts.get("allow_remote_load") or opts.get("download_on_load") or opts.get("allow_download_on_load"))
+                if not local_ready and not allow_remote:
+                    candidates = []
+                    try:
+                        for candidate in record_for_load.candidate_local_dirs(self.registry.model_root, self.registry.external_model_roots)[:12]:
+                            candidates.append(str(candidate))
+                    except Exception:
+                        candidates = []
+                    raise RuntimeError(
+                        f"No complete local model payload was found for {getattr(record_for_load, 'label', model_name)} ({model_name}). "
+                        "Load is local-only by default and will not download model weights implicitly. "
+                        "Use Models > Rescan after migration, add the old install/models folder as an external model root, "
+                        "or use Queue Download/Update explicitly. "
+                        f"Checked: {candidates}."
+                    )
+            try:
                 result = self.registry.load_model(model_name, device=effective_device, **opts)
             except Exception as load_exc:
                 try:
@@ -1839,6 +2228,10 @@ class ModelService:
             self._release_loading_reservation(model_name)
             self._commit_model_placement(model_name, placement, result)
             result.setdefault("placement", placement)
+            try:
+                result["resource_after"] = self.model_resource_status()
+            except Exception:
+                pass
             self.lifecycle.complete(model_name, "load", message=f"Model loaded into memory on {summary}", job_id=job_id, result=result)
             if progress:
                 progress(1.0, f"{model_name}: loaded into memory")
@@ -1854,8 +2247,8 @@ class ModelService:
         if not targets:
             return {"unloaded": [], "message": "No model adapters were loaded."}
         for idx, name in enumerate(targets):
-            frac = idx / max(1, len(targets))
-            self.lifecycle.update(name, "load", state="unloading", progress=frac, message="Unloading model from RAM/VRAM", job_id=job_id)
+            frac = max(0.02, idx / max(1, len(targets)) * 0.35)
+            self.lifecycle.update(name, "load", state="unloading", progress=frac, message="Unloading model from RAM/VRAM", job_id=job_id, extra={"loaded": False})
             if progress:
                 progress(frac, f"Unloading {name} from RAM/VRAM")
         result = self.registry.unload(model_name)
@@ -1870,14 +2263,22 @@ class ModelService:
             with self._resource_lock:
                 self._loading_reservations.clear()
         for idx, name in enumerate(unloaded, start=1):
-            frac = idx / max(1, len(unloaded))
+            frac = 0.35 + (0.55 * idx / max(1, len(unloaded)))
+            self.lifecycle.update(name, "load", state="unloading", progress=frac, message="Releasing model memory and cache", job_id=job_id, extra={"loaded": False})
+            if progress:
+                progress(frac, f"Releasing {name}")
             self.lifecycle.reset(name, "load", message="Model unloaded from RAM/VRAM")
+            self.lifecycle.update(name, "load", state="idle", progress=0.0, message="Model unloaded from RAM/VRAM", job_id=job_id, extra={"loaded": False})
             self.lifecycle.reset(name, "inference", message="Inference idle after unload")
             if progress:
-                progress(frac, f"Unloaded {name}")
+                progress(1.0, f"Unloaded {name}")
         for name in set(targets) - set(unloaded):
             self.lifecycle.update(name, "load", state="idle", progress=0.0, message="Model was not loaded", job_id=job_id)
             self.lifecycle.reset(name, "inference", message="Inference idle")
+        try:
+            result["resource_after"] = self.model_resource_status()
+        except Exception:
+            pass
         return result
 
 
@@ -1907,7 +2308,19 @@ class ModelService:
         applied_captions = 0
         predictions = 0
         prediction_preview: dict[int, list[str]] = {}
-        effective_task = "tag" if request.model_name == "redrocket-jtp-3" else request.task
+        candidate_tags_by_media: dict[int, list[str]] = {}
+        candidate_scores_by_media: dict[int, list[dict[str, Any]]] = {}
+        applied_tags_by_media: dict[int, list[str]] = {}
+        effective_task = "tag" if request.model_name in {"redrocket-jtp-3", "redrocket-hydra-3-5"} else request.task
+        try:
+            effective_threshold = float(request.threshold)
+        except Exception:
+            effective_threshold = 0.70
+        if not (0.0 < effective_threshold <= 1.0):
+            # Quick Tag UI surfaces must never turn a blank input into threshold 0.0,
+            # because that commits every emitted model label.  Non-quick advanced
+            # API callers may still intentionally pass a tiny positive threshold.
+            effective_threshold = 0.70 if (request.options or {}).get("quick_tag_surface") else max(0.0, min(1.0, effective_threshold if effective_threshold == effective_threshold else 0.70))
 
         def job_progress(value: float, message: str) -> None:
             if progress:
@@ -1933,11 +2346,14 @@ class ModelService:
                 if not media:
                     return {"media_id": media_id, "skipped": True}
                 kwargs = self._runtime_options(request)
-                kwargs.update({"threshold": request.threshold, "prompt": request.prompt})
+                kwargs.update({"threshold": effective_threshold, "prompt": request.prompt})
                 if effective_task == "caption_split":
                     kwargs["caption"] = media.caption
                 runtime_device = self._runtime_device_for_request(request.model_name, request)
                 pred = self._registry_predict_with_vram_guard(request.model_name, Path(media.path), device=runtime_device, options=request.options, **kwargs)
+                profile_key = str((request.options or {}).get("tag_profile") or (request.options or {}).get("profile_key") or "e621")
+                apply_aliases = bool((request.options or {}).get("apply_model_tag_aliases", True))
+                apply_implications = bool((request.options or {}).get("apply_model_tag_implications", True))
                 payload = {
                     "kind": pred.kind,
                     "tags": pred.tags,
@@ -1947,18 +2363,109 @@ class ModelService:
                     "masks": pred.masks,
                     "raw": pred.raw,
                 }
+                desired_tag_text_mode = str((request.options or {}).get("tag_text_mode") or getattr(self.settings, "tag_text_mode_active", "underscores") or "underscores")
+                payload = self.tags.normalize_model_prediction_payload(
+                    payload,
+                    profile_key=profile_key,
+                    apply_aliases=apply_aliases,
+                    apply_implications=apply_implications,
+                    text_mode=desired_tag_text_mode,
+                )
+                payload["tag_text_mode"] = desired_tag_text_mode
                 self.media.add_prediction(media_id, run_id, request.model_name, effective_task, payload)
-                candidate_tags = [tag for tag, score in (pred.tags or pred.classes) if float(score) >= request.threshold]
+                scored_candidates = payload.get("tags") or payload.get("classes") or []
+
+                def _score_key(value: Any) -> str:
+                    return str(value or "").strip().lower().replace(" ", "_")
+
+                score_lookup: dict[str, float] = {}
+
+                def _remember_score(label: Any, value: Any) -> None:
+                    key = _score_key(label)
+                    if not key:
+                        return
+                    try:
+                        score = max(0.0, min(1.0, float(value)))
+                    except Exception:
+                        return
+                    # Keep the strongest score when aliases/duplicates collapse.
+                    score_lookup[key] = max(score_lookup.get(key, 0.0), score)
+
+                def _collect_scores(obj: Any) -> None:
+                    if isinstance(obj, dict):
+                        label = obj.get("tag") or obj.get("label") or obj.get("class") or obj.get("name")
+                        score = obj.get("score") or obj.get("confidence") or obj.get("probability") or obj.get("prob")
+                        if label is not None and score is not None:
+                            _remember_score(label, score)
+                        for value in obj.values():
+                            if isinstance(value, (list, tuple, dict)):
+                                _collect_scores(value)
+                    elif isinstance(obj, (list, tuple)):
+                        if len(obj) >= 2 and not isinstance(obj[0], (list, tuple, dict)):
+                            _remember_score(obj[0], obj[1])
+                        else:
+                            for value in obj:
+                                _collect_scores(value)
+
+                _collect_scores(pred.tags)
+                _collect_scores(pred.classes)
+                _collect_scores(pred.raw)
+                _collect_scores(payload.get("classes"))
+
+                candidate_tags = []
+                candidate_score_rows: list[dict[str, Any]] = []
+                for item in scored_candidates:
+                    tag = None
+                    score = 1.0
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        tag = item[0]
+                        try:
+                            score = float(item[1])
+                        except Exception:
+                            score = 1.0
+                    elif isinstance(item, dict):
+                        tag = item.get("tag") or item.get("label") or item.get("class")
+                        try:
+                            score = float(item.get("score") or item.get("confidence") or item.get("probability") or 1.0)
+                        except Exception:
+                            score = 1.0
+                    elif isinstance(item, str):
+                        # Some normalization paths emit tags as bare strings even
+                        # when the adapter/raw payload still contained per-label
+                        # probabilities.  Reattach that original score before
+                        # applying the threshold; only fully thresholded adapters
+                        # with no recoverable score are treated as accepted labels.
+                        tag = item
+                        score = score_lookup.get(_score_key(item), 1.0)
+                    if not tag:
+                        continue
+                    tag_text = str(tag)
+                    score = max(0.0, min(1.0, float(score)))
+                    candidate_score_rows.append({"tag": tag_text, "score": score})
+                    if score >= effective_threshold:
+                        candidate_tags.append(tag_text)
+                candidate_tags_by_media[media_id] = candidate_tags
+                candidate_scores_by_media[media_id] = candidate_score_rows
                 prediction_preview[media_id] = candidate_tags[:25]
                 result = {"media_id": media_id, "prediction": 1, "tags": 0, "captions": 0}
                 if request.apply_tags and candidate_tags:
                     current = self.tags.get_tags(media_id)
                     merged = list(current)
+                    newly_added = []
                     for tag in candidate_tags:
                         if tag not in merged:
                             merged.append(tag)
-                    self.tags.set_tags(media_id, merged, source=request.model_name, save_sidecar=True)
-                    result["tags"] = len(candidate_tags)
+                            newly_added.append(tag)
+                    applied = self.tags.set_tags(
+                        media_id,
+                        merged,
+                        source=request.model_name,
+                        save_sidecar=True,
+                        profile_key=profile_key,
+                        order_strategy=str((request.options or {}).get("order_strategy") or "retain"),
+                    )
+                    applied_tags_by_media[media_id] = candidate_tags
+                    result["tags"] = len(newly_added)
                 if request.apply_caption and pred.caption:
                     self.db.upsert_caption(media_id, pred.caption, source=request.model_name)
                     result["captions"] = 1
@@ -1998,7 +2505,11 @@ class ModelService:
                 "parallel_workers": workers,
                 "sharding_strategy": request.sharding_strategy,
                 "effective_task": effective_task,
+                "threshold": effective_threshold,
                 "preview_tags_by_media": prediction_preview,
+                "candidate_tags_by_media": candidate_tags_by_media,
+                "candidate_scores_by_media": candidate_scores_by_media,
+                "applied_tags_by_media": applied_tags_by_media,
             }
             self.lifecycle.complete(model_name, "inference", message="Inference completed", job_id=run_id, result=result)
             return result
@@ -2054,6 +2565,8 @@ class ModelService:
             effort = "medium"
         show_plan_default = bool(getattr(settings, "assistant_show_visible_plan", True)) if settings else True
         show_plan = bool(opts.get("show_visible_plan", opts.get("visible_plan", opts.get("plan_before_answer", show_plan_default))))
+        show_trace_default = bool(getattr(settings, "assistant_show_live_chain_of_thought", True)) if settings else True
+        show_trace = bool(opts.get("show_live_chain_of_thought", opts.get("show_live_reasoning_trace", show_trace_default)))
         try:
             planning_passes = int(opts.get("planning_passes", opts.get("planner_passes", getattr(settings, "assistant_planning_passes", 1) if settings else 1)) or 0)
         except Exception:
@@ -2087,6 +2600,8 @@ class ModelService:
             "thinking_mode": mode,
             "reasoning_effort": effort,
             "show_visible_plan": bool(show_plan),
+            "show_live_chain_of_thought": bool(show_trace),
+            "show_live_reasoning_trace": bool(show_trace),
             "planning_passes": planning_passes,
             "plan_max_new_tokens": plan_tokens,
             "min_chat_max_new_tokens": max(256, min(8192, min_chat_tokens)),
@@ -2136,11 +2651,11 @@ LOCAL ACTION / TOOL-CALL DECISION CONTRACT FOR THIS APPLICATION:
 - You must not claim that tools are unavailable merely because you are an AI model or sandboxed. If tools are needed, output a structured COA/tool-call plan; the app executes it only after approval.
 - If no tool is needed, do NOT output empty JSON, fake COAs, or a tool-call preamble. Just answer the user.
 - If the user explicitly approves or asks to run a prior COA, return the concrete JSON tool_calls for that COA; do not re-explain only.
-- Use only these tools when needed: run_shell_command, run_python_script, list_path, read_file, write_file, fetch_url_text, open_browser, app_gui_action, inspect_model_resources, run_model_chat.
+- Use only these tools when needed: run_shell_command, run_python_script, list_path, read_file, write_file, fetch_url_text, open_browser, app_gui_action, inspect_model_resources, run_model_chat, queue_model_load, queue_model_inference, queue_model_unload, wait_for_jobs.
 - Each executable tool call/step must include a clear note, risk level, and requires_approval=true.
 - For Windows local work, prefer run_shell_command with arguments.shell="powershell" and write ONLY the PowerShell script/command itself. Do NOT wrap it inside another powershell.exe -Command when shell="powershell".
 - For multi-line Python, use run_python_script with a complete script and include requirements=[...] if pip packages are needed.
-- If you need a specialized model, first use inspect_model_resources, then propose run_model_chat with model_name, prompt, GPU IDs, dtype, quantization, and sharding hints.
+- If you need a specialized chat model, first use inspect_model_resources, then propose run_model_chat with model_name, prompt, GPU IDs, dtype, quantization, and sharding hints. If you need a classifier/tagger/detector/captioner, propose queue_model_load and queue_model_inference, then wait_for_jobs before using the results. Use queue_model_unload when cleanup is part of the plan.
 - Do not say a tool has already run until the app relays a real job result back to you.
 - After a tool result is relayed, summarize stdout/stderr/results, decide if the task is complete, and propose the next approved action only if more work is actually needed.
 Example TOOL_COA:
@@ -2245,6 +2760,7 @@ Example APP_GUI_ACTION:
         output_tokens = self._estimate_text_tokens(response_text)
         total = input_tokens + output_tokens
         pct = min(1.0, total / max(1, limit))
+        threshold = float((options or {}).get("auto_condense_context_threshold") or 0.72)
         return {
             "estimated": True,
             "model_name": model_name,
@@ -2256,6 +2772,9 @@ Example APP_GUI_ACTION:
             "warning": pct >= 0.82,
             "critical": pct >= 0.94,
             "auto_condensed": bool(condensed),
+            "auto_condense_enabled": (options or {}).get("auto_condense_context", True) is not False,
+            "auto_condense_threshold": threshold,
+            "auto_condense_pending": pct >= threshold,
             "condense_reason": condense_reason,
             "note": "Token counts are fast estimates for live UI pressure and automatic condensation; provider tokenizers may differ.",
         }
@@ -2268,6 +2787,8 @@ Example APP_GUI_ACTION:
         it cannot get into an infinite "summary too large to summarize" loop.
         """
         budget = self._context_budget_payload(model_name=request.model_name, prompt=request.prompt or "", context=context, options=options)
+        if options.get("auto_condense_context") is False:
+            return context, str(context.get("conversation_memory_summary") or state.get("memory_summary") or "").strip(), False, ""
         threshold = float(options.get("auto_condense_context_threshold") or 0.72)
         condensed = False
         reason = ""
@@ -2290,10 +2811,16 @@ Example APP_GUI_ACTION:
 
     def _visible_planning_prompt(self, user_prompt: str, context: dict[str, Any], reasoning: dict[str, Any], pass_index: int = 1) -> str:
         return (
-            "Create a concise, user-visible planning summary for the next answer. "
-            "Do not reveal hidden/private chain-of-thought. Do not solve the full task yet. "
-            "Return only a practical plan that the UI can show separately from the final answer.\n"
+            "Create a detailed user-visible reasoning trace and practical plan for the next answer. "
+            "This is the explicit, user-visible trace the app is allowed to show; do not claim to expose provider/private hidden reasoning. "
+            "Do not solve the full task yet. Return only the trace/plan that the UI can show separately from the final answer.\n"
             "Use this format exactly where possible:\n"
+            "VISIBLE_CHAIN_OF_THOUGHT:\n"
+            "- Goal interpretation: ...\n"
+            "- Evidence/context checked: ...\n"
+            "- Tool/model actions considered: ...\n"
+            "- Risks/uncertainties: ...\n"
+            "- Next action: ...\n"
             "VISIBLE_PLAN:\n"
             "- Goal: ...\n"
             "- Context to use: ...\n"
@@ -2309,8 +2836,8 @@ Example APP_GUI_ACTION:
         if not visible_plan.strip():
             return user_prompt
         return (
-            "Use the following visible plan/action-notes to structure your answer. "
-            "Do not expose hidden chain-of-thought; give the final user-facing response.\n\n"
+            "Use the following visible reasoning trace and plan/action-notes to structure your answer. "
+            "Do not output private hidden reasoning; give the final user-facing response.\n\n"
             f"Visible plan/action-notes already shown in the UI:\n{visible_plan.strip()}\n\n"
             f"User request:\n{user_prompt}"
         )
@@ -2339,6 +2866,23 @@ Example APP_GUI_ACTION:
         return raw[:8000]
 
     @staticmethod
+    def _clean_visible_reasoning_trace(text: str) -> str:
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        raw = re.sub(r"^```(?:json|text|markdown)?\s*", "", raw, flags=re.I).strip()
+        raw = re.sub(r"```$", "", raw).strip()
+        m = re.search(r"VISIBLE_CHAIN_OF_THOUGHT\s*:\s*(.*?)(?:\n\s*VISIBLE_PLAN\s*:|\Z)", raw, flags=re.I | re.S)
+        if m:
+            raw = m.group(1).strip()
+        else:
+            m = re.search(r"VISIBLE_REASONING_TRACE\s*:\s*(.*?)(?:\n\s*VISIBLE_PLAN\s*:|\Z)", raw, flags=re.I | re.S)
+            if m:
+                raw = m.group(1).strip()
+        raw = re.sub(r"(?im)^\s*(hidden reasoning|private reasoning)\s*:\s*", "", raw)
+        return raw[:12000]
+
+    @staticmethod
     def _action_notes_from_plan(plan: str) -> list[str]:
         notes: list[str] = []
         for line in str(plan or "").splitlines():
@@ -2349,14 +2893,15 @@ Example APP_GUI_ACTION:
                 break
         return notes
 
-    def _generate_visible_plan(self, request: ModelChatRequest, prompt: str, context: dict[str, Any], runtime: dict[str, Any], reasoning: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+    def _generate_visible_plan(self, request: ModelChatRequest, prompt: str, context: dict[str, Any], runtime: dict[str, Any], reasoning: dict[str, Any]) -> tuple[str, str, list[dict[str, Any]]]:
         passes = int(reasoning.get("planning_passes") or 0)
         if not reasoning.get("show_visible_plan") or passes <= 0:
-            return "", []
+            return "", "", []
         plan_runtime = dict(runtime)
         plan_runtime["max_new_tokens"] = int(reasoning.get("plan_max_new_tokens") or 768)
         plan_runtime.setdefault("temperature", min(float(plan_runtime.get("temperature", 0.2) or 0.2), 0.4))
         visible_plan = ""
+        visible_reasoning_trace = ""
         pass_rows: list[dict[str, Any]] = []
         for pass_idx in range(1, passes + 1):
             plan_context = dict(context)
@@ -2364,19 +2909,35 @@ Example APP_GUI_ACTION:
                 plan_context["previous_visible_plan"] = visible_plan
             plan_prompt = self._visible_planning_prompt(prompt, plan_context, reasoning, pass_idx)
             plan_response = self._registry_chat_with_vram_guard(request.model_name, plan_prompt, context=plan_context, device=request.device, options=reasoning, **plan_runtime)
-            cleaned = self._clean_visible_plan(plan_response.get("response") or "")
+            raw_plan_text = plan_response.get("response") or ""
+            cleaned = self._clean_visible_plan(raw_plan_text)
+            cleaned_trace = self._clean_visible_reasoning_trace(raw_plan_text)
             if cleaned:
                 visible_plan = cleaned
-            pass_rows.append({"pass": pass_idx, "chars": len(cleaned), "used": bool(cleaned)})
-        return visible_plan, pass_rows
+            if cleaned_trace:
+                visible_reasoning_trace = cleaned_trace
+            elif cleaned and not visible_reasoning_trace:
+                visible_reasoning_trace = cleaned
+            pass_rows.append({"pass": pass_idx, "chars": len(cleaned), "trace_chars": len(cleaned_trace), "used": bool(cleaned or cleaned_trace)})
+        return visible_plan, visible_reasoning_trace, pass_rows
 
     def chat(self, request: ModelChatRequest) -> dict[str, Any]:
         resolved_model = self.resolve_assistant_model_name(request.model_name, purpose="assistant")
         if resolved_model != request.model_name:
             request = request.model_copy(update={"model_name": resolved_model})
         options = dict(request.options or {})
+        options.setdefault("auto_condense_context", True)
+        options.setdefault("auto_condense_context_threshold", 0.72)
+        options.setdefault("show_live_action_notes", True)
+        options.setdefault("show_live_chain_of_thought", True)
+        options.setdefault("show_live_reasoning_trace", True)
+        options.setdefault("show_visible_plan", True)
         context = self._build_chat_context(request)
         conversation_id = self._ensure_conversation(request, context)
+        # Compact stale payloads before reloading history.  This protects
+        # overnight VLM/LLM sessions from accumulating media/model context JSON
+        # into system RAM while preserving the visible chat transcript.
+        self._prune_conversation_payloads(conversation_id, keep_recent=int(options.get("recent_message_window") or 32) + 4)
         full_history = self._conversation_history(conversation_id)
         conversation_state = self._conversation_state(conversation_id)
         context_reset_message_id = int(conversation_state.get("context_reset_message_id") or 0)
@@ -2422,6 +2983,9 @@ Example APP_GUI_ACTION:
             options.setdefault("agent_tools_allow_plain_chat_without_tools", bool(getattr(self.settings, "agent_tools_allow_plain_chat_without_tools", True)))
             prompt_for_model = self._prompt_with_agent_tool_contract(prompt_for_model, context)
 
+        if options.get("include_lora_rule_context", True) is not False:
+            prompt_for_model = self._append_lora_rules_to_prompt(prompt_for_model, options)
+
         runtime = self._runtime_options(request)
         reasoning = self._chat_reasoning_options(options)
         reasoning_enabled = bool(options.get("chat_assistant") or options.get("code_assistant") or options.get("agent_assistant") or options.get("assistant_reasoning") or options.get("think_longer"))
@@ -2444,14 +3008,17 @@ Example APP_GUI_ACTION:
             self._load_model_from_request(request, progress=None, job_id=None)
         user_message_id = self._append_chat_message(conversation_id, "user", visible_user_prompt, request.model_name, context, {})
         visible_plan = ""
+        visible_reasoning_trace = ""
         planning_passes: list[dict[str, Any]] = []
         if reasoning_enabled and reasoning.get("show_visible_plan"):
             try:
-                visible_plan, planning_passes = self._generate_visible_plan(request, prompt_for_model, context, runtime, reasoning)
-                if visible_plan:
+                visible_plan, visible_reasoning_trace, planning_passes = self._generate_visible_plan(request, prompt_for_model, context, runtime, reasoning)
+                if visible_plan or visible_reasoning_trace:
                     context["visible_plan"] = visible_plan
-                    context["visible_action_notes"] = self._action_notes_from_plan(visible_plan)
-                    prompt_for_model = self._final_prompt_with_visible_plan(prompt_for_model, visible_plan)
+                    context["visible_reasoning_trace"] = visible_reasoning_trace or visible_plan
+                    context["visible_chain_of_thought"] = visible_reasoning_trace or visible_plan
+                    context["visible_action_notes"] = self._action_notes_from_plan(visible_plan or visible_reasoning_trace)
+                    prompt_for_model = self._final_prompt_with_visible_plan(prompt_for_model, visible_plan or visible_reasoning_trace)
             except Exception as exc:
                 planning_passes.append({"error": str(exc)})
         response = self._registry_chat_with_vram_guard(
@@ -2502,16 +3069,22 @@ Example APP_GUI_ACTION:
 
         suggested_tags = response.get("suggested_tags") or _extract_tags(response_text)
         suggested_caption = response.get("suggested_caption") or _extract_caption(response_text)
-        applied: dict[str, Any] = {"tags": 0, "captions": 0, "media_ids": []}
+        applied: dict[str, Any] = {"tags": 0, "captions": 0, "media_ids": [], "tag_edits": None}
         target_ids = request.media_ids if request.use_selected_media else []
-        if request.apply_suggested_tags and suggested_tags and target_ids:
+        if target_ids and bool(options.get("assistant_apply_tag_edits")):
+            edit_result = self._apply_assistant_tag_edit_directives(media_ids=target_ids, response_text=response_text, model_name=request.model_name, options=options)
+            applied["tag_edits"] = edit_result
+            if edit_result.get("changed"):
+                applied["tags"] += int(edit_result.get("changed") or 0)
+                applied["media_ids"].extend([mid for mid in edit_result.get("media_ids") or [] if mid not in applied["media_ids"]])
+        elif request.apply_suggested_tags and suggested_tags and target_ids:
             for media_id in target_ids:
                 current = self.tags.get_tags(media_id)
                 merged = list(current)
                 for tag in suggested_tags:
                     if tag not in merged:
                         merged.append(tag)
-                self.tags.set_tags(media_id, merged, source=request.model_name, save_sidecar=True)
+                self.tags.set_tags(media_id, merged, source=request.model_name, save_sidecar=True, profile_key=str(options.get("tag_profile") or "e621"), order_strategy="retain")
                 applied["tags"] += len(suggested_tags)
                 applied["media_ids"].append(media_id)
         if request.apply_suggested_caption and suggested_caption and target_ids:
@@ -2536,7 +3109,9 @@ Example APP_GUI_ACTION:
             "suggested_caption": suggested_caption,
             "applied": applied,
             "visible_plan": visible_plan or None,
-            "action_notes": self._action_notes_from_plan(visible_plan),
+            "visible_reasoning_trace": (visible_reasoning_trace or visible_plan) or None,
+            "visible_chain_of_thought": (visible_reasoning_trace or visible_plan) or None,
+            "action_notes": self._action_notes_from_plan(visible_plan or visible_reasoning_trace),
             "reasoning": {
                 **reasoning,
                 "enabled": bool(reasoning_enabled),
@@ -2544,7 +3119,14 @@ Example APP_GUI_ACTION:
                 "final_max_new_tokens": runtime.get("max_new_tokens"),
                 "hidden_chain_of_thought_exposed": False,
                 "live_action_notes_enabled": bool(options.get("show_live_action_notes", True)),
-                "note": "Visible plan/action-notes are generated as a separate user-facing planning artifact; provider/private hidden chain-of-thought is not exposed.",
+                "live_chain_of_thought_enabled": bool(options.get("show_live_chain_of_thought", True)),
+                "live_reasoning_trace_enabled": bool(options.get("show_live_reasoning_trace", True)),
+                "visible_reasoning_trace": (visible_reasoning_trace or visible_plan) or None,
+                "auto_condense_context_enabled": options.get("auto_condense_context", True) is not False,
+                "auto_condense_context_threshold": float(options.get("auto_condense_context_threshold") or 0.72),
+                "precondensed_context": bool(precondensed_context),
+                "precondense_reason": precondense_reason,
+                "note": "Visible plan/action-notes and chain-of-thought-style reasoning trace are generated as user-facing artifacts; provider/private hidden reasoning is not extracted.",
             },
             "continuation_rounds": continuation_rounds,
             "finish_requested": continue_last_output,
@@ -2555,7 +3137,7 @@ Example APP_GUI_ACTION:
             "context_reset_message_id": context_reset_message_id,
             "vram_memory_policy": {
                 "cleanup_after_inference": self._settings_bool("model_vram_cleanup_after_inference", True),
-                "auto_cpu_offload_enabled": self._settings_bool("model_vram_auto_cpu_offload_enabled", True),
+                "auto_cpu_offload_enabled": self._settings_bool("model_vram_auto_cpu_offload_enabled", False),
                 "auto_cpu_offload_policy": self._settings_str("model_vram_auto_cpu_offload_policy", "on_pressure"),
                 "disable_generation_cache_on_pressure": self._settings_bool("model_vram_disable_generation_cache_on_pressure", True),
                 "cleanup_events": context.get("runtime_memory_cleanup") or [],
@@ -2587,8 +3169,15 @@ Example APP_GUI_ACTION:
             "memory_updated_at": self._now() if final_memory else None,
             "last_context_budget": context_budget,
         })
+        prune_result = self._prune_conversation_payloads(conversation_id, keep_recent=max(12, int(options.get("recent_message_window") or 32)))
+        ram_guard = self._system_ram_guard(label="after_chat_response", model_name=request.model_name)
         self.db.execute("UPDATE chat_conversations SET model_name=?, dataset_id=?, updated_at=? WHERE id=?", (request.model_name, request.dataset_id, self._now(), conversation_id))
-        return {**response_payload, "conversation_id": conversation_id, "user_message_id": user_message_id, "assistant_message_id": assistant_message_id, "history": final_history, "memory_summary": final_memory}
+        # Return a compact recent history to the browser.  Full visible history is
+        # still persisted and can be reloaded through the conversation endpoint;
+        # not echoing every old context/response JSON prevents long browser/worker
+        # sessions from accumulating RAM.
+        returned_history = final_history[-max(16, int(options.get("recent_message_window") or 32)):]
+        return {**response_payload, "conversation_id": conversation_id, "user_message_id": user_message_id, "assistant_message_id": assistant_message_id, "history": returned_history, "history_truncated": len(final_history) > len(returned_history), "memory_summary": final_memory, "conversation_payload_prune": prune_result, "system_ram_guard": ram_guard}
 
     def _ensure_conversation(self, request: ModelChatRequest, context: dict[str, Any]) -> int:
         now = self._now()
@@ -2606,28 +3195,137 @@ Example APP_GUI_ACTION:
         )
         return int(new_id)
 
+    def _json_storage_limit(self, name: str, default: int) -> int:
+        try:
+            return max(8000, int(getattr(self.settings, name, default) if self.settings is not None else default))
+        except Exception:
+            return default
+
+    def _compact_json_for_storage(self, value: Any, *, limit: int, label: str = "payload") -> Any:
+        """Bound chat context/response JSON stored in SQLite.
+
+        Long local-model sessions can otherwise retain full context payloads for
+        every message.  That is useful for debugging but it creates a real RAM/DB
+        growth vector when a VLM chat keeps appending large media/prediction
+        objects overnight.  The visible message text is preserved; only bulky
+        structured payloads are summarized.
+        """
+        try:
+            text = json.dumps(value if value is not None else {}, ensure_ascii=False, default=str)
+        except Exception:
+            text = json.dumps({"value": str(value)[:limit]}, ensure_ascii=False)
+        if len(text) <= max(1000, int(limit)):
+            try:
+                return json.loads(text)
+            except Exception:
+                return value
+        head = max(2000, int(limit * 0.40))
+        tail = max(2000, int(limit * 0.55))
+        return {
+            "_dct_compacted": True,
+            "label": label,
+            "original_chars_estimate": len(text),
+            "head": text[:head],
+            "tail": text[-tail:],
+            "note": "Structured chat payload was compacted to prevent long-running assistant memory growth; visible chat content remains intact.",
+        }
+
+    def _compact_context_for_storage(self, context: dict[str, Any]) -> dict[str, Any]:
+        return self._compact_json_for_storage(context or {}, limit=self._json_storage_limit("model_chat_storage_max_context_chars", 60000), label="chat_context")
+
+    def _compact_response_for_storage(self, response: dict[str, Any]) -> dict[str, Any]:
+        return self._compact_json_for_storage(response or {}, limit=self._json_storage_limit("model_chat_storage_max_response_chars", 90000), label="chat_response")
+
     def _append_chat_message(self, conversation_id: int, role: str, content: str, model_name: str, context: dict[str, Any], response: dict[str, Any]) -> int:
         now = self._now()
+        safe_context = self._compact_context_for_storage(context or {})
+        safe_response = self._compact_response_for_storage(response or {})
         new_msg_id = self.db.execute(
             "INSERT INTO chat_messages(conversation_id, role, content, model_name, context_json, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (conversation_id, role, content or "", model_name or "", json.dumps(context, ensure_ascii=False, default=str), json.dumps(response, ensure_ascii=False, default=str), now),
+            (conversation_id, role, content or "", model_name or "", json.dumps(safe_context, ensure_ascii=False, default=str), json.dumps(safe_response, ensure_ascii=False, default=str), now),
         )
         self.db.execute("UPDATE chat_conversations SET updated_at=? WHERE id=?", (now, conversation_id))
         return int(new_msg_id)
 
-    def _conversation_history(self, conversation_id: int) -> list[dict[str, Any]]:
-        rows = self.db.query("SELECT id, role, content, model_name, created_at, context_json, response_json FROM chat_messages WHERE conversation_id=? ORDER BY id", (int(conversation_id),))
+    def _prune_conversation_payloads(self, conversation_id: int, keep_recent: int = 40) -> dict[str, Any]:
+        """Compact old chat JSON payloads in-place while preserving visible text.
+
+        This intentionally fetches rows one at a time.  Older releases could
+        read every stored context/response JSON blob for a conversation into RAM
+        at once, which is exactly the kind of overnight assistant-session growth
+        that can exhaust system memory when large media/model contexts are
+        attached to many turns.
+        """
+        try:
+            id_rows = self.db.query("SELECT id FROM chat_messages WHERE conversation_id=? ORDER BY id DESC", (int(conversation_id),))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        ids = [int(r["id"]) for r in id_rows]
+        old_ids = ids[max(4, int(keep_recent or 40)):]
+        compacted = 0
+        for row_id in old_ids:
+            row = self.db.query_one("SELECT id, context_json, response_json FROM chat_messages WHERE id=?", (row_id,))
+            if not row:
+                continue
+            changed = False
+            ctx_raw = row.get("context_json") or "{}"
+            rsp_raw = row.get("response_json") or "{}"
+            try:
+                ctx_obj = json.loads(ctx_raw)
+            except Exception:
+                ctx_obj = {"raw": str(ctx_raw)[:8000]}
+            try:
+                rsp_obj = json.loads(rsp_raw)
+            except Exception:
+                rsp_obj = {"raw": str(rsp_raw)[:8000]}
+            if not (isinstance(ctx_obj, dict) and ctx_obj.get("_dct_compacted")):
+                new_ctx = self._compact_json_for_storage(ctx_obj, limit=18000, label="old_chat_context")
+                changed = changed or (new_ctx != ctx_obj)
+                ctx_obj = new_ctx
+            if not (isinstance(rsp_obj, dict) and rsp_obj.get("_dct_compacted")):
+                new_rsp = self._compact_json_for_storage(rsp_obj, limit=22000, label="old_chat_response")
+                changed = changed or (new_rsp != rsp_obj)
+                rsp_obj = new_rsp
+            if changed:
+                self.db.execute("UPDATE chat_messages SET context_json=?, response_json=? WHERE id=?", (json.dumps(ctx_obj, ensure_ascii=False, default=str), json.dumps(rsp_obj, ensure_ascii=False, default=str), int(row["id"])))
+                compacted += 1
+        if compacted:
+            try:
+                gc.collect()
+            except Exception:
+                pass
+        return {"ok": True, "conversation_id": int(conversation_id), "compacted_rows": compacted}
+
+    def _conversation_history(self, conversation_id: int, *, max_payload_chars: int = 18000) -> list[dict[str, Any]]:
+        # Bound JSON payload materialization at the SQL layer so a long-running
+        # chat cannot reload hundreds of huge context/response blobs into RAM.
+        limit = max(4000, int(max_payload_chars or 18000))
+        rows = self.db.query(
+            """
+            SELECT id, role, content, model_name, created_at,
+                   CASE WHEN context_json IS NOT NULL AND length(context_json) > ? THEN substr(context_json, 1, ?) ELSE context_json END AS context_json,
+                   CASE WHEN response_json IS NOT NULL AND length(response_json) > ? THEN substr(response_json, 1, ?) ELSE response_json END AS response_json,
+                   CASE WHEN context_json IS NOT NULL AND length(context_json) > ? THEN length(context_json) ELSE 0 END AS context_truncated_from,
+                   CASE WHEN response_json IS NOT NULL AND length(response_json) > ? THEN length(response_json) ELSE 0 END AS response_truncated_from
+            FROM chat_messages WHERE conversation_id=? ORDER BY id
+            """,
+            (limit, limit, limit, limit, limit, limit, int(conversation_id)),
+        )
         history = []
         for row in rows:
             item = dict(row)
+            ctx_trunc = int(item.pop("context_truncated_from") or 0)
+            rsp_trunc = int(item.pop("response_truncated_from") or 0)
+            ctx_raw = item.pop("context_json") or "{}"
+            rsp_raw = item.pop("response_json") or "{}"
             try:
-                item["context"] = json.loads(item.pop("context_json") or "{}")
+                item["context"] = json.loads(ctx_raw) if not ctx_trunc else {"_dct_truncated_for_ram_guard": True, "original_chars": ctx_trunc, "head": ctx_raw}
             except Exception:
-                item["context"] = {}
+                item["context"] = {"_dct_unparsed_for_ram_guard": True, "head": str(ctx_raw)[:limit]}
             try:
-                item["response"] = json.loads(item.pop("response_json") or "{}")
+                item["response"] = json.loads(rsp_raw) if not rsp_trunc else {"_dct_truncated_for_ram_guard": True, "original_chars": rsp_trunc, "head": rsp_raw}
             except Exception:
-                item["response"] = {}
+                item["response"] = {"_dct_unparsed_for_ram_guard": True, "head": str(rsp_raw)[:limit]}
             history.append(item)
         return history
 
@@ -3037,17 +3735,31 @@ Example APP_GUI_ACTION:
 
     def _runtime_device_for_request(self, model_name: str, request: Any) -> str:
         requested = str(getattr(request, "device", "auto") or "auto")
+        opts = getattr(request, "options", {}) or {}
+        prefer_loaded = isinstance(opts, dict) and bool(opts.get("use_loaded_model_placement"))
+        if prefer_loaded:
+            try:
+                info = self.registry.loaded_placement(model_name)
+                if info and info.get("device"):
+                    return str(info.get("device"))
+            except Exception:
+                pass
         if requested.lower() not in {"auto", "cuda"}:
             return requested
-        try:
-            info = self.registry.loaded_placement(model_name)
-            if info and info.get("device"):
-                return str(info.get("device"))
-        except Exception:
-            pass
         ids = self._parse_device_ids_value(getattr(request, "device_ids", None))
         if ids and str(getattr(request, "sharding_strategy", "none") or "none").lower() == "none":
             return f"cuda:{ids[0]}"
+        try:
+            info = self.registry.loaded_placement(model_name)
+            if info and info.get("device"):
+                loaded_device = str(info.get("device"))
+                # Do not let a previously CPU-offloaded or stale placement override
+                # an explicit GPU selection for the current inference request.
+                if loaded_device.lower() == "cpu" and requested.lower() in {"auto", "cuda"}:
+                    return requested
+                return loaded_device
+        except Exception:
+            pass
         return requested
 
     def _runtime_options(self, request: Any) -> dict[str, Any]:
@@ -3266,7 +3978,7 @@ Example APP_GUI_ACTION:
                 raise RuntimeError(f"{request.model_name} is still downloading. Wait for download to finish before using it for tag selection.")
             if self.lifecycle.is_active(request.model_name, "load") and not self.registry.is_loaded(request.model_name):
                 raise RuntimeError(f"{request.model_name} is still loading into memory. Wait for loading to finish before using it for tag selection.")
-            threshold = float(options.get("threshold", self.settings.classifier_threshold if self.settings else 0.35) or 0.0)
+            threshold = float(options.get("threshold", self.settings.classifier_threshold if self.settings else 0.70) or 0.0)
             opts = self._runtime_options(request)
             opts.update(options)
             opts.setdefault("threshold", threshold)
@@ -3291,18 +4003,24 @@ Example APP_GUI_ACTION:
                         "masks": pred.masks,
                         "raw": pred.raw,
                     }
+                    payload = self.tags.normalize_model_prediction_payload(
+                        payload,
+                        profile_key=request.profile_key or str(options.get("tag_profile") or options.get("profile_key") or "e621"),
+                        apply_aliases=bool(options.get("apply_model_tag_aliases", True)),
+                        apply_implications=bool(options.get("apply_model_tag_implications", True)),
+                    )
                     try:
                         self.media.add_prediction(media_id, None, request.model_name, pred.kind, payload)
                     except Exception:
                         pass
                     candidates: list[str] = []
-                    for tag, score in list(pred.tags or []):
+                    for tag, score in list(payload.get("tags") or []):
                         if float(score) >= threshold and tag not in candidates:
-                            candidates.append(str(tag).strip().lower().replace(" ", "_"))
+                            candidates.append(str(tag))
                     if not candidates:
-                        for tag, score in list(pred.classes or []):
+                        for tag, score in list(payload.get("classes") or []):
                             if float(score) >= threshold and tag not in candidates:
-                                candidates.append(str(tag).strip().lower().replace(" ", "_"))
+                                candidates.append(str(tag))
                     current_existing = self.tags.get_tags(media_id) if validate_existing_tags else []
                     candidates = restrict_to_existing_if_requested(current_existing, candidates)
                     selected_by_media[media_id] = candidates
@@ -3362,6 +4080,7 @@ Example APP_GUI_ACTION:
                         "For add/set tasks, you may propose new normalized underscore tags. "
                         "Do not put prose inside the tags line; include only tags useful for this operation."
                     )
+                    prompt = self._append_lora_rules_to_prompt(prompt, options)
                     if manual_candidates:
                         prompt += "\nThe highlighted/manual candidate tags are user-selected context. Honor them unless they clearly conflict with the requested operation or the image."
                     if request.operation in {"remove", "keep_only"} and current:
@@ -3649,6 +4368,167 @@ Example APP_GUI_ACTION:
             payload.setdefault("quantization", getattr(self.settings, "default_model_quantization", "none"))
         return payload
 
+    def _lora_rule_context_from_options(self, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        opts = dict(options or {})
+        if opts.get("include_lora_rule_context", True) is False:
+            return {}
+        target = str(opts.get("lora_target_model") or opts.get("target_model") or "sdxl")
+        adapter = str(opts.get("lora_adapter_family") or opts.get("adapter_family") or opts.get("adapter_type") or "lora")
+        goal = str(opts.get("lora_dataset_goal") or opts.get("dataset_goal") or "character")
+        trigger = str(opts.get("lora_trigger_token") or opts.get("trigger_token") or "").strip()
+        style_trigger = str(opts.get("lora_style_trigger_token") or opts.get("style_trigger_token") or "").strip()
+        notes = str(opts.get("lora_additional_notes") or opts.get("additional_notes") or "").strip()
+        result = {
+            "source": "pipeline_prep_rule_presets",
+            "target_model": target,
+            "adapter_family": adapter,
+            "dataset_goal": goal,
+            "trigger_token": trigger,
+            "style_trigger_token": style_trigger,
+            "additional_notes": notes,
+        }
+        svc = getattr(self, "pipeline_prep", None)
+        if svc and hasattr(svc, "rule_presets"):
+            try:
+                rules = svc.rule_presets(target, adapter, goal)
+                result["rule_preset"] = rules
+                result["prompt_contract"] = rules.get("prompt_contract")
+                return result
+            except Exception as exc:
+                result["rule_error"] = str(exc)
+        # Fallback keeps the assistant useful even if the pipeline tab service is
+        # not available in a minimal/unit-test context.
+        result["fallback_rules"] = {
+            "preserve_source_valid_tags": True,
+            "never_invent_unseen_attributes": True,
+            "remove_tags_not_visually_present": True,
+            "use_selected_tag_profile_aliases_and_implications": True,
+            "character_goal": goal == "character",
+            "style_goal": goal == "style",
+            "caption_rule": "Apply LoRA/dataset rules after visual-prune pass; output keep/remove/add/final_tags JSON when editing tags.",
+        }
+        return result
+
+    def _append_lora_rules_to_prompt(self, prompt: str, options: dict[str, Any] | None = None) -> str:
+        rules = self._lora_rule_context_from_options(options)
+        if not rules:
+            return prompt
+        try:
+            rule_text = json.dumps(rules, ensure_ascii=False, indent=2, default=str)
+        except Exception:
+            rule_text = str(rules)
+        return (
+            str(prompt or "")
+            + "\n\nDATASET / LORA RULE CONTEXT FROM THIS TOOL:\n"
+            + rule_text[:18000]
+            + "\n\nWhen pruning tags, first remove tags that are not visually/media-evidenced. Then apply the dataset/LoRA rules above. "
+              "Return JSON fields where possible: keep_tags, remove_tags, add_tags, final_tags, caption, confidence, reason. "
+              "Only mutate tags if the user/app enabled tag edits. Do not invent unseen attributes."
+        )
+
+    def _parse_tag_edit_directives(self, text: str, current_tags: list[str]) -> dict[str, list[str]]:
+        def norm_values(values: Any) -> list[str]:
+            out: list[str] = []
+            seen: set[str] = set()
+            if isinstance(values, str):
+                values = re.split(r"[,;\n]+", values)
+            for value in values or []:
+                if isinstance(value, dict):
+                    value = value.get("tag") or value.get("name") or value.get("label") or value.get("value")
+                clean = re.sub(r"[^a-z0-9_:\-./]+", "", str(value or "").strip().lower().replace(" ", "_"))
+                if clean and clean not in seen:
+                    out.append(clean); seen.add(clean)
+            return out
+        raw = str(text or "").strip()
+        payloads: list[Any] = []
+        candidates = [raw]
+        candidates.extend(re.findall(r"```(?:json)?\s*(.*?)```", raw, flags=re.I | re.S))
+        b0, b1 = raw.find("{"), raw.rfind("}")
+        if 0 <= b0 < b1:
+            candidates.append(raw[b0:b1 + 1])
+        a0, a1 = raw.find("["), raw.rfind("]")
+        if 0 <= a0 < a1:
+            candidates.append(raw[a0:a1 + 1])
+        for cand in candidates:
+            try:
+                obj = json.loads(cand)
+                payloads.append(obj)
+            except Exception:
+                pass
+        directives = {"keep_tags": [], "remove_tags": [], "add_tags": [], "final_tags": [], "selected_existing_tags": []}
+        key_aliases = {
+            "keep_tags": ["keep_tags", "keep", "visible_tags", "present_tags", "valid_tags", "selected_existing_tags"],
+            "remove_tags": ["remove_tags", "remove", "delete_tags", "prune_tags", "invalid_tags", "absent_tags", "wrong_tags"],
+            "add_tags": ["add_tags", "add", "missing_tags", "new_tags"],
+            "final_tags": ["final_tags", "set_tags", "tags_final", "approved_tags"],
+            "selected_existing_tags": ["selected_existing_tags", "selected_tags", "matching_tags", "chosen_tags"],
+        }
+        def visit(obj: Any) -> None:
+            if isinstance(obj, dict):
+                for out_key, aliases in key_aliases.items():
+                    for alias in aliases:
+                        if alias in obj:
+                            directives[out_key].extend(norm_values(obj.get(alias)))
+                for value in obj.values():
+                    if isinstance(value, (dict, list)):
+                        visit(value)
+            elif isinstance(obj, list):
+                for value in obj:
+                    visit(value)
+        for payload in payloads:
+            visit(payload)
+        # Conservative prose fallback for lines like "remove: a, b".
+        for line in raw.splitlines():
+            m = re.match(r"\s*(remove|delete|prune|keep|add|final|set)\s*(?:tags?)?\s*[:=]\s*(.+)$", line, flags=re.I)
+            if not m:
+                continue
+            key, body = m.group(1).lower(), m.group(2)
+            target = "remove_tags" if key in {"remove", "delete", "prune"} else "keep_tags" if key == "keep" else "add_tags" if key == "add" else "final_tags"
+            directives[target].extend(norm_values(body))
+        current_set = {str(t).lower().replace(" ", "_"): str(t) for t in current_tags or []}
+        for key, vals in list(directives.items()):
+            seen: set[str] = set()
+            cleaned: list[str] = []
+            for tag in vals:
+                tag_key = str(tag).lower().replace(" ", "_")
+                chosen = current_set.get(tag_key, tag) if key != "add_tags" else tag
+                if chosen and chosen not in seen:
+                    cleaned.append(chosen); seen.add(chosen)
+            directives[key] = cleaned
+        return directives
+
+    def _apply_assistant_tag_edit_directives(self, *, media_ids: list[int], response_text: str, model_name: str, options: dict[str, Any]) -> dict[str, Any]:
+        mode = str(options.get("assistant_tag_edit_mode") or options.get("tag_edit_mode") or "auto").lower()
+        allow_add = bool(options.get("assistant_tag_edit_allow_add", True))
+        profile_key = str(options.get("tag_profile") or options.get("profile_key") or "e621")
+        result = {"enabled": True, "mode": mode, "changed": 0, "media_ids": [], "by_media": {}}
+        for media_id in [int(x) for x in media_ids or [] if int(x) > 0]:
+            current = self.tags.get_tags(media_id)
+            directives = self._parse_tag_edit_directives(response_text, current)
+            updated = list(current)
+            if directives.get("final_tags"):
+                updated = list(directives["final_tags"])
+            elif directives.get("keep_tags") and mode in {"auto", "keep_only", "prune", "remove"}:
+                keep_set = set(directives["keep_tags"])
+                updated = [tag for tag in current if tag in keep_set]
+            elif directives.get("remove_tags"):
+                remove_set = set(directives["remove_tags"])
+                updated = [tag for tag in current if tag not in remove_set]
+            elif directives.get("selected_existing_tags") and mode in {"remove", "prune"}:
+                remove_set = set(directives["selected_existing_tags"])
+                updated = [tag for tag in current if tag not in remove_set]
+            if allow_add and directives.get("add_tags"):
+                for tag in directives["add_tags"]:
+                    if tag not in updated:
+                        updated.append(tag)
+            changed = updated != current
+            if changed:
+                self.tags.set_tags(media_id, updated, source=model_name, save_sidecar=True, profile_key=profile_key, order_strategy="retain")
+                result["changed"] += 1
+                result["media_ids"].append(media_id)
+            result["by_media"][str(media_id)] = {"changed": changed, "before_count": len(current), "after_count": len(updated), "directives": directives}
+        return result
+
     def _build_chat_context(self, request: ModelChatRequest) -> dict[str, Any]:
         dataset = None
         if request.dataset_id:
@@ -3690,12 +4570,14 @@ Example APP_GUI_ACTION:
                 metadata_items.extend(self.metadata_context_for_paths(request.external_paths or [], field_paths, include_raw=include_raw))
             except Exception as exc:
                 metadata_items.append({"external_path_error": str(exc)})
+        lora_rules = self._lora_rule_context_from_options(getattr(request, "options", {}) or {})
         return {
             "dataset": dataset or {},
             "media": media_items,
             "generation_metadata": metadata_items,
             "external_paths": request.external_paths,
             "history": request.history,
+            "dataset_curation_rules": lora_rules,
         }
 
 

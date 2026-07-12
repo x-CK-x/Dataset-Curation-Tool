@@ -206,3 +206,7 @@ boolean: fox OR wolf
 ```
 
 The preset table includes a Logic column so you can confirm which presets use Boolean expansion.
+
+## v5.8.10 browser MCP additions
+
+The MCP Tools tab now also lists browser handoff tools for default browser, Edge, Chrome, Firefox, Chromium, and Tor Browser. These tools expose visible, user-approved `open_url` and `search_web` style actions through the MCP bridge. They are intended for lookup/browsing support by an orchestrator model, not hidden scraping.

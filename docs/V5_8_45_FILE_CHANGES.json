@@ -1,0 +1,21 @@
+{
+  "version": "5.8.45",
+  "summary": "Attention heatmap overlay improvements, dropdown refresh stability, and Quick Tag queue cleanup timing.",
+  "new_files": [
+    "docs/V5_8_45_ATTENTION_HEATMAP_DROPDOWN_QUEUE_REFRESH.md",
+    "docs/wiki/75-Attention-Heatmap-Dropdown-Queue-Refresh.md",
+    "tests/test_v639_attention_heatmap_dropdown_queue_refresh.py"
+  ],
+  "edited_files": [
+    "README.md",
+    "pyproject.toml",
+    "data_curation_tool/__init__.py",
+    "data_curation_tool/services/attention_visualization_service.py",
+    "data_curation_tool/static/app.js",
+    "docs/wiki/Home.md",
+    "docs/wiki/README.md",
+    "docs/wiki/_Sidebar.md"
+  ],
+  "removed_files": [],
+  "created_at": "2026-07-11T19:42:45.531488Z"
+}

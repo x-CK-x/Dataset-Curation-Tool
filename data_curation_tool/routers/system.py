@@ -6,8 +6,10 @@ import sys
 import threading
 import time
 from pathlib import Path
+from datetime import datetime, timezone
+import json
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Response
 
 from .deps import ctx
 from ..schemas import FolderPickRequest, FilePickRequest, OpenLocalPathRequest
@@ -49,6 +51,113 @@ def open_local_path(payload: OpenLocalPathRequest, request: Request):
     return {"ok": True, "path": str(path.resolve())}
 
 
+def _job_row_to_payload(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    payload = dict(row)
+    try:
+        payload["params"] = json.loads(payload.pop("params_json") or "{}")
+    except Exception:
+        payload["params"] = {}
+    try:
+        result_json = payload.pop("result_json", None)
+        payload["result"] = json.loads(result_json) if result_json else None
+    except Exception:
+        payload["result"] = None
+    return payload
+
+
+def _parse_iso_seconds(value: object) -> float | None:
+    if not value:
+        return None
+    try:
+        text = str(value).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
+    except Exception:
+        return None
+
+
+def _job_eta(job: dict | None) -> tuple[float | None, float | None]:
+    if not job:
+        return None, None
+    elapsed = _parse_iso_seconds(job.get("created_at"))
+    if elapsed is None:
+        return None, None
+    try:
+        progress = max(0.0, min(0.999, float(job.get("progress") or 0.0)))
+    except Exception:
+        progress = 0.0
+    if str(job.get("status") or "").lower() not in {"queued", "running"} or progress <= 0.01:
+        return round(elapsed, 1), None
+    eta = (elapsed / progress) * (1.0 - progress)
+    return round(elapsed, 1), round(max(0.0, eta), 1)
+
+
+@router.get("/system/startup-status")
+def startup_status(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    c = ctx(request)
+    service = getattr(c, "startup_progress", None)
+    snapshot = service.snapshot() if service is not None else {
+        "status": "unknown",
+        "progress": 1.0,
+        "percent": 100.0,
+        "message": "Startup progress service is unavailable.",
+        "steps": [],
+    }
+    try:
+        latest_rows = c.db.query(
+            "SELECT * FROM jobs WHERE type IN (?,?,?,?) ORDER BY id DESC LIMIT 8",
+            ("startup_initialization", "asset_migration", "tag_dictionary_sync", "db_export_sync"),
+        )
+        latest_jobs = [_job_row_to_payload(row) for row in latest_rows or []]
+        latest_jobs = [row for row in latest_jobs if row]
+        running_like = next((row for row in latest_jobs if str(row.get("status") or "").lower() in {"queued", "running"}), None)
+        startup_latest = next((row for row in latest_jobs if str(row.get("type") or "") == "startup_initialization"), None)
+        attached_id = snapshot.get("job_id")
+        attached = next((row for row in latest_jobs if attached_id and str(row.get("id")) == str(attached_id)), None)
+        latest = attached or running_like or startup_latest or (latest_jobs[0] if latest_jobs else None)
+        if latest:
+            latest_type = str(latest.get("type") or "")
+            snapshot["job_id"] = latest.get("id")
+            snapshot["job_type"] = latest_type or snapshot.get("job_type")
+            snapshot["job_status"] = latest.get("status")
+            snapshot["job_progress"] = latest.get("progress")
+            snapshot["job_message"] = latest.get("message")
+            should_mirror = str(latest.get("status") or "").lower() in {"queued", "running"} and latest_type in {"asset_migration", "tag_dictionary_sync", "db_export_sync"}
+            if should_mirror or snapshot.get("status") in {"idle", "unknown"}:
+                elapsed, eta = _job_eta(latest)
+                try:
+                    job_progress = max(0.0, min(1.0, float(latest.get("progress") or 0.0)))
+                except Exception:
+                    job_progress = 0.0
+                phase = "migration" if latest_type == "asset_migration" else ("tag_dictionary" if "tag" in latest_type or "db_export" in latest_type else snapshot.get("phase") or "startup")
+                message = latest.get("message") or snapshot.get("message")
+                if latest_type == "asset_migration" and str(latest.get("status") or "").lower() == "queued":
+                    message = message or "Migration queued; startup maintenance will resume"
+                snapshot.update({
+                    "status": latest.get("status") or snapshot.get("status"),
+                    "phase": phase,
+                    "progress": job_progress,
+                    "percent": round(job_progress * 100.0, 1),
+                    "message": message,
+                    "elapsed_seconds": elapsed,
+                    "eta_seconds": eta,
+                    "updated_at": latest.get("updated_at"),
+                    "trigger": snapshot.get("trigger") or ("manual_migration" if latest_type == "asset_migration" else None),
+                })
+            snapshot["recent_maintenance_jobs"] = [
+                {"id": row.get("id"), "type": row.get("type"), "status": row.get("status"), "progress": row.get("progress"), "message": row.get("message"), "updated_at": row.get("updated_at")}
+                for row in latest_jobs[:5]
+            ]
+    except Exception:
+        pass
+    return snapshot
 
 
 @router.post("/system/restart")

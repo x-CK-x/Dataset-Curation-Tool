@@ -40,7 +40,7 @@ class OrchestrationService:
                     "dry_run": True,
                     "apply_tags": False,
                     "steps": [
-                        {"kind": "tag", "model_name": "rule-based-filename", "task": "tag", "threshold": 0.35, "apply": False}
+                        {"kind": "tag", "model_name": "rule-based-filename", "task": "tag", "threshold": 0.70, "apply": False}
                     ],
                 },
             },
@@ -87,7 +87,7 @@ class OrchestrationService:
             return {"processed": 0, "steps": [], "message": "No media selected"}
         steps = request.steps or []
         if not steps:
-            steps = [type("Step", (), {"kind": "tag", "model_name": "rule-based-filename", "task": "tag", "threshold": 0.35, "apply": False, "prompt": None, "categories": [], "tags": [], "options": {}})()]
+            steps = [type("Step", (), {"kind": "tag", "model_name": "rule-based-filename", "task": "tag", "threshold": 0.70, "apply": False, "prompt": None, "categories": [], "tags": [], "options": {}})()]
         step_results: list[dict[str, Any]] = []
         total_work = max(1, len(media_ids) * len(steps))
         work_done = 0
@@ -102,9 +102,15 @@ class OrchestrationService:
                         continue
                     pred = self.registry.predict(step.model_name or "rule-based-filename", Path(media.path), device=self._device_for_step(request), threshold=step.threshold, prompt=step.prompt, **(step.options or {}))
                     payload = {"kind": pred.kind, "tags": pred.tags, "caption": pred.caption, "classes": pred.classes, "raw": pred.raw}
+                    payload = self.tags.normalize_model_prediction_payload(
+                        payload,
+                        profile_key=request.profile_key,
+                        apply_aliases=bool((step.options or {}).get("apply_model_tag_aliases", True)),
+                        apply_implications=bool((step.options or {}).get("apply_model_tag_implications", True)),
+                    )
                     self.media.add_prediction(media_id, job_id, step.model_name or "unknown", kind, payload)
                     predictions += 1
-                    candidate_tags = [tag for tag, score in (pred.tags or pred.classes) if float(score) >= float(step.threshold)]
+                    candidate_tags = [tag for tag, score in (payload.get("tags") or payload.get("classes") or []) if float(score) >= float(step.threshold)]
                     if (step.apply or request.apply_tags) and candidate_tags and not request.dry_run:
                         current = self.tags.get_tags(media_id)
                         merged = list(current)

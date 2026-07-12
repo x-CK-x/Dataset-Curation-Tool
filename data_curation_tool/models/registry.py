@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import time
+import zipfile
 from datetime import datetime, timezone
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -32,10 +33,15 @@ from .adapters import (
     OpenRouterChatAdapter,
     OpenRouterVideoAdapter,
     RuleBasedFilenameTagger,
+    RedRocketHydra35Adapter,
     RedRocketJTP3Adapter,
     RedRocketE6VisualRatingsAdapter,
+    LegacyVisionTaggerAdapter,
+    WDOnnxTaggerAdapter,
+    LingBotVideoAdapter,
 )
 from .base import Prediction
+from .legacy_tagger_configs import LEGACY_TAGGER_CONFIGS
 
 
 @dataclass
@@ -79,6 +85,7 @@ class ModelRecord:
     requires_hf_token: bool = False
     hf_access_note: str | None = None
     license_note: str | None = None
+    required_file_groups: list[list[str]] = field(default_factory=list)
 
     def _local_dir_for_root(self, model_root: Path) -> Path | None:
         if self.direct_url:
@@ -91,6 +98,135 @@ class ModelRecord:
             return None
         return model_root / "hf" / safe_model_dir(self.repo_id)
 
+    def _hf_cache_dir_name(self) -> str | None:
+        if not self.repo_id:
+            return None
+        return f"models--{safe_model_dir(self.repo_id)}"
+
+    def _hf_snapshot_candidates(self, base: Path) -> list[Path]:
+        """Return newest-first Hugging Face cache snapshot directories for *base*.
+
+        Older installs, or users who manually move Hugging Face caches, may have
+        ``models--org--repo/snapshots/<sha>`` rather than this app's canonical
+        ``org--repo`` local-dir layout.  The catalog must resolve the actual
+        snapshot directory for load, because passing the cache parent to
+        Transformers can make it reach back out to Hugging Face.
+        """
+        try:
+            snap_root = Path(base).expanduser() / "snapshots"
+            if not snap_root.exists() or not snap_root.is_dir():
+                return []
+            children = [p for p in snap_root.iterdir() if p.is_dir()]
+            children.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
+            return children
+        except Exception:
+            return []
+
+    def _repo_slug_candidates(self) -> list[str]:
+        """Return deterministic folder aliases for current and migrated models."""
+        values = [self.repo_id, self.api_model_id, self.name, self.label]
+        for value in [self.repo_id, self.api_model_id]:
+            text = str(value or "").strip()
+            if "/" in text:
+                values.append(text.rsplit("/", 1)[-1])
+        out: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            text = str(value or "").strip().strip("/")
+            if not text:
+                continue
+            for slug in (safe_model_dir(text), slug_model_name(text)):
+                slug = str(slug or "").strip()
+                if slug and slug.lower() not in seen:
+                    seen.add(slug.lower())
+                    out.append(slug)
+            if "/" in text or "\\" in text:
+                cache_slug = "models--" + re.sub(r"[\\/]+", "--", text)
+                if cache_slug.lower() not in seen:
+                    seen.add(cache_slug.lower())
+                    out.append(cache_slug)
+        return out
+
+    def _hf_cache_dir_candidates_for_root(self, root: Path) -> list[Path]:
+        if not (self.repo_id or self.api_model_id):
+            return []
+        root = Path(root).expanduser()
+        repo_texts = [str(x).strip().strip("/") for x in [self.repo_id, self.api_model_id] if x]
+        names = self._repo_slug_candidates()
+        roots = [root]
+        if root.name.lower() not in {"hf", "huggingface", "hub"}:
+            roots.extend([
+                root / "hf",
+                root / "huggingface",
+                root / "hub",
+                root / ".cache" / "huggingface" / "hub",
+                root / "huggingface" / "hub",
+                root / "hf" / "hub",
+                root / "models" / "hf",
+            ])
+        out: list[Path] = []
+        seen: set[str] = set()
+        def add(path: Path) -> None:
+            key = path_identity_key(path)
+            if key not in seen:
+                seen.add(key)
+                out.append(path)
+        for base in roots:
+            for name in names:
+                add(base / name)
+            # Also support old/manual nested repo-id folders such as hf/org/repo.
+            for repo_text in repo_texts:
+                parts = [part for part in re.split(r"[\\/]+", repo_text) if part]
+                if parts:
+                    add(base.joinpath(*parts))
+        return out
+
+    def _hf_snapshot_ref_targets(self, local: Path) -> list[Path]:
+        refs_dir = local / "refs"
+        snapshots_dir = local / "snapshots"
+        targets: list[Path] = []
+        for ref_name in ("main", "master", "default", "current"):
+            ref = refs_dir / ref_name
+            try:
+                if ref.exists() and ref.is_file():
+                    commit = ref.read_text(encoding="utf-8", errors="ignore").strip()
+                    if commit:
+                        targets.append(snapshots_dir / commit)
+            except Exception:
+                continue
+        return targets
+
+    def usable_local_dirs(self, local: Path) -> list[Path]:
+        """Return concrete local folders/files that can be passed to loaders.
+
+        Hugging Face cache containers such as ``models--org--repo`` are not
+        loadable by Transformers directly.  The real load target is a child
+        snapshot.  Returning snapshots here prevents Load/Run from falling back
+        to a remote repo id and re-downloading a model that was migrated from an
+        older install.
+        """
+        local = Path(local).expanduser()
+        out: list[Path] = []
+        seen: set[str] = set()
+        def add(path: Path) -> None:
+            key = path_identity_key(path)
+            if key not in seen:
+                seen.add(key)
+                out.append(path)
+        snapshots_dir = local / "snapshots"
+        if snapshots_dir.exists() and snapshots_dir.is_dir():
+            for target in self._hf_snapshot_ref_targets(local):
+                add(target)
+            try:
+                snapshots = [p for p in snapshots_dir.iterdir() if p.is_dir()]
+                snapshots.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
+                for snapshot in snapshots:
+                    add(snapshot)
+            except Exception:
+                pass
+        add(local)
+        return out
+
     def candidate_local_dirs(self, model_root: Path, external_model_roots: list[Path] | tuple[Path, ...] | None = None) -> list[Path]:
         source_path = self.source_local_path or self.local_source_path
         if source_path:
@@ -99,28 +235,39 @@ class ModelRecord:
         primary = self._local_dir_for_root(model_root)
         if primary is not None:
             candidates.append(primary)
+        candidates.extend(self._hf_cache_dir_candidates_for_root(Path(model_root).expanduser()))
+        if self.direct_url:
+            roots_for_direct = [Path(model_root).expanduser(), *[Path(r).expanduser() for r in (external_model_roots or [])]]
+            for root in roots_for_direct:
+                for base in [root / "checkpoints", root / "direct", root]:
+                    candidates.append(base / safe_model_dir(self.name))
+                    if self.filename:
+                        candidates.append(base / safe_model_dir(self.name) / self.filename)
+                        candidates.append(base / self.filename)
         for root in external_model_roots or []:
             root = Path(root).expanduser()
-            if root.name.lower() in {"hf", "huggingface"} and self.repo_id:
-                candidates.append(root / safe_model_dir(self.repo_id))
+            if root.name.lower() in {"hf", "huggingface", "hub"} and (self.repo_id or self.api_model_id):
+                candidates.extend(self._hf_cache_dir_candidates_for_root(root))
             elif root.name.lower() in {"checkpoints", "direct"} and self.direct_url:
                 candidates.append(root / safe_model_dir(self.name))
+                if self.filename:
+                    candidates.append(root / self.filename)
             elif root.name.lower() == "ultralytics" and (self.api_model_id or self.repo_id):
                 candidates.append(root / safe_model_dir(self.api_model_id or self.repo_id or self.name))
             else:
                 structured = self._local_dir_for_root(root)
                 if structured is not None:
                     candidates.append(structured)
+                candidates.extend(self._hf_cache_dir_candidates_for_root(root))
                 for key in [self.repo_id, self.api_model_id, self.name]:
                     if key:
                         candidates.append(root / safe_model_dir(str(key)))
+                for slug in self._repo_slug_candidates():
+                    candidates.append(root / slug)
         out: list[Path] = []
         seen: set[str] = set()
         for item in candidates:
-            try:
-                key = str(item.expanduser().resolve(strict=False)).lower()
-            except Exception:
-                key = str(item).lower()
+            key = path_identity_key(item)
             if key not in seen:
                 seen.add(key); out.append(item)
         return out
@@ -130,9 +277,13 @@ class ModelRecord:
         if not candidates:
             return None
         if prefer_existing:
+            complete = self.complete_local_dir(model_root, external_model_roots)
+            if complete is not None:
+                return complete
             for candidate in candidates:
                 if candidate.exists():
-                    return candidate
+                    usable = self.usable_local_dirs(candidate)[0] if hasattr(self, "usable_local_dirs") else candidate
+                    return usable
         return candidates[0]
 
     def primary_local_dir(self, model_root: Path) -> Path | None:
@@ -214,6 +365,29 @@ class ModelRecord:
                 warnings.append("multimodal chat template/support file not found locally; update can fetch chat_template*/.jinja if the runtime requires it")
         return warnings
 
+    @staticmethod
+    def _looks_like_weight_file(path: Path) -> bool:
+        suffix = path.suffix.lower()
+        if suffix not in {".safetensors", ".bin", ".gguf", ".pt", ".pth", ".ckpt", ".onnx", ".model", ".task", ".pb"}:
+            return False
+        # SentencePiece/tokenizer.model is support metadata, not model weights.
+        name = path.name.lower()
+        if name in {"tokenizer.model", "sentencepiece.model", "spiece.model"}:
+            return False
+        return True
+
+    def _download_requires_weight_payload(self) -> bool:
+        if not self.download_supported or self.cloud or self.provider in {"builtin", "cloud", "openai", "openrouter", "anthropic"}:
+            return False
+        caps = {str(c).lower() for c in (self.capabilities or [])}
+        code_only_caps = {
+            "contract", "catalog", "external_runtime", "external_tool", "mcp", "api_key",
+            "saas", "cloud_api", "no-model-download", "provider_contract", "runtime_contract",
+        }
+        if caps.intersection(code_only_caps) and not caps.intersection({"local_download", "downloadable_checkpoint"}):
+            return False
+        return bool(self.repo_id or self.direct_url or self.provider == "ultralytics")
+
     def local_integrity_issues(self, local: Path) -> list[str]:
         """Return hard integrity problems that mean a model is not downloaded."""
         issues: list[str] = []
@@ -225,19 +399,25 @@ class ModelRecord:
             return issues
         try:
             files = [local] if local.is_file() else [p for p in local.rglob("*") if p.is_file()]
-            weight_suffixes = {".safetensors", ".bin", ".gguf", ".pt", ".pth", ".ckpt", ".onnx", ".model", ".task"}
-            weight_files = [p for p in files if p.suffix.lower() in weight_suffixes]
+            weight_files = [p for p in files if self._looks_like_weight_file(p)]
             zero_weights = [p.name for p in weight_files if p.stat().st_size <= 0]
             if weight_files and zero_weights and len(zero_weights) == len(weight_files):
                 issues.append("all discovered weight/checkpoint files are zero-byte")
+            if self._download_requires_weight_payload() and not weight_files:
+                issues.append("no local weight/checkpoint payload found; folder only contains support/cache metadata")
+            for group in self.required_file_groups or []:
+                patterns = [str(pattern) for pattern in (group or []) if str(pattern).strip()]
+                if patterns and not self._has_any_matching(local, patterns):
+                    issues.append("missing required file group (need one of: " + ", ".join(patterns) + ")")
         except Exception:
             pass
         return issues
 
     def complete_local_dir(self, model_root: Path, external_model_roots: list[Path] | tuple[Path, ...] | None = None) -> Path | None:
         for local in self.candidate_local_dirs(model_root, external_model_roots):
-            if local and local.exists() and self._has_nonzero_payload(local) and not self.local_integrity_issues(local):
-                return local
+            for usable in self.usable_local_dirs(local):
+                if usable and usable.exists() and self._has_nonzero_payload(usable) and not self.local_integrity_issues(usable):
+                    return usable
         return None
 
     def is_downloaded(self, model_root: Path, external_model_roots: list[Path] | tuple[Path, ...] | None = None) -> bool:
@@ -319,6 +499,7 @@ class ModelRecord:
             "requires_hf_token": bool(self.requires_hf_token),
             "hf_access_note": self.hf_access_note,
             "license_note": self.license_note,
+            "required_file_groups": deepcopy(self.required_file_groups),
         }
 
 
@@ -351,6 +532,27 @@ def slug_model_name(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_.\-]+", "-", str(value or "").strip()).strip(".-_")
     slug = re.sub(r"-+", "-", slug)
     return slug.lower() or "custom-model"
+
+
+def path_identity_key(path: Path | str) -> str:
+    """Cheap, stable path key for catalog de-duplication.
+
+    ``Path.resolve(strict=False)`` can become very expensive on large migrated
+    model trees and has shown platform-specific instability when called hundreds
+    of times for non-existent candidate aliases during catalog listing.  Only
+    resolve paths that actually exist; for planned/non-existent aliases use a
+    normalized absolute string.
+    """
+    candidate = Path(path).expanduser()
+    try:
+        if candidate.exists():
+            return str(candidate.resolve(strict=False)).lower()
+    except Exception:
+        pass
+    try:
+        return os.path.abspath(os.path.normpath(str(candidate))).lower()
+    except Exception:
+        return str(candidate).lower()
 
 
 def capabilities_for_category(category: str, explicit: list[str] | None = None) -> list[str]:
@@ -392,10 +594,7 @@ class ModelRegistry:
             if not text:
                 continue
             path = Path(text).expanduser()
-            try:
-                key = str(path.resolve(strict=False)).lower()
-            except Exception:
-                key = str(path).lower()
+            key = path_identity_key(path)
             if key in seen:
                 continue
             seen.add(key); cleaned.append(path)
@@ -730,6 +929,34 @@ class ModelRegistry:
                 recommended_backend="transformers/timm",
                 requirements=["torch", "transformers", "timm", "pillow"],
             ))
+        # Character-reference support rows.  These are exposed in Models so the
+        # Reference/Character Reference tabs can share the same model catalog,
+        # download surface, and remote-device offload vocabulary.
+        for key, label, repo, desc, vram in [
+            ("character-reference-dinov2-base", "Character Reference DINOv2 Base", "facebook/dinov2-base", "Few-shot character/object image retrieval backbone for no-training pruning and branch cleanup.", 4.0),
+            ("character-reference-dinov2-large", "Character Reference DINOv2 Large", "facebook/dinov2-large", "Larger DINOv2 feature extractor for stronger prototype/reference matching.", 10.0),
+            ("character-reference-clip-vit-b32", "Character Reference CLIP ViT-B/32", "openai/clip-vit-base-patch32", "CLIP embedding row for cross-domain reference search and text-assisted character filtering.", 2.0),
+            ("character-reference-siglip-base", "Character Reference SigLIP Base", "google/siglip-base-patch16-224", "SigLIP embedding row for character/profile similarity scoring and image pruning.", 3.0),
+        ]:
+            self._add(ModelRecord(
+                name=key,
+                label=label,
+                kind="embedding",
+                provider="huggingface",
+                repo_id=repo,
+                adapter=OptionalAdapterPlaceholder(key, label, "embedding", desc, repo),
+                optional=True,
+                description=desc,
+                capabilities=["embed", "similarity", "character_reference", "few_shot", "image_retrieval", "prune", "huggingface"],
+                size_gb=None,
+                vram_gb=vram,
+                parameter_count="backbone",
+                precision="fp32/fp16/bf16",
+                download_supported=True,
+                modality="image",
+                recommended_backend="transformers",
+                requirements=["torch", "transformers", "pillow", "numpy"],
+            ))
         for key, label, api_id, vram, params, desc in [
             ("rtdetr-l-detect", "RT-DETR-L Detection", "rtdetr-l.pt", 6.0, "~45M", "Real-time detection transformer exposed through Ultralytics RTDETR."),
             ("rtdetr-x-detect", "RT-DETR-X Detection", "rtdetr-x.pt", 10.0, "~86M", "Larger RT-DETR detector for high-accuracy bbox proposals."),
@@ -834,16 +1061,20 @@ class ModelRegistry:
         self._add(ModelRecord("qwen2.5-7b-chat", "Qwen2.5 7B Instruct", "llm", "huggingface", HFTextGenerationChatAdapter("Qwen/Qwen2.5-7B-Instruct"), "Larger local text LLM for richer curation instructions.", "Qwen/Qwen2.5-7B-Instruct", True, ["chat", "llm", "tag_suggestions", "huggingface"], 15.0, 16.0, "7B", "fp16/int4 optional", True))
         self._add(ModelRecord("qwen2.5-vl-3b", "Qwen2.5-VL 3B Instruct", "vlm", "huggingface", HFVLMChatAdapter("Qwen/Qwen2.5-VL-3B-Instruct"), "VLM for visual QA and multimodal curation checks.", "Qwen/Qwen2.5-VL-3B-Instruct", True, ["chat", "vlm", "image_text_to_text", "caption", "qa", "huggingface"], 7.0, 10.0, "3B", "fp16/int4 optional", True))
         self._add(ModelRecord("florence-2-base", "Florence-2 Base", "vlm", "huggingface", HFFlorence2Adapter("microsoft/Florence-2-base"), "Concrete Florence-2 promptable caption/OCR/detection adapter for dataset curation.", "microsoft/Florence-2-base", True, ["caption", "detection", "vlm", "huggingface"], 0.9, 4.0, "~230M", "fp16", True))
-        self._add(ModelRecord("wd-vit-tagger", "WD ViT Tagger v3", "tagger", "huggingface", OptionalAdapterPlaceholder("wd-vit-tagger", "WD ViT Tagger v3", "tagger", "WD-style image tagging; adapter implementation is staged.", "SmilingWolf/wd-vit-tagger-v3"), "WD-style image tagging model for anime/illustration tags.", "SmilingWolf/wd-vit-tagger-v3", True, ["tag", "anime", "huggingface"], 0.7, 2.5, "ViT", "onnx/safetensors", True))
-        self._add(ModelRecord("wd-swinv2-tagger", "WD SwinV2 Tagger v3", "tagger", "huggingface", OptionalAdapterPlaceholder("wd-swinv2-tagger", "WD SwinV2 Tagger v3", "tagger", "WD SwinV2 tagging; adapter implementation is staged.", "SmilingWolf/wd-swinv2-tagger-v3"), "WD SwinV2 tagger for anime/illustration tags.", "SmilingWolf/wd-swinv2-tagger-v3", True, ["tag", "anime", "huggingface"], 0.8, 3.0, "SwinV2", "onnx/safetensors", True))
+        wd_onnx_allow = ["model.onnx", "model.safetensors", "selected_tags.csv", "*.json", "*.txt", "*.md", "*.csv", "*.onnx", "*.safetensors", "config.json", "preprocessor_config.json"]
+        self._add(ModelRecord("wd-vit-tagger", "WD ViT Tagger v3", "tagger", "huggingface", WDOnnxTaggerAdapter("wd-vit-tagger", "WD ViT Tagger v3", "SmilingWolf/wd-vit-tagger-v3"), "WD-style image tagging model for anime/illustration tags.", "SmilingWolf/wd-vit-tagger-v3", True, ["tag", "anime", "huggingface", "onnx", "danbooru"], 0.7, 2.5, "ViT", "onnx/safetensors", True, allow_patterns=wd_onnx_allow, ignore_patterns=["*.msgpack", "*.h5", "*.ot", "*.tflite"], required_file_groups=[["model.onnx", "model.safetensors"], ["selected_tags.csv"], ["model.onnx", "config.json"]]))
+        self._add(ModelRecord("wd-swinv2-tagger", "WD SwinV2 Tagger v3", "tagger", "huggingface", WDOnnxTaggerAdapter("wd-swinv2-tagger", "WD SwinV2 Tagger v3", "SmilingWolf/wd-swinv2-tagger-v3"), "WD SwinV2 tagger for anime/illustration tags.", "SmilingWolf/wd-swinv2-tagger-v3", True, ["tag", "anime", "huggingface", "onnx", "danbooru"], 0.8, 3.0, "SwinV2", "onnx/safetensors", True, allow_patterns=wd_onnx_allow, ignore_patterns=["*.msgpack", "*.h5", "*.ot", "*.tflite"], required_file_groups=[["model.onnx", "model.safetensors"], ["selected_tags.csv"], ["model.onnx", "config.json"]]))
         self._add(ModelRecord("clip-embedding", "CLIP ViT-B/32 Embedding", "embedding", "huggingface", OptionalAdapterPlaceholder("clip-embedding", "CLIP Embedding Adapter", "embedding", "CLIP similarity and clustering adapter staged.", "openai/clip-vit-base-patch32"), "CLIP-style similarity, clustering, and dedupe support.", "openai/clip-vit-base-patch32", True, ["embed", "similarity", "dedupe", "huggingface"], 0.6, 2.0, "151M", "fp16/fp32", True))
+        self._add(ModelRecord("character-reference-active-memory", "Character Reference Active-Memory Matcher", "embedding", "local", OptionalAdapterPlaceholder("character-reference-active-memory", "Character Reference Active-Memory", "embedding", "Zero/one/few-shot character retrieval contract using references plus verified positive/negative memory."), "No-new-training character reference/pruning workflow. Uses saved references, verified feedback, and optional embedding backends to find/prune matching character images.", None, True, ["embed", "similarity", "character_reference", "few_shot", "one_shot", "zero_shot", "active_memory", "reference_finder", "prune", "no_training_required"], None, 0.0, "no trainable parameters", "runtime descriptor", False, modality="image", recommended_backend="reference_finder_profile"))
+        self._add(ModelRecord("dinov2-character-reference", "DINOv2 Character Reference Embedding", "embedding", "huggingface", OptionalAdapterPlaceholder("dinov2-character-reference", "DINOv2 Character Reference", "embedding", "DINOv2 few-shot visual retrieval adapter contract.", "facebook/dinov2-base"), "DINOv2 embedding row for character/object reference retrieval, clustering, and active-memory pruning workflows.", "facebook/dinov2-base", True, ["embed", "similarity", "character_reference", "few_shot", "zero_shot", "dinov2", "reference_finder", "huggingface"], 0.35, 4.0, "ViT-B/14", "fp16/fp32", True, modality="image", recommended_backend="transformers/reference_finder", requirements=["torch", "transformers", "pillow"]))
+        self._add(ModelRecord("openclip-character-reference", "OpenCLIP Character Reference Embedding", "embedding", "huggingface", OptionalAdapterPlaceholder("openclip-character-reference", "OpenCLIP Character Reference", "embedding", "OpenCLIP image embedding contract for few-shot character retrieval."), "OpenCLIP/CLIP-family image embedding row for reference matching and pruning without training a new classifier.", None, True, ["embed", "similarity", "character_reference", "few_shot", "zero_shot", "clip", "openclip", "reference_finder"], None, 3.0, "varies", "fp16/fp32", False, modality="image", recommended_backend="open_clip_torch/reference_finder", requirements=["torch", "open_clip_torch", "pillow"]))
 
         # v5.25 audit fill-ins: keep the model catalog aligned with the full
         # curation roadmap.  Some rows use existing generic adapters; specialized
         # rows are explicit contract/download entries until exact inference code
         # is implemented per model family.
-        self._add(ModelRecord("wd-convnext-tagger-v3", "WD ConvNeXt Tagger v3", "tagger", "huggingface", OptionalAdapterPlaceholder("wd-convnext-tagger-v3", "WD ConvNeXt Tagger v3", "tagger", "WD ConvNeXt ONNX tagging adapter staged.", "SmilingWolf/wd-convnext-tagger-v3"), "WD ConvNeXt tagger for illustration/anime datasets.", "SmilingWolf/wd-convnext-tagger-v3", True, ["tag", "auto_tag", "anime", "multilabel", "huggingface"], 0.9, 3.0, "ConvNeXt", "onnx/fp16", True))
-        self._add(ModelRecord("wd-eva02-large-tagger-v3", "WD EVA02 Large Tagger v3", "tagger", "huggingface", OptionalAdapterPlaceholder("wd-eva02-large-tagger-v3", "WD EVA02 Large Tagger v3", "tagger", "WD EVA02 ONNX tagging adapter staged.", "SmilingWolf/wd-eva02-large-tagger-v3"), "High quality WD-family tagger for richer tag predictions.", "SmilingWolf/wd-eva02-large-tagger-v3", True, ["tag", "auto_tag", "anime", "multilabel", "huggingface"], 1.2, 5.0, "EVA02-L", "onnx/fp16", True))
+        self._add(ModelRecord("wd-convnext-tagger-v3", "WD ConvNeXt Tagger v3", "tagger", "huggingface", WDOnnxTaggerAdapter("wd-convnext-tagger-v3", "WD ConvNeXt Tagger v3", "SmilingWolf/wd-convnext-tagger-v3"), "WD ConvNeXt tagger for illustration/anime datasets.", "SmilingWolf/wd-convnext-tagger-v3", True, ["tag", "auto_tag", "anime", "multilabel", "huggingface", "onnx", "danbooru"], 0.9, 3.0, "ConvNeXt", "onnx/fp16", True, allow_patterns=wd_onnx_allow, ignore_patterns=["*.msgpack", "*.h5", "*.ot", "*.tflite"], required_file_groups=[["model.onnx", "model.safetensors"], ["selected_tags.csv"], ["model.onnx", "config.json"]]))
+        self._add(ModelRecord("wd-eva02-large-tagger-v3", "WD EVA02 Large Tagger v3", "tagger", "huggingface", WDOnnxTaggerAdapter("wd-eva02-large-tagger-v3", "WD EVA02 Large Tagger v3", "SmilingWolf/wd-eva02-large-tagger-v3"), "High quality WD-family tagger for richer tag predictions.", "SmilingWolf/wd-eva02-large-tagger-v3", True, ["tag", "auto_tag", "anime", "multilabel", "huggingface", "onnx", "danbooru"], 1.2, 5.0, "EVA02-L", "onnx/fp16", True, allow_patterns=wd_onnx_allow, ignore_patterns=["*.msgpack", "*.h5", "*.ot", "*.tflite"], required_file_groups=[["model.onnx", "model.safetensors"], ["selected_tags.csv"], ["model.onnx", "config.json"]]))
         self._add(ModelRecord("blip2-opt-2.7b-captioner", "BLIP-2 OPT 2.7B Captioner", "captioner", "huggingface", HFImageCaptionAdapter("blip2-opt-2.7b-captioner", "BLIP-2 OPT 2.7B", "Salesforce/blip2-opt-2.7b"), "Captioning model for caption-first and caption-to-tags pipelines.", "Salesforce/blip2-opt-2.7b", True, ["caption", "caption_to_tags", "huggingface"], 15.0, 12.0, "2.7B", "fp16/int8 optional", True))
         self._add(ModelRecord("instructblip-vicuna-7b", "InstructBLIP Vicuna 7B", "captioner", "huggingface", HFInstructBLIPAdapter("Salesforce/instructblip-vicuna-7b"), "Concrete instruction-guided captioning and visual QA adapter for dataset review.", "Salesforce/instructblip-vicuna-7b", True, ["caption", "vlm", "caption_to_tags", "qa", "huggingface"], 16.0, 16.0, "7B", "fp16/int4 optional", True, supports_sharding=True, min_gpus=1, max_gpus=4))
         self._add(ModelRecord("real-esrgan-x4plus", "Real-ESRGAN x4plus Upscaler", "upscaler", "direct", OptionalAdapterPlaceholder("real-esrgan-x4plus", "Real-ESRGAN x4plus", "upscaler", "External/local Real-ESRGAN adapter staged; direct weights download exposed."), "General x4 image upscaling checkpoint for dataset enhancement.", optional=True, capabilities=["upscale", "super_resolution", "image_edit", "downloadable_checkpoint"], size_gb=0.07, vram_gb=4.0, parameter_count="RRDB", precision="fp32/fp16", download_supported=True, direct_url="https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth", filename="RealESRGAN_x4plus.pth", recommended_backend="realesrgan", modality="image"))
@@ -858,7 +1089,7 @@ class ModelRegistry:
 
         # v5.6 catalog refresh: more recent Hugging Face model rows for dataset
         # curation, OCR/captioning, visual QA, and classification workflows.
-        self._add(ModelRecord("pixai-tagger-v09", "PixAI Tagger v0.9", "tagger", "huggingface", OptionalAdapterPlaceholder("pixai-tagger-v09", "PixAI Tagger v0.9", "tagger", "Modern image tagger catalog row; model-specific adapter staged.", "pixai-labs/pixai-tagger-v0.9"), "Modern image tagging model option for illustration/anime-style dataset labeling.", "pixai-labs/pixai-tagger-v0.9", True, ["tag", "classify", "huggingface"], 0.8, 3.0, "unknown", "fp16/fp32", True))
+        self._add(ModelRecord("pixai-tagger-v09", "PixAI Tagger v0.9", "tagger", "huggingface", WDOnnxTaggerAdapter("pixai-tagger-v09", "PixAI Tagger v0.9", "deepghs/pixai-tagger-v0.9-onnx", base_repo_id="pixai-labs/pixai-tagger-v0.9"), "Modern PixAI anime/Danbooru-style tagger. Uses the public DeepGHS ONNX export for local loading while tracking the PixAI base model provenance.", "deepghs/pixai-tagger-v0.9-onnx", True, ["tag", "classify", "huggingface", "onnx", "danbooru", "pixai"], 1.3, 3.0, "EVA02 head", "onnx/fp32", True, allow_patterns=wd_onnx_allow, ignore_patterns=["*.msgpack", "*.h5", "*.ot", "*.tflite"], hf_access="public", license_note="ONNX export of pixai-labs/pixai-tagger-v0.9; PixAI base repo may require accepting access conditions.", required_file_groups=[["model.onnx"], ["selected_tags.csv"]]))
         self._add(ModelRecord("falconsai-nsfw-detector", "Falconsai NSFW Image Detector", "classifier", "huggingface", HFImageClassifierAdapter("falconsai-nsfw-detector", "Falconsai NSFW", "Falconsai/nsfw_image_detection"), "Binary/safety classification helper for dataset filtering.", "Falconsai/nsfw_image_detection", True, ["classify", "safety", "huggingface"], 0.35, 1.5, "85.8M", "fp32/fp16", True))
         self._add(ModelRecord("marqo-nsfw-384", "Marqo NSFW Image Detection 384", "classifier", "huggingface", HFImageClassifierAdapter("marqo-nsfw-384", "Marqo NSFW 384", "Marqo/nsfw-image-detection-384"), "Small image classifier for safety/category filtering.", "Marqo/nsfw-image-detection-384", True, ["classify", "safety", "huggingface"], 0.03, 1.0, "5.6M", "fp32/fp16", True))
         self._add(ModelRecord("watermark-siglip2", "Watermark Detection SigLIP2", "classifier", "huggingface", HFImageClassifierAdapter("watermark-siglip2", "Watermark SigLIP2", "prithivMLmods/Watermark-Detection-SigLIP2"), "Watermark/no-watermark filtering helper for dataset cleanup.", "prithivMLmods/Watermark-Detection-SigLIP2", True, ["classify", "watermark", "quality", "huggingface"], 0.4, 2.0, "92.9M", "fp32/fp16", True))
@@ -896,7 +1127,7 @@ class ModelRegistry:
             max_gpus=None,
             allow_patterns=["*.json", "*.txt", "*.md", "*.safetensors", "*.bin", "*.model", "*.py", "*.yaml", "*.yml", "tokenizer*", "merges.txt", "vocab.*", "preprocessor_config.json", "processor_config.json", "special_tokens_map.json", "chat_template*", "*.jinja"],
         ))
-        self._add(ModelRecord("model-builder-classifier-contract", "Model Builder Classifier Contract", "classifier", "local", OptionalAdapterPlaceholder("model-builder-classifier-contract", "Model Builder Classifier Contract", "classifier", "Adapter contract for pilot/eva/z3d classifier pipelines brought forward from the model-builder workflow."), "Contract row for pilot/eva/z3d classifier pipelines, Grad-CAM, multi-model combination, and batch classification.", None, True, ["classify", "grad_cam", "multi_model", "batch", "local"], None, 8.0, None, "auto", False))
+        self._add(ModelRecord("model-builder-classifier-contract", "Model Builder Classifier Contract", "classifier", "local", OptionalAdapterPlaceholder("model-builder-classifier-contract", "Model Builder Classifier Contract", "classifier", "Adapter contract for pilot/eva/legacy classifier pipelines brought forward from the model-builder workflow."), "Contract row for pilot/eva/legacy classifier pipelines, Grad-CAM, multi-model combination, and batch classification.", None, True, ["classify", "grad_cam", "multi_model", "batch", "local"], None, 8.0, None, "auto", False))
         self._add(ModelRecord("clean-tags-llm-pruner", "Clean Tags LLM Pruner", "assistant", "local", OptionalAdapterPlaceholder("clean-tags-llm-pruner", "Clean Tags LLM Pruner", "assistant", "Adapter contract for rule/LLM tag pruning and messy webscrape cleanup."), "Rule/LLM tag cleaning pipeline contract for merged messy datasets before training.", None, True, ["tag_prune", "tag_clean", "llm", "orchestration", "local"], None, None, None, "auto", False))
         # Reference-finder / annotation pipeline rows ported from the standalone reference prototype.
         self._add(ModelRecord("owlv2-reference-detector", "OWLv2 Reference Detector", "detector", "huggingface", OptionalAdapterPlaceholder("owlv2-reference-detector", "OWLv2 Reference Detector", "detector", "Image-guided detection adapter for reference-image box proposals is exposed through the Reference Finder pipeline.", "google/owlv2-base-patch16-ensemble"), "Image-guided detector used for one/few-reference character/object localization.", "google/owlv2-base-patch16-ensemble", True, ["detect", "reference_image", "bbox", "huggingface"], 1.5, 6.0, "base", "fp16/fp32", True))
@@ -1264,6 +1495,28 @@ class ModelRegistry:
         # so they can be run from Models, Batch Tags/Assistant selection, Orchestrate, and as
         # signals for editor/comparer/annotation decisions.
         self._add(ModelRecord(
+            name="redrocket-hydra-3-5",
+            label="RedRocket Hydra 3.5 Tagger",
+            kind="tagger",
+            provider="huggingface",
+            repo_id="RedRocket/Hydra",
+            adapter=RedRocketHydra35Adapter("RedRocket/Hydra"),
+            optional=True,
+            description="SOTA RedRocket Hydra 3.5 e621 tagger/classifier. Uses the downloaded repo-native local inference.py path by default, supports calibration metrics, implication modes, exclusions, exclusive groups, NaFlex/varlen settings, and CAM/PCA metadata. Remote/API service use is optional and never the default execution mode.",
+            capabilities=["tag", "rating", "classify", "image_classification", "auto_tag", "booru", "e621", "furry", "hydra", "hydra_3_5", "siglip2", "vit", "naflex", "cam_attention", "cam_pca", "implications", "calibration", "exclusive_groups", "local_inference", "huggingface", "editor", "batch", "compare", "tag_editor", "dual_compare", "annotation_context", "assistant_context", "orchestration"],
+            size_gb=2.11,
+            vram_gb=6.0,
+            parameter_count="SigLIP2 SO400M + per-tag cross-attention hydra head",
+            precision="fp16/fp32",
+            download_supported=True,
+            modality="image->e621 tags+rating",
+            recommended_backend="native_hydra_3_5_local",
+            supports_sharding=False,
+            allow_patterns=["*.py", "*.pyw", "*.bat", "*.sh", "requirements.txt", "README.md", "*.md", "models/*.safetensors", "data/**", "hydra/**", "utils/**", "extensions/**", "*.json", "*.txt"],
+            ignore_patterns=["train/**", "*.pt", "*.pth"],
+            requirements=["torch", "torchvision", "timm>=1.0.16", "einops", "safetensors", "numpy", "pillow", "pyvips", "libvips", "fastapi", "uvicorn"],
+        ))
+        self._add(ModelRecord(
             name="redrocket-jtp-3",
             label="RedRocket JTP-3 Tagger",
             kind="tagger",
@@ -1304,6 +1557,74 @@ class ModelRegistry:
             recommended_backend="transformers/timm",
             supports_sharding=False,
         ))
+
+
+        # v5.8 legacy/local image tagger catalog from the original DCT model_configs.py.
+        legacy_rows = [
+            {
+                "key": "thouph-eva02-clip-vit-large-7704",
+                "name": "legacy-eva02-clip-vit-large-7704",
+                "size_gb": 1.3,
+                "vram_gb": 4.0,
+                "parameter_count": "EVA02-CLIP ViT-Large + 7704-label head",
+                "provider": "huggingface",
+            },
+            {
+                "key": "thouph-eva02-vit-large-448-8046",
+                "name": "legacy-eva02-vit-large-448-8046",
+                "size_gb": 1.3,
+                "vram_gb": 5.5,
+                "parameter_count": "EVA02 ViT-Large + 8046-label head",
+                "provider": "huggingface",
+            },
+            {
+                "key": "thouph-experimental-efficientnetv2-m-8035",
+                "name": "legacy-efficientnetv2-m-8035",
+                "size_gb": 0.27,
+                "vram_gb": 3.0,
+                "parameter_count": "EfficientNetV2-M + 8035-label head",
+                "provider": "huggingface",
+            },
+        ]
+        for row in legacy_rows:
+            cfg = dict(LEGACY_TAGGER_CONFIGS[row["key"]])
+            self._add(ModelRecord(
+                name=row["name"],
+                label=str(cfg.get("label") or row["name"]),
+                kind="tagger",
+                provider=str(row.get("provider") or ("huggingface" if cfg.get("repo_id") else "direct")),
+                repo_id=cfg.get("repo_id"),
+                direct_url=cfg.get("direct_url"),
+                filename=cfg.get("filename"),
+                adapter=LegacyVisionTaggerAdapter(row["name"], str(cfg.get("label") or row["name"]), cfg),
+                optional=True,
+                description=(
+                    str(cfg.get("notes") or "Legacy image tagger from the original Data Curation Tool model config.")
+                    + " Supports model-specific preprocessing, tag metadata order, thresholds, ONNX/PyTorch runtime, and e621 alias/implication cleanup."
+                ),
+                capabilities=[
+                    "tag", "auto_tag", "classify", "image_classification", "booru", "e621", "legacy_model_config",
+                    "vit", "onnx" if cfg.get("onnx_format") else "torch", "local_inference", "tag_editor", "batch", "compare",
+                    "annotation_context", "assistant_context", "orchestration", "tag_translation_ready"
+                ],
+                size_gb=row.get("size_gb"),
+                vram_gb=row.get("vram_gb"),
+                parameter_count=row.get("parameter_count"),
+                precision="fp32/fp16/onnx",
+                download_supported=bool(cfg.get("repo_id") or cfg.get("direct_url")),
+                modality="image->e621 tags/rating",
+                recommended_backend="legacy_vision_tagger_adapter",
+                supports_sharding=False,
+                allow_patterns=[
+                    "*.py", "*.md", "README*", "*.json", "*.csv", "*.txt",
+                    "model.onnx", "model.fp16.onnx", "model.pth", "model.fp16.pth",
+                    "model_balanced.onnx", "model_balanced.pth", "tags.json", "tags_8041.json", "tags_8034.json",
+                ],
+                ignore_patterns=[],
+                requirements=["pillow", "numpy", "torch", "torchvision", "onnxruntime", "timm"],
+                hf_access="public",
+                license_note="Check the upstream model license before commercial use; Thouph model pages list CC-BY-NC-4.0.",
+            ))
 
 
         # v5.48 modern computer-vision catalog expansion.  These rows make
@@ -1612,12 +1933,308 @@ class ModelRegistry:
                 "desc": "Production-ready cloud 3D model service row for text/images with API/plugin handoff.",
                 "caps": ["text_to_3d", "image_to_3d", "multi_image_to_3d", "cloud_api", "pbr", "plugin_handoff"], "vram": None, "backend": "rodin_text_api", "modality": "cloud text/image/multiview->3d", "download": False,
             },
+
+            {
+                "name": "tripo-p1-smart-mesh-cloud", "label": "Tripo P1.0 Smart Mesh / P1 API", "provider": "cloud", "repo": None,
+                "desc": "Hosted Tripo P1.0 Smart Mesh provider row. Treated as cloud/API-first SaaS: local open weights are not assumed; users configure API credentials and choose text, image, or multi-image input in 3D Studio.",
+                "caps": ["text_to_3d", "image_to_3d", "multi_image_to_3d", "smart_mesh", "clean_topology", "low_poly", "game_ready", "cloud_api", "saas", "api_key", "asset_download"], "vram": None, "backend": "tripo_p1_smart_mesh_api", "modality": "cloud text/image/multiview->3d", "download": False,
+            },
+            {
+                "name": "hunyuan3d-31-cloud-api", "label": "Hunyuan3D 3.1 / Tencent Cloud 3D API", "provider": "cloud", "repo": None,
+                "desc": "Hunyuan3D 3.1 cloud/API contract row for text/image/multi-image 3D generation. The local open-source catalog entry remains Hunyuan3D 2.x/2.1; this row does not imply open local 3.1 weights.",
+                "caps": ["text_to_3d", "image_to_3d", "multi_image_to_3d", "pbr", "texture", "cloud_api", "tencent_cloud", "api_key", "asset_download"], "vram": None, "backend": "hunyuan3d_31_cloud_api", "modality": "cloud text/image/multiview->3d", "download": False,
+            },
+            {
+                "name": "rodin-hyper3d-production-api", "label": "Rodin / Hyper3D Production API", "provider": "cloud", "repo": None,
+                "desc": "Explicit Rodin/Hyper3D hosted API provider row for text/image/multi-image asset generation, remesh/export handoff, and Blender refinement. Treated as SaaS/API rather than local open weights.",
+                "caps": ["text_to_3d", "image_to_3d", "multi_image_to_3d", "cloud_api", "saas", "api_key", "pbr", "remesh", "asset_download", "plugin_handoff"], "vram": None, "backend": "rodin_hyper3d_api", "modality": "cloud text/image/multiview->3d", "download": False,
+            },
             {
                 "name": "comfyui-3d-partner-node-workflows", "label": "ComfyUI 3D Workflow / Partner Nodes", "provider": "optional", "repo": None,
                 "desc": "Routes local or cloud 3D workflows through ComfyUI graphs, including partner-node providers and local Hunyuan/TRELLIS-style nodes.",
                 "caps": ["comfyui", "mcp", "text_to_3d", "image_to_3d", "multi_image_to_3d", "video_to_3d", "workflow_graph"], "vram": 0.0, "backend": "comfyui_3d_workflow_api", "modality": "workflow graph", "download": False,
             },
+            {
+                "name": "dream-textures-blender-addon", "label": "Dream Textures Blender Add-on", "provider": "github", "repo": "https://github.com/carson-katri/dream-textures",
+                "desc": "Blender add-on/catalog row for local Stable Diffusion texture, concept-art, background, animation restyle, and scene-texturing workflows. Uses Blender handoff/MCP or the Dream Textures backend API rather than a generic hosted REST model by default.",
+                "caps": ["blender_addon", "texture_generation", "text_to_texture", "depth_to_image", "scene_texture", "local_diffusion", "mcp", "3d_materials"], "vram": 8.0, "backend": "dream_textures_blender_bridge", "modality": "text/image->texture/material", "download": False,
+            },
+            {
+                "name": "quickmaker-blender-ai-suite", "label": "QuickMaker Blender AI Suite", "provider": "optional", "repo": None,
+                "desc": "Blender add-on/service row for account-based AI generation of images, videos, textures, and 3D assets directly inside Blender. Exposed as a Blender handoff/MCP bridge because public usage is add-on/account driven.",
+                "caps": ["blender_addon", "text_to_3d", "image_to_3d", "image_generation", "video_generation", "texture_generation", "account_based_service", "mcp"], "vram": 0.0, "backend": "quickmaker_blender_bridge", "modality": "blender add-on cloud/local models", "download": False,
+            },
+            {
+                "name": "meshy-v2-official-api", "label": "Meshy Official API Text/Image-to-3D", "provider": "cloud", "repo": None,
+                "desc": "Explicit Meshy API row covering text-to-3D preview/refine and image-to-3D tasks, with token/profile selection handled in provider settings.",
+                "caps": ["text_to_3d", "image_to_3d", "cloud_api", "preview_refine", "asset_download", "pbr", "api_key"], "vram": None, "backend": "meshy_text_api", "modality": "cloud text/image->3d", "download": False,
+            },
+            {
+                "name": "blender-official-mcp-addon", "label": "Blender Official MCP Add-on / Server", "provider": "optional", "repo": None,
+                "desc": "Blender MCP server/add-on control contract for full Blender Python API access, scene inspection, import/export, geometry cleanup, and render/refinement handoff.",
+                "caps": ["mcp", "blender", "python_api", "scene_inspect", "mesh_refinement", "render", "export", "3d_pipeline"], "vram": 0.0, "backend": "blender_mcp_addon", "modality": "external tool mcp", "download": False,
+            },
+            {
+                "name": "zbrush-python-mcp-refinement", "label": "ZBrush Python/MCP Sculpt Refinement", "provider": "optional", "repo": None,
+                "desc": "ZBrush external-tool/MCP contract for high-resolution sculpt review, import/export, GoZ-style handoff, and Python/ZScript-assisted refinement workflows.",
+                "caps": ["mcp", "zbrush", "python_api", "zscript", "goz_handoff", "sculpt_refinement", "mesh_cleanup", "normal_map_workflow"], "vram": 0.0, "backend": "zbrush_mcp_bridge", "modality": "external sculpting tool", "download": False,
+            },
         ]
+
+        diffusion_training_targets = [
+            {
+                "name": "diffusion-target-sdxl", "label": "SDXL Training-Prep Target", "provider": "training_contract", "repo": "stabilityai/stable-diffusion-xl-base-1.0",
+                "desc": "Dataset-preparation target row for SDXL-family LoRA, IC-LoRA, ControlNet, and embedding workflows. The app prepares captions/manifests; training remains external.",
+                "caps": ["diffusion_base", "lora_training_target", "ic_lora", "controlnet", "embedding", "caption_rules", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-illustrious", "label": "Illustrious / Illustrious-XL Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Anime/booru-tag-first dataset-prep target for Illustrious-family checkpoints and compatible LoRA workflows.",
+                "caps": ["diffusion_base", "anime", "booru_tags", "lora_training_target", "caption_rules", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-noobai", "label": "NoobAI / NoobAI-XL Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "NoobAI-family anime dataset-prep target with booru tag preservation and branch-level manifest export.",
+                "caps": ["diffusion_base", "anime", "booru_tags", "lora_training_target", "caption_rules", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-anima", "label": "Anima / Anime Diffusion Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Anime-stylized diffusion dataset-prep target for style, character, character+style, and concept LoRAs.",
+                "caps": ["diffusion_base", "anime", "style_lora", "character_lora", "concept_lora", "caption_rules"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-seaart", "label": "SeaArt Service / Workflow Target", "provider": "cloud_service_contract", "repo": None,
+                "desc": "Cloud-service compatibility target for prompt/caption portability and future API/MCP handoff. Not a local trainer.",
+                "caps": ["cloud_service", "workflow_preset", "prompt_portability", "lora_training_target", "caption_rules"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-krea2", "label": "Krea 2 / Krea-style Service Target", "provider": "cloud_service_contract", "repo": None,
+                "desc": "Krea-style image/video service compatibility target for curated prompt/caption handoff and future API/MCP workflows.",
+                "caps": ["cloud_service", "image_generation", "video_generation", "workflow_preset", "caption_rules"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image+video", "download": False,
+            },
+            {
+                "name": "diffusion-target-ideogram", "label": "Ideogram / Ideologram Alias Service Target", "provider": "cloud_service_contract", "repo": None,
+                "desc": "Ideogram text-aware generation target with ideologram alias handling for user-entered model names.",
+                "caps": ["cloud_service", "text_aware_generation", "prompt_portability", "caption_rules"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-flux1-dev", "label": "FLUX.1 Dev Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "FLUX.1-dev-family dataset-prep target. Captions use natural language plus concise key tags for LoRA/IC-LoRA/ControlNet/export handoff; training remains external.",
+                "caps": ["diffusion_base", "flux", "lora_training_target", "ic_lora", "controlnet", "embedding", "natural_language_captions", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-flux1-schnell", "label": "FLUX.1 Schnell Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "FLUX.1-schnell-family compatibility row for compact natural-language caption/export prep and fast-generation workflow handoff.",
+                "caps": ["diffusion_base", "flux", "lora_training_target", "caption_rules", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-flux1-kontext-dev", "label": "FLUX.1 Kontext Dev Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Reference/image-editing FLUX target. Branch examples preserve reference input, target output, and transformation instruction.",
+                "caps": ["diffusion_base", "flux", "reference_image", "image_editing", "ic_lora", "instruction_caption", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image+reference", "download": False,
+            },
+            {
+                "name": "diffusion-target-flux1-fill-dev", "label": "FLUX.1 Fill Dev Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Mask/inpaint/outpaint FLUX target. Branch manifests track masks, context, and target region captions.",
+                "caps": ["diffusion_base", "flux", "inpaint", "outpaint", "mask", "controlnet", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image+mask", "download": False,
+            },
+            {
+                "name": "diffusion-target-flux1-depth-dev", "label": "FLUX.1 Depth Dev Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Depth-conditioned FLUX target with paired condition map validation and caption rules.",
+                "caps": ["diffusion_base", "flux", "depth_condition", "controlnet", "paired_condition", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image+depth", "download": False,
+            },
+            {
+                "name": "diffusion-target-flux1-canny-dev", "label": "FLUX.1 Canny Dev Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Edge/Canny-conditioned FLUX target with paired edge map lineage and visible target captioning.",
+                "caps": ["diffusion_base", "flux", "canny_condition", "edge_condition", "controlnet", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image+edge", "download": False,
+            },
+            {
+                "name": "diffusion-target-flux1-redux-dev", "label": "FLUX.1 Redux Dev Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Reference-variation FLUX target. Branch rules track which reference traits must be preserved versus varied.",
+                "caps": ["diffusion_base", "flux", "reference_variation", "ic_lora", "style_reference", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image+reference", "download": False,
+            },
+            {
+                "name": "diffusion-target-chroma-flux", "label": "Chroma / FLUX-tuned Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Chroma/FLUX-tuned dataset-prep target. Uses FLUX-style natural language while preserving booru-compatible visual descriptors for illustration/anime datasets.",
+                "caps": ["diffusion_base", "flux", "chroma", "anime", "booru_compatible_tags", "lora_training_target", "ic_lora", "controlnet", "embedding", "manifest_export"], "vram": None, "backend": "pipeline_prep_rules", "modality": "image", "download": False,
+            },
+            {
+                "name": "diffusion-target-wan22", "label": "Wan 2.2 Video Diffusion Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "Wan 2.2 dataset-prep target for T2V, I2V, TI2V, S2V, Animate, Musubi, DiffSynth, SimpleTuner, and AI Toolkit export profiles. Captions include subject/action/motion/camera/audio-reference fields; training remains external or MCP-handoff driven.",
+                "caps": ["video_diffusion", "motion_captioning", "camera_motion", "audio_conditioning", "s2v", "i2v", "ti2v", "wan22", "musubi_export", "diffsynth_export", "simpletuner_export", "ai_toolkit_export", "lora_training_target", "controlnet", "manifest_export"], "vram": None, "backend": "multimodal_dataset_builder", "modality": "video+audio+image_reference", "download": False,
+            },
+            {
+                "name": "diffusion-target-ltx23", "label": "LTX 2.3 Video Diffusion Training-Prep Target", "provider": "training_contract", "repo": None,
+                "desc": "LTX-2.3 multimodal dataset-prep target with video/audio captions, reference_video/reference_audio, mask columns, frame/resolution bucket validation, and JSON/JSONL/CSV exporter support. Training remains external or MCP-handoff driven.",
+                "caps": ["video_diffusion", "audio_diffusion", "audiovisual_lora", "ltx23", "t2v", "i2v", "a2v", "v2a", "t2a", "ic_lora", "av2av", "inpainting", "shot_captioning", "motion_captioning", "speech_transcript", "foley_captioning", "lora_training_target", "ltx_export", "manifest_export"], "vram": None, "backend": "multimodal_dataset_builder", "modality": "video+audio+reference+mask", "download": False,
+            },
+        ]
+
+        lingbot_video_rows = [
+            {
+                "name": "lingbot-video-runtime-repo",
+                "label": "LingBot-Video Runtime Repo",
+                "repo": None,
+                "provider": "github",
+                "variant": "runtime",
+                "desc": "Local runtime bridge for the Robbyant LingBot-Video repository. Clone/install the repo once, then point external model roots or local paths at the runtime when generating commands.",
+                "caps": ["lingbot_video", "video_generation", "world_model", "moe", "runtime_repo", "prompt_json", "auto_negative", "diffusers_backend", "sglang_backend", "multi_gpu_fsdp"],
+                "size": None,
+                "vram": 0.0,
+                "params": "runtime",
+                "download": False,
+                "backend": "lingbot_video_repo_scripts",
+                "modality": "text/image -> video",
+                "memory_note": "Install the GitHub repo separately; model weights live in the Dense/MoE rows.",
+            },
+            {
+                "name": "lingbot-video-dense-1-3b",
+                "label": "LingBot-Video Dense 1.3B",
+                "repo": "robbyant/lingbot-video-dense-1.3b",
+                "provider": "huggingface",
+                "variant": "dense",
+                "desc": "LingBot-Video dense 1.3B video/world-model checkpoint for T2I, T2V, and TI2V workflows through the LingBot inference scripts.",
+                "caps": ["lingbot_video", "video_generation", "world_model", "dense", "t2i", "t2v", "ti2v", "prompt_json", "diffusers_backend", "sglang_backend"],
+                "size": 8.0,
+                "vram": 16.0,
+                "params": "1.3B",
+                "download": True,
+                "backend": "lingbot_video_diffusers",
+                "modality": "text/image -> video",
+                "memory_note": "Uses the LingBot repo runner; direct image-tagging Run is intentionally blocked.",
+            },
+            {
+                "name": "lingbot-video-moe-30b-a3b",
+                "label": "LingBot-Video MoE 30B-A3B + Refiner",
+                "repo": "robbyant/lingbot-video-moe-30b-a3b",
+                "provider": "huggingface",
+                "variant": "moe_refiner",
+                "desc": "LingBot-Video MoE 30B-A3B video/world model with refiner support for T2I, T2V, TI2V, and refinement workflows. Multi-GPU FSDP/CP8 is expected for large local runs.",
+                "caps": ["lingbot_video", "video_generation", "world_model", "moe", "mixture_of_experts", "refiner", "t2i", "t2v", "ti2v", "prompt_json", "auto_negative", "diffusers_backend", "sglang_backend", "multi_gpu_fsdp", "cp8"],
+                "size": 90.0,
+                "vram": 48.0,
+                "params": "30B-A3B",
+                "download": True,
+                "backend": "lingbot_video_diffusers_or_sglang",
+                "modality": "text/image -> video",
+                "supports_sharding": True,
+                "min_gpus": 2,
+                "max_gpus": None,
+                "runtime_vram_profiles": {"bf16": 72.0, "fp16": 72.0, "fp8": 40.0, "sfp8": 40.0},
+                "memory_note": "Catalog estimate only. The public workflow constructs the base DiT/refiner and recommends FSDP/CP8 multi-GPU execution for MoE/refiner runs.",
+            },
+            {
+                "name": "lingbot-video-rewriter-base-qwen36-27b",
+                "label": "LingBot-Video Rewriter Base / Qwen3.6 27B",
+                "repo": "Qwen/Qwen3.6-27B",
+                "provider": "modelscope_or_huggingface",
+                "variant": "rewriter_base",
+                "desc": "Prompt-rewriter base VLM/LLM used before LingBot-Video DiT inference. The LingBot workflow first expands the user's prompt with this base model.",
+                "caps": ["lingbot_video", "prompt_rewriter", "qwen3.6", "json_caption", "structured_prompt", "t2v_prompt_prep", "ti2v_prompt_prep"],
+                "size": 55.0,
+                "vram": 48.0,
+                "params": "27B",
+                "download": True,
+                "backend": "transformers_or_openai_compatible_server",
+                "modality": "text/image -> structured prompt json",
+                "supports_sharding": True,
+                "min_gpus": 1,
+                "max_gpus": None,
+                "runtime_vram_profiles": {"bf16": 54.0, "8bit": 30.0, "4bit": 18.0},
+                "memory_note": "Use the base model without the rewriter LoRA for step 1 of LingBot prompt preparation.",
+            },
+            {
+                "name": "lingbot-video-rewriter-lora",
+                "label": "LingBot-Video Rewriter LoRA Adapter",
+                "repo": "robbyant/lingbot-video-rewriter-lora",
+                "provider": "huggingface/modelscope",
+                "variant": "rewriter_lora",
+                "desc": "LoRA adapter used in the second LingBot prompt-rewriter stage to convert expanded prompts into the JSON-caption format expected by the video DiT.",
+                "caps": ["lingbot_video", "prompt_rewriter", "lora_adapter", "qwen3.6_adapter", "json_caption", "structured_prompt"],
+                "size": 1.5,
+                "vram": 0.0,
+                "params": "LoRA",
+                "download": True,
+                "backend": "peft_lora_adapter",
+                "modality": "prompt json adapter",
+                "memory_note": "Load with the matching Qwen3.6-27B rewriter base; do not apply during the first base expansion step.",
+            },
+        ]
+        for row in lingbot_video_rows:
+            name = row["name"]
+            self._add(ModelRecord(
+                name=name,
+                label=row["label"],
+                kind="video_world_model" if "rewriter" not in name else "prompt_rewriter",
+                provider=row["provider"],
+                repo_id=row.get("repo"),
+                adapter=LingBotVideoAdapter(row.get("variant") or "dense"),
+                description=row["desc"],
+                optional=True,
+                capabilities=row["caps"],
+                size_gb=row.get("size"),
+                vram_gb=row.get("vram"),
+                parameter_count=row.get("params"),
+                precision="bf16/fp16/fp8 per LingBot runtime",
+                download_supported=bool(row.get("download")),
+                modality=row.get("modality") or "video",
+                recommended_backend=row.get("backend") or "lingbot_video",
+                supports_sharding=bool(row.get("supports_sharding")),
+                min_gpus=int(row.get("min_gpus") or 1),
+                max_gpus=row.get("max_gpus"),
+                runtime_vram_profiles=row.get("runtime_vram_profiles") or {},
+                memory_note=row.get("memory_note"),
+                requirements=["LingBot-Video repo", "torch", "diffusers", "transformers", "decord", "safetensors", "json_repair", "optional SGLang/FSDP runtime"],
+                allow_patterns=["*.json", "*.txt", "*.md", "*.safetensors", "*.bin", "*.pt", "*.pth", "*.py", "*.yaml", "*.yml", "tokenizer*", "merges.txt", "vocab.*", "*.model", "*.index", "*.index.json"],
+                ignore_patterns=["*.msgpack", "*.h5", "*.ot"],
+                license_note="Check the LingBot/Qwen model license and rights constraints before redistribution or commercial use.",
+            ))
+
+        for row in diffusion_training_targets:
+            name = row["name"]
+            self._add(ModelRecord(
+                name=name,
+                label=row["label"],
+                kind="diffusion_training_target",
+                provider=row["provider"],
+                repo_id=row.get("repo"),
+                adapter=OptionalAdapterPlaceholder(name, row["label"], "diffusion_training_target", row["desc"], row.get("repo")),
+                description=row["desc"],
+                optional=True,
+                capabilities=row["caps"],
+                size_gb=None,
+                vram_gb=row.get("vram"),
+                precision="external/provider-defined",
+                download_supported=bool(row.get("download")),
+                modality=row.get("modality") or "image",
+                recommended_backend=row.get("backend") or "pipeline_prep_rules",
+                requirements=["Pipeline Prep tab", "External trainer/API/MCP if training or generation is required"],
+            ))
+
+        slicer_rows = [
+            ("mcp-prusaslicer-control", "PrusaSlicer MCP / CLI Slicing", "prusaslicer", ["mcp", "slicer", "3d_print", "gcode", "stl", "3mf", "printer_profile"]),
+            ("mcp-orcaslicer-control", "OrcaSlicer MCP / CLI Slicing", "orcaslicer", ["mcp", "slicer", "3d_print", "gcode", "3mf", "printer_profile"]),
+            ("mcp-bambu-studio-control", "Bambu Studio MCP / Project Handoff", "bambu_studio", ["mcp", "slicer", "3d_print", "3mf", "project_handoff", "gcode"]),
+            ("mcp-curaengine-control", "CuraEngine MCP / CLI Slicing", "curaengine", ["mcp", "slicer", "3d_print", "gcode", "stl", "engine_settings"]),
+            ("mcp-slic3r-control", "Slic3r MCP / CLI Slicing", "slic3r", ["mcp", "slicer", "3d_print", "gcode", "stl", "3mf"]),
+        ]
+        for name, label, tool, caps in slicer_rows:
+            self._add(ModelRecord(
+                name=name,
+                label=label,
+                kind="mcp_tool",
+                provider="optional",
+                adapter=OptionalAdapterPlaceholder(name, label, "mcp_tool", f"MCP bridge contract for {label}. Use the MCP Tools tab and 3D Studio print handoff."),
+                description=f"External MCP/CLI bridge for {label}. It prepares slicer commands and optional approved G-code export for 3D-printing workflows.",
+                optional=True,
+                capabilities=caps,
+                vram_gb=0.0,
+                precision="n/a",
+                download_supported=False,
+                modality="external_tool",
+                recommended_backend="mcp_tools_service",
+                requirements=["install_mcp_tools.bat or install_mcp_tools.sh", f"Installed {tool} application", "Human review before printing"],
+            ))
+
         for row in modern_3d_rows:
             name = row["name"]
             self._add(ModelRecord(
@@ -1645,6 +2262,7 @@ class ModelRegistry:
             ("mcp-audacity-control", "Audacity MCP Audio Editing Control", "audacity", ["mcp", "audacity", "audio_edit", "mod_script_pipe", "waveform", "export"]),
             ("mcp-obs-control", "OBS Studio MCP Capture / Scene Control", "obs", ["mcp", "obs", "recording", "scene_control", "websocket", "screen_capture"]),
             ("mcp-comfyui-control", "ComfyUI MCP Workflow Graph Control", "comfyui", ["mcp", "comfyui", "workflow_graph", "image", "video", "audio", "3d_generation"]),
+            ("mcp-zbrush-control", "ZBrush MCP Sculpting / Mesh Refinement Control", "zbrush", ["mcp", "zbrush", "python_api", "zscript", "goz_handoff", "sculpting", "mesh_refinement", "export"]),
         ]
         for name, label, tool, caps in mcp_rows:
             self._add(ModelRecord(
@@ -1664,12 +2282,96 @@ class ModelRegistry:
                 requirements=["install_mcp_tools.bat or install_mcp_tools.sh", f"Installed {tool} application"],
             ))
 
+        # v5.78.13 dataset-pipeline/training-prep catalog rows.  These are
+        # interface rows, not runnable trainers; training is deliberately handed
+        # off to external tools through manifests/MCP so this curation app stays
+        # focused on dataset prep.
+        diffusion_training_targets = [
+            ("target-sdxl-lora-prep", "SDXL Dataset Prep Target", "sdxl", ["diffusion_target", "sdxl", "lora", "controlnet", "embedding", "caption_rules", "dataset_pipeline"]),
+            ("target-illustrious-lora-prep", "Illustrious Dataset Prep Target", "illustrious", ["diffusion_target", "anime", "booru_tags", "lora", "caption_rules", "dataset_pipeline"]),
+            ("target-noobai-lora-prep", "NoobAI Dataset Prep Target", "noobai", ["diffusion_target", "anime", "booru_tags", "lora", "caption_rules", "dataset_pipeline"]),
+            ("target-anima-lora-prep", "Anima Dataset Prep Target", "anima", ["diffusion_target", "anime", "style", "character", "caption_rules", "dataset_pipeline"]),
+            ("target-seaart-service-prep", "SeaArt Service Dataset/Prompt Prep Target", "seaart", ["diffusion_target", "cloud_service", "dataset_export", "caption_rules", "workflow_preset"]),
+            ("target-krea2-style-prep", "Krea 2 / K2 Style-Forward Prep Target", "krea2", ["diffusion_target", "krea2", "style_reference", "moodboard", "caption_rules", "cloud_or_local"]),
+            ("target-ideogram4-structured-caption-prep", "Ideogram 4 Structured Caption Prep Target", "ideogram4", ["diffusion_target", "ideogram4", "structured_caption", "typography", "layout", "caption_rules"]),
+            ("target-wan22-video-lora-prep", "Wan 2.2 Video LoRA Prep Target", "wan2_2", ["diffusion_target", "video", "wan2.2", "motion_caption", "video_lora", "dataset_pipeline"]),
+            ("target-ltx23-lora-iclora-prep", "LTX 2.3 LoRA / IC-LoRA Prep Target", "ltx2_3", ["diffusion_target", "video", "ltx2.3", "ic_lora", "condition_target_pairs", "dataset_pipeline"]),
+        ]
+        for name, label, target_key, caps in diffusion_training_targets:
+            self._add(ModelRecord(
+                name=name,
+                label=label,
+                kind="diffusion_training_target",
+                provider="optional",
+                adapter=OptionalAdapterPlaceholder(name, label, "diffusion_training_target", f"Dataset Pipeline rule/export target for {label}. This does not train models directly."),
+                description=f"Dataset Pipeline target row for {label}. Use it to generate caption/tag rules, branch readiness reports, and trainer handoff manifests.",
+                optional=True,
+                capabilities=caps,
+                vram_gb=0.0,
+                precision="n/a",
+                download_supported=False,
+                modality="image/video dataset prep",
+                recommended_backend="dataset_pipeline",
+                requirements=["Global Dataset branch", "Dataset Pipeline tab"],
+            ))
+
+        training_handoff_rows = [
+            ("trainer-handoff-kohya-ss", "Kohya SS / sd-scripts Handoff", "kohya_ss", ["training_handoff", "lora", "sdxl", "caption_sidecars", "toml_config"]),
+            ("trainer-handoff-onetrainer", "OneTrainer Handoff", "onetrainer", ["training_handoff", "lora", "embedding", "controlnet", "project_manifest"]),
+            ("trainer-handoff-diffusers", "Hugging Face Diffusers Training Scripts Handoff", "diffusers_scripts", ["training_handoff", "controlnet", "textual_inversion", "metadata_jsonl", "accelerate"]),
+            ("trainer-handoff-ltx", "LTX Trainer LoRA / IC-LoRA Handoff", "ltx_trainer", ["training_handoff", "video_lora", "ic_lora", "clip_manifest", "condition_target_pairs"]),
+            ("trainer-handoff-comfyui-training", "ComfyUI Training Nodes Handoff", "comfyui_training_nodes", ["training_handoff", "comfyui", "workflow_graph", "preprocess", "captioning"]),
+            ("trainer-handoff-cloud", "Generic Cloud/API Training Service Handoff", "cloud_training_service", ["training_handoff", "cloud_api", "zip_manifest", "provider_upload_plan"]),
+        ]
+        for name, label, backend, caps in training_handoff_rows:
+            self._add(ModelRecord(
+                name=name,
+                label=label,
+                kind="training_tool_interface",
+                provider="optional",
+                adapter=OptionalAdapterPlaceholder(name, label, "training_tool_interface", f"External training-tool interface contract for {label}."),
+                description=f"External training-tool handoff row for {label}. The app prepares configs/manifests; the user runs training in the external tool after approval.",
+                optional=True,
+                capabilities=caps,
+                vram_gb=0.0,
+                precision="n/a",
+                download_supported=False,
+                modality="external training tool",
+                recommended_backend=backend,
+                requirements=["Dataset Pipeline export", "external trainer installed/configured"],
+            ))
+
+        print_handoff_rows = [
+            ("slicer-handoff-prusaslicer", "PrusaSlicer 3D Print Handoff", "prusaslicer", ["3d_print", "slicer", "stl", "3mf", "gcode", "mcp"]),
+            ("slicer-handoff-orcaslicer", "OrcaSlicer 3D Print Handoff", "orcaslicer", ["3d_print", "slicer", "stl", "3mf", "gcode", "mcp"]),
+            ("slicer-handoff-cura", "Cura / CuraEngine 3D Print Handoff", "cura", ["3d_print", "slicer", "stl", "gcode", "curaengine", "mcp"]),
+            ("slicer-handoff-bambu-studio", "Bambu Studio 3D Print Handoff", "bambu_studio", ["3d_print", "slicer", "3mf", "stl", "mcp"]),
+            ("mesh-repair-meshlab-handoff", "MeshLab Repair/Conversion Handoff", "meshlab", ["3d_print", "mesh_repair", "conversion", "stl", "obj", "ply", "mcp"]),
+        ]
+        for name, label, backend, caps in print_handoff_rows:
+            self._add(ModelRecord(
+                name=name,
+                label=label,
+                kind="3d_print_tool_interface",
+                provider="optional",
+                adapter=OptionalAdapterPlaceholder(name, label, "3d_print_tool_interface", f"3D print/slicer handoff contract for {label}."),
+                description=f"3D print package and MCP handoff row for {label}. Use Dataset Pipeline / 3D Studio to package mesh assets for printer-profile-specific slicing.",
+                optional=True,
+                capabilities=caps,
+                vram_gb=0.0,
+                precision="n/a",
+                download_supported=False,
+                modality="3d print external tool",
+                recommended_backend=backend,
+                requirements=["3D print package", "installed slicer/mesh tool"],
+            ))
+
         self._add(ModelRecord("segmentation-masks", "Segmentation Mask Adapter", "segmentation", "optional", OptionalAdapterPlaceholder("segmentation-masks", "Segmentation Mask Adapter", "segmentation", "Contract for segmentation-assisted dataset filtering and mask export."), "Contract for segmentation-assisted dataset filtering and mask export.", None, True, ["segment", "mask"], None, None, None, "auto", False))
 
     CUSTOM_MODEL_CATEGORIES = {
         "llm", "vlm", "classifier", "tagger", "rating", "captioner",
         "embedding", "detection", "segmentation", "pose2d", "pose3d",
-        "upscaler", "external_image_tool", "3d_generation", "3d_tool", "avatar_3d", "rigging", "mcp_tool", "cloud", "custom",
+        "upscaler", "external_image_tool", "3d_generation", "3d_tool", "avatar_3d", "rigging", "mcp_tool", "diffusion_training_target", "cloud", "custom",
     }
 
     @staticmethod
@@ -1967,7 +2669,14 @@ class ModelRegistry:
     def resolve_model_path(self, record: ModelRecord, **kwargs: Any) -> str | None:
         source_path = record.local_source_path or record.source_local_path
         if source_path:
-            return str(Path(source_path).expanduser())
+            source = Path(source_path).expanduser()
+            for usable in record.usable_local_dirs(source) if hasattr(record, "usable_local_dirs") else [source]:
+                try:
+                    if usable.exists() and record._has_nonzero_payload(usable) and not record.local_integrity_issues(usable):
+                        return str(usable)
+                except Exception:
+                    continue
+            return str(source)
         model_id = kwargs.get("model_id") or kwargs.get("repo_id") or record.repo_id
         local = record.complete_local_dir(self.model_root, self.external_model_roots)
         if local and local.exists():
@@ -1981,7 +2690,7 @@ class ModelRegistry:
                 try:
                     if candidate.exists() and record._has_nonzero_payload(candidate):
                         issues = record.local_integrity_issues(candidate)
-                        fatal = any("missing local folder" in issue or "no non-empty" in issue for issue in issues)
+                        fatal = any("missing local folder" in issue or "no non-empty" in issue or "no local weight/checkpoint" in issue for issue in issues)
                         if issues and not fatal:
                             return str(candidate)
                 except Exception:
@@ -2089,13 +2798,48 @@ class ModelRegistry:
                         if progress and total:
                             progress(min(0.95, done / total), f"Downloading {file_name}: {done}/{total} bytes")
                 tmp.replace(out)
+            extracted: list[str] = []
+            if record and "legacy_model_config" in set(getattr(record, "capabilities", []) or []) and out.suffix.lower() == ".zip":
+                try:
+                    with zipfile.ZipFile(out) as zf:
+                        target_resolved = target.resolve()
+                        safe_members = []
+                        for member in zf.infolist():
+                            destination = (target / member.filename).resolve()
+                            if str(destination).startswith(str(target_resolved)):
+                                safe_members.append(member)
+                        for member in safe_members:
+                            zf.extract(member, target)
+                        extracted = [str((target / member.filename).resolve()) for member in safe_members[:200]]
+                except zipfile.BadZipFile:
+                    extracted = []
+            # Normalize common legacy artifact names after extraction/direct download.
+            if record and "legacy_model_config" in set(getattr(record, "capabilities", []) or []):
+                rename_pairs = [
+                    ("model_balanced.pth", "model.pth"),
+                    ("tags_8034.json", "tags.json"),
+                    ("tags_8041.json", "tags.json"),
+                ]
+                for src_name, dst_name in rename_pairs:
+                    src = target / src_name
+                    dst = target / dst_name
+                    try:
+                        if src.exists() and not dst.exists():
+                            src.rename(dst)
+                    except Exception:
+                        pass
             if progress:
                 progress(1.0, f"Downloaded {file_name}")
-            return {"model_name": name, "direct_url": direct_url, "path": str(out), "size_gb": round(out.stat().st_size/(1024**3), 3) if out.exists() else None, "downloaded": True}
+            return {"model_name": name, "direct_url": direct_url, "path": str(out), "extracted": extracted, "size_gb": round(out.stat().st_size/(1024**3), 3) if out.exists() else None, "downloaded": True}
         if not repo:
             raise ValueError("No Hugging Face repo id or direct checkpoint URL is configured for this model.")
         if dry_run:
             return self.download_plan(repo, name=name, token=token, revision=revision, allow_patterns=allow, ignore_patterns=ignore)
+        # Hugging Face Hub reads these timeout settings at import time. Use
+        # conservative defaults for large model payloads so intermittent slow
+        # transfers report progress instead of looking permanently stalled.
+        os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", os.environ.get("DCT_HF_DOWNLOAD_TIMEOUT", "60"))
+        os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", os.environ.get("DCT_HF_ETAG_TIMEOUT", "60"))
         try:
             from huggingface_hub import snapshot_download
         except Exception as exc:
@@ -2113,7 +2857,7 @@ class ModelRegistry:
             force_download=force_download,
         )
         cancel_event = getattr(progress, "cancel_event", None)
-        tqdm_class = cancellable_tqdm_class(cancel_event) if cancel_event is not None else None
+        tqdm_class = download_progress_tqdm_class(progress=progress, cancel_event=cancel_event, label=repo)
         if tqdm_class is not None:
             download_kwargs["tqdm_class"] = tqdm_class
         estimate_bytes = int(float(getattr(record, "size_gb", 0.0) or 0.0) * (1024 ** 3)) if record else 0
@@ -2129,6 +2873,16 @@ class ModelRegistry:
                 monitor_stop.set()
             if monitor_thread is not None:
                 monitor_thread.join(timeout=0.5)
+        if record:
+            completed = record.complete_local_dir(self.model_root, self.external_model_roots)
+            if completed is None:
+                issues = record.local_integrity_issues(Path(path)) if Path(path).exists() else ["download target does not exist"]
+                raise RuntimeError(
+                    f"Download finished for {record.label}, but the local payload is incomplete: "
+                    + "; ".join(issues)
+                    + ". Use Queue Update after checking the model allow-patterns and local folder contents."
+                )
+            path = str(completed)
         if progress:
             progress(1.0, f"Downloaded {repo}")
         size = directory_size_gb(Path(path)) if Path(path).exists() else None
@@ -2268,7 +3022,7 @@ class ModelRegistry:
             model = getattr(holder, "model", None) if holder is not None else None
             if model is not None and id(model) not in seen:
                 seen.add(id(model)); yield model
-        for attr in ("model", "classifier", "vision_model", "text_model"):
+        for attr in ("model", "classifier", "vision_model", "text_model", "torch_model", "vision_tower", "image_model"):
             obj = getattr(adapter, attr, None)
             if obj is not None and id(obj) not in seen:
                 seen.add(id(obj)); yield obj
@@ -2286,9 +3040,19 @@ class ModelRegistry:
             except Exception as exc:
                 errors.append(str(exc))
         try:
+            for attr in ("device", "device_value", "runtime_device"):
+                if hasattr(adapter, attr):
+                    setattr(adapter, attr, target)
+        except Exception:
+            pass
+        try:
             import torch
             if target.startswith("cuda") and torch.cuda.is_available():
-                torch.cuda.synchronize()
+                idx = int(str(target).split(":", 1)[1]) if ":" in str(target) else None
+                if idx is not None:
+                    torch.cuda.synchronize(idx)
+                else:
+                    torch.cuda.synchronize()
         except Exception:
             pass
         return {"target_device": target, "moved_objects": moved, "errors": errors}
@@ -2412,14 +3176,55 @@ class ModelRegistry:
             if record.cloud:
                 kwargs.setdefault("api_model_id", record.api_model_id or record.repo_id or record.name)
             else:
-                # Keep the original Hugging Face repo id available even when the
-                # effective model_id resolves to a local folder/symlink.  Adapters
-                # use repo_id to repair older partial snapshots that have weights
-                # but are missing remote-code/chat-template support files.
+                # Load operations must be local-first. A migrated model that is
+                # visible as downloaded must resolve to an existing local folder
+                # and must not fall back to the repo id, because Transformers/Hub
+                # will otherwise start a network snapshot download from inside the
+                # Load button path. Explicit Download/Update remains the only path
+                # that should fetch large assets.
                 if record.repo_id:
                     kwargs.setdefault("repo_id", record.repo_id)
-                kwargs.setdefault("model_id", self.resolve_model_path(record, **kwargs))
+                resolved_model_id = self.resolve_model_path(record, **kwargs)
+                local_candidate = None
+                try:
+                    local_candidate = Path(str(resolved_model_id)).expanduser() if resolved_model_id else None
+                except Exception:
+                    local_candidate = None
+                downloaded_local = record.complete_local_dir(self.model_root, self.external_model_roots)
+                if downloaded_local and downloaded_local.exists():
+                    # A model that the catalog already considers downloaded must
+                    # be loaded from that concrete local path.  Do not require the
+                    # independently resolved candidate to exist; stale repo ids or
+                    # older migration aliases are exactly what triggered unwanted
+                    # re-downloads.
+                    kwargs.setdefault("model_id", str(downloaded_local))
+                    kwargs.setdefault("local_files_only", True)
+                    kwargs.setdefault("dct_resolved_local_model_path", str(downloaded_local))
+                    kwargs.setdefault("allow_support_file_repair", False)
+                elif local_candidate and local_candidate.exists():
+                    kwargs.setdefault("model_id", str(local_candidate))
+                    kwargs.setdefault("local_files_only", True)
+                    kwargs.setdefault("dct_resolved_local_model_path", str(local_candidate))
+                    kwargs.setdefault("allow_support_file_repair", False)
+                elif getattr(record, "download_supported", False) and (record.repo_id or record.direct_url or record.provider == "ultralytics") and not kwargs.get("allow_remote_load"):
+                    raise RuntimeError(
+                        f"{record.label} is not resolved to a local model folder for loading. "
+                        "Use Models > Rescan after migration, add the old install/models folder as an external model root, "
+                        "or use the explicit Download/Update button. The Load button will not auto-download model weights."
+                    )
+                else:
+                    kwargs.setdefault("model_id", resolved_model_id)
             if hasattr(adapter, "load"):
+                offline_env: dict[str, str | None] = {}
+                if kwargs.get("local_files_only"):
+                    # Loading a migrated/local model must never trigger a remote
+                    # Hub snapshot download.  This environment guard catches
+                    # third-party Transformers/HF helper paths that ignore the
+                    # local_files_only kwarg.  Explicit Download/Update paths do
+                    # not go through adapter.load(), so they remain online-capable.
+                    for _env_key in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
+                        offline_env[_env_key] = os.environ.get(_env_key)
+                        os.environ[_env_key] = "1"
                 try:
                     adapter.load(device=device, **kwargs)
                 except Exception as exc:
@@ -2436,9 +3241,16 @@ class ModelRegistry:
                         f"Failed to load {record.label} ({name}) from {resolved!s}. "
                         f"Requested device={device!r}; placement={placement_summary}. "
                         "Common causes: gated Hugging Face access/token, incompatible Transformers/PyTorch version, "
-                        "trust_remote_code requirement, CUDA not available to torch, or insufficient/fragmented VRAM. "
+                        "trust_remote_code requirement, CUDA not available to torch, insufficient/fragmented VRAM, "
+                        "or a migrated local folder that is missing required support/config files. "
                         f"Underlying error: {exc}"
                     ) from exc
+                finally:
+                    for _env_key, _prior in offline_env.items():
+                        if _prior is None:
+                            os.environ.pop(_env_key, None)
+                        else:
+                            os.environ[_env_key] = _prior
             self._loaded[name] = adapter
             loaded_at = datetime.now(timezone.utc).isoformat()
             meta = {
@@ -2454,6 +3266,22 @@ class ModelRegistry:
                 meta.update(deepcopy(placement))
                 meta.setdefault("device", device)
                 meta.setdefault("loaded_at", loaded_at)
+            actual_device = getattr(adapter, "device_value", None)
+            if actual_device:
+                meta["actual_runtime_device"] = str(actual_device)
+                # Keep the visible device accurate when an ONNX-only legacy row
+                # had to fall back to CPU because the active environment lacks
+                # ONNXRuntime CUDAExecutionProvider.
+                if str(actual_device).lower() == "cpu" and str(meta.get("device") or device).lower().startswith("cuda"):
+                    meta["device"] = "cpu"
+                    meta.setdefault("device_fallback_from", device)
+            warnings = []
+            for attr in ("device_warning", "runtime_warning"):
+                value = getattr(adapter, attr, None)
+                if value:
+                    warnings.append(str(value))
+            if warnings:
+                meta["warnings"] = list(dict.fromkeys((meta.get("warnings") or []) + warnings))
             self._loaded_meta[name] = meta
             return {
                 "model_name": name,
@@ -2462,6 +3290,8 @@ class ModelRegistry:
                 "already_loaded": False,
                 "provider": record.provider,
                 "device": meta.get("device") or device,
+                "actual_runtime_device": meta.get("actual_runtime_device"),
+                "warnings": meta.get("warnings") or [],
                 "model_id": kwargs.get("model_id") or kwargs.get("api_model_id"),
                 "placement": deepcopy(meta),
             }
@@ -2548,9 +3378,24 @@ class ModelRegistry:
             adapter = self._loaded.get(name)
         if adapter is None:
             raise RuntimeError(f"Model failed to load: {name}")
-        if (self._loaded_meta.get(name) or {}).get("offloaded_to_cpu") and str(device or "auto").lower() not in {"cpu"}:
-            self.reactivate_from_cpu(name, device=device)
-        return adapter.predict(image_path, device=device, **kwargs)
+        requested = self._preferred_runtime_device(device)
+        meta = self._loaded_meta.get(name) or {}
+        current = str(meta.get("device") or "")
+        if meta.get("offloaded_to_cpu") and str(device or "auto").lower() not in {"cpu"}:
+            self.reactivate_from_cpu(name, device=requested)
+            meta = self._loaded_meta.get(name) or meta
+            current = str(meta.get("device") or "")
+        # If the user explicitly selected a different GPU after the model was
+        # loaded, do not silently run on the stale device.  Move adapters that
+        # support .to(); repo-native adapters also receive the requested device
+        # in predict() and can reload their own sessions if needed.
+        if requested.startswith("cuda") and current and current != requested:
+            moved = self._move_adapter_to_device(adapter, requested)
+            meta.update({"device": requested, "device_retargeted_at": datetime.now(timezone.utc).isoformat(), "device_retarget_result": moved})
+            self._loaded_meta[name] = meta
+            if moved.get("errors") and not moved.get("moved_objects"):
+                raise RuntimeError(f"{name} is loaded on {current} and could not be moved to {requested}: {moved.get('errors')}")
+        return adapter.predict(image_path, device=requested if requested != "auto" else device, **kwargs)
 
     def chat(self, name: str, prompt: str, context: dict[str, Any], device: str = "auto", **kwargs: Any) -> dict[str, Any]:
         record = self.get_record(name)
@@ -2562,12 +3407,46 @@ class ModelRegistry:
             raise RuntimeError(f"Model failed to load: {name}")
         if not hasattr(adapter, "chat"):
             raise RuntimeError(f"Model adapter does not support chat: {record.label}")
-        if (self._loaded_meta.get(name) or {}).get("offloaded_to_cpu") and str(device or "auto").lower() not in {"cpu"}:
-            self.reactivate_from_cpu(name, device=device)
+        requested = self._preferred_runtime_device(device)
+        meta = self._loaded_meta.get(name) or {}
+        if meta.get("offloaded_to_cpu") and str(device or "auto").lower() not in {"cpu"}:
+            self.reactivate_from_cpu(name, device=requested)
+            meta = self._loaded_meta.get(name) or meta
+        current = str(meta.get("device") or "")
+        if requested.startswith("cuda") and current and current != requested:
+            moved = self._move_adapter_to_device(adapter, requested)
+            meta.update({"device": requested, "device_retargeted_at": datetime.now(timezone.utc).isoformat(), "device_retarget_result": moved})
+            self._loaded_meta[name] = meta
+            if moved.get("errors") and not moved.get("moved_objects"):
+                raise RuntimeError(f"{name} is loaded on {current} and could not be moved to {requested}: {moved.get('errors')}")
         if record.cloud:
             kwargs.setdefault("api_model_id", record.api_model_id or record.repo_id or record.name)
         else:
-            kwargs.setdefault("model_id", self.resolve_model_path(record, **kwargs))
+            resolved_model_id = self.resolve_model_path(record, **kwargs)
+            local_candidate = None
+            try:
+                local_candidate = Path(str(resolved_model_id)).expanduser() if resolved_model_id else None
+            except Exception:
+                local_candidate = None
+            downloaded_local = record.complete_local_dir(self.model_root, self.external_model_roots)
+            if downloaded_local and downloaded_local.exists():
+                kwargs.setdefault("model_id", str(downloaded_local))
+                kwargs.setdefault("local_files_only", True)
+                kwargs.setdefault("dct_resolved_local_model_path", str(downloaded_local))
+                kwargs.setdefault("allow_support_file_repair", False)
+            elif local_candidate and local_candidate.exists():
+                kwargs.setdefault("model_id", str(local_candidate))
+                kwargs.setdefault("local_files_only", True)
+                kwargs.setdefault("dct_resolved_local_model_path", str(local_candidate))
+                kwargs.setdefault("allow_support_file_repair", False)
+            elif getattr(record, "download_supported", False) and (record.repo_id or record.direct_url or record.provider == "ultralytics") and not kwargs.get("allow_remote_load"):
+                raise RuntimeError(
+                    f"{record.label} is not resolved to a local model folder for chat. "
+                    "Use Models > Rescan after migration, add the old install/models folder as an external model root, "
+                    "or use the explicit Download/Update button. Chat will not auto-download model weights."
+                )
+            else:
+                kwargs.setdefault("model_id", resolved_model_id)
         return adapter.chat(prompt, context=context, device=device, **kwargs)
 
 
@@ -2595,52 +3474,120 @@ def directory_size_gb(path: Path) -> float:
 
 
 def cancellable_tqdm_class(cancel_event):
-    if cancel_event is None:
+    return download_progress_tqdm_class(progress=None, cancel_event=cancel_event, label="model")
+
+
+def download_progress_tqdm_class(progress=None, cancel_event=None, label: str = "model"):
+    """Return a tqdm subclass that bridges Hugging Face progress to DCT jobs.
+
+    ``snapshot_download`` owns the file-level progress bars internally.  Earlier
+    builds only used a directory-size heartbeat, which meant small repos such as
+    WD/PixAI ONNX taggers could finish between heartbeat ticks and leave the
+    frontend circle appearing stuck until a later full catalog refresh.  This
+    subclass preserves cancellation support and emits throttled job/lifecycle
+    updates directly from tqdm byte/file progress.
+    """
+    if progress is None and cancel_event is None:
         return None
     try:
         from tqdm.auto import tqdm
     except Exception:
         return None
 
-    class CancellableTqdm(tqdm):
-        def update(self, n=1):  # type: ignore[override]
-            if cancel_event.is_set():
+    class DCTDownloadTqdm(tqdm):
+        _last_emit_ts = 0.0
+
+        def _check_cancelled(self) -> None:
+            if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Download cancelled by user")
-            return super().update(n)
+
+        def _emit_progress(self, *, force: bool = False) -> None:
+            if progress is None:
+                return
+            now = time.monotonic()
+            if not force and (now - self._last_emit_ts) < 0.35:
+                return
+            self._last_emit_ts = now
+            total = float(getattr(self, "total", 0) or 0)
+            n = float(getattr(self, "n", 0) or 0)
+            if total > 0:
+                frac = 0.05 + min(0.90, (n / max(1.0, total)) * 0.90)
+                units = getattr(self, "unit", "it") or "it"
+                msg = f"Downloading {label}: {int(n)}/{int(total)} {units}"
+            else:
+                # Unknown totals still deserve a live heartbeat. Keep the value
+                # below the finalization band so completed() remains visually
+                # distinct.
+                frac = min(0.92, 0.05 + min(0.50, n / 100000000.0))
+                msg = f"Downloading {label}: {int(n)} item(s)/byte(s) transferred"
+            try:
+                progress(frac, msg)
+            except Exception:
+                pass
+
+        def update(self, n=1):  # type: ignore[override]
+            self._check_cancelled()
+            result = super().update(n)
+            self._emit_progress()
+            return result
 
         def refresh(self, *args, **kwargs):  # type: ignore[override]
-            if cancel_event.is_set():
-                raise RuntimeError("Download cancelled by user")
-            return super().refresh(*args, **kwargs)
+            self._check_cancelled()
+            result = super().refresh(*args, **kwargs)
+            self._emit_progress()
+            return result
 
-    return CancellableTqdm
+        def close(self):  # type: ignore[override]
+            try:
+                self._emit_progress(force=True)
+            finally:
+                return super().close()
+
+    return DCTDownloadTqdm
 
 
 def start_directory_progress_monitor(path: Path, progress, label: str, estimate_bytes: int = 0):
     """Heartbeat progress for snapshot_download, whose file-level progress is not
     surfaced through our backend job table. This keeps circular download
-    indicators moving while Hugging Face writes files into local_dir.
+    indicators moving while Hugging Face writes files into local_dir and emits
+    an explicit stall notice when bytes stop changing for an extended period.
     """
     if progress is None:
         return None, None
     stop = threading.Event()
     cancel_event = getattr(progress, "cancel_event", None)
+    try:
+        stall_notice_seconds = max(20, int(os.environ.get("DCT_MODEL_DOWNLOAD_STALL_NOTICE_SEC", "75") or "75"))
+    except Exception:
+        stall_notice_seconds = 75
 
     def monitor() -> None:
         heartbeat = 0
         last_bytes = -1
-        while not stop.wait(2.0):
+        last_change = time.monotonic()
+        last_stall_emit = 0.0
+        while not stop.wait(1.0):
             if cancel_event is not None and cancel_event.is_set():
                 break
             heartbeat += 1
             current = directory_size_bytes(path)
+            now = time.monotonic()
+            changed = current != last_bytes
+            if changed:
+                last_change = now
             if estimate_bytes > 0:
                 frac = 0.05 + min(0.90, (current / max(1, estimate_bytes)) * 0.90)
             else:
-                frac = min(0.92, 0.05 + heartbeat * 0.01)
-            if current != last_bytes or heartbeat % 3 == 0:
+                frac = min(0.92, 0.05 + heartbeat * 0.006)
+            stall_seconds = max(0, now - last_change)
+            should_emit_stall = stall_seconds >= stall_notice_seconds and (now - last_stall_emit) >= 15
+            if changed or heartbeat % 5 == 0 or should_emit_stall:
+                message = f"Downloading {label}: {current / (1024 ** 3):.2f} GiB present in local cache"
+                if should_emit_stall:
+                    message += f" · no new local bytes for {int(stall_seconds)}s; still waiting on Hugging Face/network transfer"
+                    last_stall_emit = now
                 try:
-                    progress(frac, f"Downloading {label}: {current / (1024 ** 3):.2f} GiB present in local cache")
+                    progress(frac, message)
                 except Exception:
                     break
                 last_bytes = current

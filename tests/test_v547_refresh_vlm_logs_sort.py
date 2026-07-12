@@ -44,7 +44,8 @@ def test_v547_frontend_contains_refresh_safe_logs_and_predicted_sort_controls():
     assert "Download Log File" in js
     assert "updateTileSelectionDom" in js
     assert "updateLiveStatusDom" in js
-    assert "passiveSensitiveTabs" in js
+    assert "normal button clicks are allowed" in js
+    assert "recentUserScroll(900)" in js
 
 from fastapi.testclient import TestClient
 

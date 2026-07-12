@@ -268,6 +268,106 @@ class Database:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS global_assets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sha256 TEXT NOT NULL UNIQUE,
+                    path TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    media_type TEXT NOT NULL DEFAULT 'unknown',
+                    ext TEXT NOT NULL DEFAULT '',
+                    width INTEGER,
+                    height INTEGER,
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    phash TEXT,
+                    original_filename TEXT,
+                    source_site TEXT,
+                    source_post_id TEXT,
+                    source_url TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS global_asset_tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    global_asset_id INTEGER NOT NULL REFERENCES global_assets(id) ON DELETE CASCADE,
+                    tag TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'general',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    ordinal INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(global_asset_id, tag, source)
+                );
+
+                CREATE TABLE IF NOT EXISTS global_asset_captions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    global_asset_id INTEGER NOT NULL REFERENCES global_assets(id) ON DELETE CASCADE,
+                    caption TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(global_asset_id, source)
+                );
+
+                CREATE TABLE IF NOT EXISTS global_asset_sources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    global_asset_id INTEGER NOT NULL REFERENCES global_assets(id) ON DELETE CASCADE,
+                    source_site TEXT,
+                    source_post_id TEXT,
+                    source_url TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS dataset_branches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    root_path TEXT NOT NULL,
+                    purpose TEXT NOT NULL DEFAULT '',
+                    settings_json TEXT NOT NULL DEFAULT '{}',
+                    active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS dataset_branch_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    branch_id INTEGER NOT NULL REFERENCES dataset_branches(id) ON DELETE CASCADE,
+                    global_asset_id INTEGER NOT NULL REFERENCES global_assets(id) ON DELETE CASCADE,
+                    include INTEGER NOT NULL DEFAULT 1,
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    role TEXT NOT NULL DEFAULT 'original',
+                    media_path TEXT,
+                    tag_path TEXT,
+                    caption_path TEXT,
+                    item_config_json TEXT NOT NULL DEFAULT '{}',
+                    ordinal INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(branch_id, global_asset_id, role, media_path)
+                );
+
+                CREATE TABLE IF NOT EXISTS global_asset_variants (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    global_asset_id INTEGER NOT NULL REFERENCES global_assets(id) ON DELETE CASCADE,
+                    branch_id INTEGER REFERENCES dataset_branches(id) ON DELETE SET NULL,
+                    branch_item_id INTEGER REFERENCES dataset_branch_items(id) ON DELETE SET NULL,
+                    variant_path TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    variant_sha256 TEXT,
+                    variant_kind TEXT NOT NULL DEFAULT 'augmentation',
+                    transform_json TEXT NOT NULL DEFAULT '{}',
+                    tag_path TEXT,
+                    caption_path TEXT,
+                    media_type TEXT NOT NULL DEFAULT 'unknown',
+                    ext TEXT NOT NULL DEFAULT '',
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(global_asset_id, branch_id, variant_path)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_media_dataset ON media(dataset_id);
                 CREATE INDEX IF NOT EXISTS idx_media_sha ON media(sha256);
                 CREATE INDEX IF NOT EXISTS idx_media_phash ON media(phash);
@@ -276,6 +376,15 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_predictions_media ON predictions(media_id);
                 CREATE INDEX IF NOT EXISTS idx_tag_prediction_scores_media_tag ON tag_prediction_scores(media_id, tag);
                 CREATE INDEX IF NOT EXISTS idx_tag_prediction_scores_model ON tag_prediction_scores(model_name, kind);
+                CREATE INDEX IF NOT EXISTS idx_global_assets_sha ON global_assets(sha256);
+                CREATE INDEX IF NOT EXISTS idx_global_assets_source ON global_assets(source_site, source_post_id);
+                CREATE INDEX IF NOT EXISTS idx_global_asset_tags_tag ON global_asset_tags(tag);
+                CREATE INDEX IF NOT EXISTS idx_global_asset_tags_asset ON global_asset_tags(global_asset_id);
+                CREATE INDEX IF NOT EXISTS idx_global_asset_sources_lookup ON global_asset_sources(source_site, source_post_id, source_url);
+                CREATE INDEX IF NOT EXISTS idx_dataset_branch_items_branch ON dataset_branch_items(branch_id);
+                CREATE INDEX IF NOT EXISTS idx_dataset_branch_items_asset ON dataset_branch_items(global_asset_id);
+                CREATE INDEX IF NOT EXISTS idx_global_asset_variants_asset ON global_asset_variants(global_asset_id);
+                CREATE INDEX IF NOT EXISTS idx_global_asset_variants_branch ON global_asset_variants(branch_id);
                 """
             )
 

@@ -285,6 +285,27 @@ class DistributedService:
         command = self.start_tool_command(node, host=host, port=port, worker_mode=worker_mode)
         return self.run_ssh_command(name, command, user_approved=user_approved, timeout_seconds=timeout_seconds)
 
+
+    def start_hydra_service_command(self, node: DistributedNode, *, host: str = "0.0.0.0", port: int = 8080, hydra_repo_path: str = "", device: str = "cuda", batch_size: int = 1, seqlen: int = 1024, varlen: bool = False) -> str:
+        """Build a reviewed SSH command for running RedRocket Hydra's service.py remotely."""
+        hydra_path = str(hydra_repo_path or posixpath.join(node.remote_root or "~/DataCurationToolRemote", "models", "RedRocket_Hydra")).rstrip("/\\")
+        python_cmd = node.python_command or "python"
+        args = f"{python_cmd} service.py -i {shlex.quote(host)} -p {int(port or 8080)} -d {shlex.quote(device or 'cuda')} -b {max(1, int(batch_size or 1))} -S {max(1, int(seqlen or 1024))}"
+        if varlen:
+            args += " -V"
+        if node.conda_env:
+            run = f"conda run -n {shlex.quote(node.conda_env)} {args}"
+        else:
+            run = args
+        if node.platform == "windows":
+            return f"cd /d {shlex.quote(hydra_path)} && start /B {run}"
+        return f"cd {_quote_remote_path(hydra_path)} && mkdir -p runtime && nohup {run} > runtime/hydra_service.log 2>&1 & echo $!"
+
+    def start_hydra_service(self, name: str, *, user_approved: bool = False, host: str = "0.0.0.0", port: int = 8080, hydra_repo_path: str = "", device: str = "cuda", batch_size: int = 1, seqlen: int = 1024, varlen: bool = False, timeout_seconds: int = 30) -> dict[str, Any]:
+        node = self.get_node(name)
+        command = self.start_hydra_service_command(node, host=host, port=port, hydra_repo_path=hydra_repo_path, device=device, batch_size=batch_size, seqlen=seqlen, varlen=varlen)
+        return self.run_ssh_command(name, command, user_approved=user_approved, timeout_seconds=timeout_seconds)
+
     def plan_download_shards(self, payload: dict[str, Any], *, node_names: list[str] | None = None, include_local: bool = False) -> dict[str, Any]:
         self._load()
         selected = []
@@ -360,6 +381,62 @@ class DistributedService:
         local_shards = [s for s in plan["shards"] if s.get("kind") == "local"]
         return {"run_id": plan["run_id"], "plan": plan, "remote_results": results, "local_shards": local_shards}
 
+
+
+    def plan_model_run_shards(self, payload: dict[str, Any], *, node_names: list[str] | None = None, include_local: bool = False) -> dict[str, Any]:
+        """Split a model-run request across local/remote DCT worker APIs.
+
+        Remote workers use their own model/device configuration.  The coordinator
+        only partitions media ids and forwards the same model/options contract.
+        """
+        self._load()
+        media_ids = [int(x) for x in payload.get("media_ids") or [] if str(x).strip()]
+        if not media_ids:
+            raise ValueError("media_ids are required for model-run dispatch.")
+        wanted = {n for n in (node_names or []) if n}
+        selected = []
+        for node in self.state.nodes.values():
+            if not node.enabled or node.role != "worker":
+                continue
+            if wanted and node.name not in wanted:
+                continue
+            caps = {str(x).lower() for x in (node.capabilities or [])}
+            if caps and not ({"model", "model_worker", "tagger", "hydra", "inference"} & caps):
+                continue
+            selected.append(node)
+        workers: list[dict[str, Any]] = []
+        if include_local:
+            workers.append({"name": "local", "kind": "local", "base_url": ""})
+        workers += [{"name": n.name, "kind": "remote", "base_url": n.base_url, "node": n} for n in selected]
+        if not workers:
+            raise ValueError("No enabled model worker nodes selected. Add a device, enable include_local, or add a model/hydra capability to the worker.")
+        run_id = _now_id("model_dispatch")
+        shards: list[dict[str, Any]] = []
+        for idx, worker in enumerate(workers):
+            ids = media_ids[idx::len(workers)]
+            if not ids:
+                continue
+            body = dict(payload)
+            body["media_ids"] = ids
+            body["distributed_dispatch"] = {"run_id": run_id, "worker_index": idx, "worker_count": len(workers), "worker_name": worker["name"]}
+            shards.append({"node": worker["name"], "kind": worker["kind"], "base_url": worker.get("base_url") or "", "payload": body})
+        return {"run_id": run_id, "worker_count": len(workers), "media_count": len(media_ids), "shards": shards, "note": "Remote model shards call /api/models/run on each worker. Use Hydra service URL options when a worker exposes RedRocket Hydra service.py instead of loading the model inside DCT."}
+
+    def dispatch_model_run(self, payload: dict[str, Any], *, node_names: list[str] | None = None, include_local: bool = False, parallel: bool = True, timeout_seconds: int = 30) -> dict[str, Any]:
+        plan = self.plan_model_run_shards(payload, node_names=node_names, include_local=include_local)
+        remote_shards = [s for s in plan["shards"] if s.get("kind") == "remote"]
+        results: list[dict[str, Any]] = []
+        def send(shard: dict[str, Any]) -> dict[str, Any]:
+            if not shard.get("base_url"):
+                return {"node": shard.get("node"), "ok": False, "error": "Worker base_url is not configured; start the remote app and set its URL."}
+            return {"node": shard.get("node"), **self._post_json(shard["base_url"], "/api/models/run", shard["payload"], timeout_seconds=timeout_seconds)}
+        if parallel and len(remote_shards) > 1:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(remote_shards)) as ex:
+                results = list(ex.map(send, remote_shards))
+        else:
+            results = [send(s) for s in remote_shards]
+        local_shards = [s for s in plan["shards"] if s.get("kind") == "local"]
+        return {"run_id": plan["run_id"], "plan": plan, "remote_results": results, "local_shards": local_shards}
     def merge_back(self, *, node_names: list[str] | None = None, remote_path: str | None = None, run_id: str | None = None, user_approved: bool = False, timeout_seconds: int = 1800) -> dict[str, Any]:
         if not user_approved:
             raise PermissionError("Merge-back SCP download requires user_approved=true for this action.")

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import shutil
 import sqlite3
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -72,6 +75,24 @@ class InstallMigrationService:
         # Legacy mirror used by older builds and by a few compatibility paths.
         "tag_dictionary": ("tag", "category", "post_count", "aliases_json", "implications_json", "updated_at"),
     }
+
+    # Metadata rows in this table contain local_path values from the previous
+    # installation.  Importing them during migration is not only unnecessary
+    # after runtime/tag_exports has been moved, it can also keep SQLite in a
+    # write transaction while the job-progress callback tries to update the same
+    # DB.  The current install rebuilds this table from the migrated cache via
+    # TagService.reconcile_export_cache()/import_cached_exports().
+    TAG_DB_REBUILD_FROM_CACHE_TABLES = {"tag_export_files"}
+
+    # The legacy mirror is redundant whenever the modern normalized dictionary
+    # tables are present.  Skipping it prevents migration from spending minutes
+    # copying duplicate tag rows that the current UI does not need.
+    TAG_DB_LEGACY_MIRROR_TABLES = {"tag_dictionary"}
+
+    # Keep migration job rows responsive. A full migration can involve tens of
+    # thousands of files; serializing every operation into the Jobs table is a
+    # common reason the app appears to stall after progress reaches 100%.
+    RESULT_FILE_DETAIL_LIMIT = 500
 
     def __init__(self, paths: AppPaths, db: Database | None = None, tag_service: Any | None = None, app_settings: Any | None = None):
         self.paths = paths
@@ -277,6 +298,9 @@ class InstallMigrationService:
         newest_first: bool = True,
         delete_source_duplicates: bool = False,
         progress: ProgressCallback | None = None,
+        parallel_file_transfers: bool | None = None,
+        file_transfer_workers: int | None = None,
+        fast_same_volume_moves: bool | None = None,
     ) -> dict[str, Any]:
         include = {**self.DEFAULT_INCLUDE, **(include or {})}
         mode = str(mode or "move").lower().strip()
@@ -285,13 +309,32 @@ class InstallMigrationService:
         conflict = str(conflict or "skip_existing").lower().strip()
         if conflict not in {"skip_existing", "replace_if_newer", "replace"}:
             raise ValueError("Conflict policy must be skip_existing, replace_if_newer, or replace.")
+        if parallel_file_transfers is None:
+            parallel_file_transfers = bool(getattr(self.app_settings, "migration_parallel_file_transfers", True)) if self.app_settings is not None else True
+        try:
+            file_transfer_workers = int(file_transfer_workers if file_transfer_workers is not None else getattr(self.app_settings, "migration_file_transfer_workers", 4))
+        except Exception:
+            file_transfer_workers = 4
+        file_transfer_workers = max(1, min(32, file_transfer_workers))
+        if fast_same_volume_moves is None:
+            fast_same_volume_moves = bool(getattr(self.app_settings, "migration_fast_same_volume_moves", True)) if self.app_settings is not None else True
+        fast_same_volume_moves = bool(fast_same_volume_moves)
+        use_parallel_file_transfers = bool(parallel_file_transfers) and file_transfer_workers > 1 and not dry_run and mode in {"copy", "move"}
         roots = self.normalize_source_paths(source_paths)
         current_root = self.paths.root.resolve()
         roots = [root for root in roots if root.exists() and root.resolve() != current_root]
+        if progress:
+            progress(0.003, f"Preparing migration from {len(roots)} previous install(s)")
         if newest_first:
+            if progress:
+                progress(0.006, "Ordering previous installs by newest reusable assets")
             roots.sort(key=lambda root: self.latest_asset_mtime(root, include), reverse=True)
 
-        plan = self._build_file_plan(roots, include, conflict)
+        if progress:
+            progress(0.01, "Scanning previous installs and building migration plan")
+        plan = self._build_file_plan(roots, include, conflict, progress=progress, mode=mode, fast_same_volume_moves=fast_same_volume_moves)
+        if progress:
+            progress(0.02, f"Migration plan prepared: {len(plan)} file operation(s)")
         total_work = max(1, len(plan) + (len(roots) if include.get("tag_database", False) else 0))
         done_work = 0
         result: dict[str, Any] = {
@@ -309,49 +352,204 @@ class InstallMigrationService:
             "deleted_source_duplicates": 0,
             "errors": [],
             "files": [],
+            "files_total": 0,
+            "files_truncated": False,
+            "file_detail_limit": self.RESULT_FILE_DETAIL_LIMIT,
             "tag_database": [],
             "custom_models": [],
+            "parallel_file_transfers": bool(use_parallel_file_transfers),
+            "file_transfer_workers": int(file_transfer_workers if use_parallel_file_transfers else 1),
+            "fast_same_volume_moves": bool(fast_same_volume_moves),
         }
+
+        def overall_progress(work_value: float) -> float:
+            return min(0.98, 0.02 + 0.96 * max(0.0, min(1.0, float(work_value or 0.0))))
 
         def tick(message: str) -> None:
             if progress:
-                progress(min(0.98, done_work / total_work), message)
+                progress(overall_progress(done_work / total_work), message)
 
-        for op in plan:
-            done_work += 1
-            tick(f"{mode.title()} {op['asset']}: {Path(op['source']).name}")
-            try:
-                self._apply_file_op(op, mode=mode, dry_run=dry_run, delete_source_duplicates=delete_source_duplicates)
+        if use_parallel_file_transfers:
+            transfer_ops = [op for op in plan if str(op.get("action") or "") not in {"skip_same_path", "skip_nested_target", "skip_existing", "skip_planned_newer", "skip_corrupt_model", "skip_duplicate", "skip_duplicate_group"}]
+            total_bytes = max(1, sum(max(0, int(op.get("bytes") or 0)) for op in transfer_ops))
+            completed_bytes = 0
+            completed_ops = 0
+            progress_lock = threading.Lock()
+            op_done_bytes: dict[int, int] = {}
+            op_total_bytes: dict[int, int] = {}
+            last_emit = 0.0
+
+            def emit_parallel_progress(message: str = "Migrating assets in parallel") -> None:
+                nonlocal last_emit
+                if not progress:
+                    return
+                now = time.monotonic()
+                if now - last_emit < 0.25 and completed_ops < len(transfer_ops):
+                    return
+                last_emit = now
+                local = min(1.0, float(completed_bytes) / float(total_bytes))
+                op_label = f"{completed_ops}/{max(1, len(transfer_ops))} file(s)"
+                progress(overall_progress(local * (len(plan) / max(1, total_work))), f"{message} · {op_label} · {completed_bytes / (1024**3):.2f}/{total_bytes / (1024**3):.2f} GiB")
+
+            def run_parallel_op(index: int, op: dict[str, Any]) -> tuple[int, dict[str, Any], str | None]:
+                nonlocal completed_bytes, completed_ops
+                def op_progress(done_bytes: int, total_for_op: int, _index=index):
+                    nonlocal completed_bytes
+                    with progress_lock:
+                        old_done = op_done_bytes.get(_index, 0)
+                        total = int(total_for_op or op.get('bytes') or 0)
+                        op_total_bytes[_index] = max(total, op_total_bytes.get(_index, 0))
+                        new_done = max(0, min(max(1, total), int(done_bytes or 0)))
+                        if new_done > old_done:
+                            completed_bytes += (new_done - old_done)
+                            op_done_bytes[_index] = new_done
+                        emit_parallel_progress(f"{mode.title()} {op.get('asset')} in parallel")
+                try:
+                    self._apply_file_op(op, mode=mode, dry_run=dry_run, delete_source_duplicates=delete_source_duplicates, progress=op_progress, fast_same_volume_moves=fast_same_volume_moves)
+                    with progress_lock:
+                        total = int(op.get('bytes') or op_total_bytes.get(index, 0) or 0)
+                        old_done = op_done_bytes.get(index, 0)
+                        if total > old_done:
+                            completed_bytes += total - old_done
+                            op_done_bytes[index] = total
+                        completed_ops += 1
+                        emit_parallel_progress(f"{mode.title()} {op.get('asset')} in parallel")
+                    return index, op, None
+                except Exception as exc:
+                    with progress_lock:
+                        completed_ops += 1
+                        emit_parallel_progress(f"{mode.title()} {op.get('asset')} in parallel")
+                    return index, op, str(exc)
+
+            skipped_ops = [op for op in plan if op not in transfer_ops]
+            for op in skipped_ops:
                 action = op.get("action") or "skipped"
-                if action == "copy":
-                    result["copied"] += 1
-                elif action == "symlink":
-                    result["symlinked"] += 1
-                elif action == "move":
-                    result["moved"] += 1
-                elif action == "replace":
-                    result["replaced"] += 1
-                elif action == "delete_duplicate_source":
-                    result["deleted_source_duplicates"] += 1
+                if action in {"skip_duplicate", "skip_duplicate_group"} and mode == "move" and delete_source_duplicates and not dry_run:
+                    try:
+                        source = Path(op["source"])
+                        if source.exists():
+                            if source.is_dir():
+                                shutil.rmtree(source)
+                                op["action"] = "delete_duplicate_group_source"
+                                result["deleted_source_duplicates"] += int(op.get("files") or 1)
+                            else:
+                                source.unlink()
+                                op["action"] = "delete_duplicate_source"
+                                result["deleted_source_duplicates"] += 1
+                        else:
+                            result["skipped"] += 1
+                    except Exception as exc:
+                        op["error"] = str(exc)
+                        result["errors"].append(op)
                 else:
-                    result["skipped"] += 1
-                result["files"].append(op)
-            except Exception as exc:
-                op["error"] = str(exc)
-                result["errors"].append(op)
+                    result["skipped"] += int(op.get("files") or 1)
+                result["files_total"] += 1
+                if dry_run or len(result["files"]) < min(int(getattr(self, "RESULT_FILE_DETAIL_LIMIT", 500) or 500), 500):
+                    result["files"].append(op)
+                else:
+                    result["files_truncated"] = True
+                    result["files_omitted"] = int(result.get("files_omitted") or 0) + 1
+
+            if transfer_ops and progress:
+                progress(overall_progress(0.0), f"Starting parallel {mode} with {file_transfer_workers} worker(s): {len(transfer_ops)} file(s), {total_bytes / (1024**3):.2f} GiB")
+            with ThreadPoolExecutor(max_workers=file_transfer_workers, thread_name_prefix="dct-migration") as executor:
+                futures = [executor.submit(run_parallel_op, idx, op) for idx, op in enumerate(transfer_ops)]
+                for fut in as_completed(futures):
+                    _idx, op, error = fut.result()
+                    if error:
+                        op["error"] = error
+                        result["errors"].append(op)
+                    else:
+                        action = op.get("action") or "skipped"
+                        if action == "copy":
+                            result["copied"] += 1
+                        elif action in {"move", "move_fast", "move_dir", "move_dir_fast"}:
+                            result["moved"] += int(op.get("files") or 1)
+                        elif action == "replace":
+                            result["replaced"] += 1
+                        elif action in {"delete_duplicate_source", "delete_duplicate_group_source"}:
+                            result["deleted_source_duplicates"] += int(op.get("files") or 1)
+                        else:
+                            result["skipped"] += int(op.get("files") or 1)
+                    result["files_total"] += 1
+                    file_detail_limit = min(int(getattr(self, "RESULT_FILE_DETAIL_LIMIT", 500) or 500), 500)
+                    if len(result["files"]) < file_detail_limit:
+                        result["files"].append(op)
+                    else:
+                        result["files_truncated"] = True
+                        result["files_omitted"] = int(result.get("files_omitted") or 0) + 1
+            done_work += len(plan)
+        else:
+            for op in plan:
+                op_start = done_work / total_work
+                op_end = (done_work + 1) / total_work
+                tick(f"{mode.title()} {op['asset']}: {Path(op['source']).name}")
+
+                def op_progress(done_bytes: int, total_bytes: int, _op=op, _start=op_start, _end=op_end) -> None:
+                    if not progress:
+                        return
+                    try:
+                        total_b = max(1, int(total_bytes or _op.get('bytes') or 1))
+                        local = max(0.0, min(1.0, float(done_bytes or 0) / float(total_b)))
+                    except Exception:
+                        local = 0.0
+                    pct = int(local * 100)
+                    size_mb = max(0.0, float(total_bytes or _op.get('bytes') or 0) / (1024.0 * 1024.0))
+                    message = f"{mode.title()} {_op.get('asset')}: {Path(str(_op.get('source') or '')).name} · {pct}% of {size_mb:.1f} MB"
+                    progress(overall_progress(_start + (_end - _start) * local), message)
+
+                try:
+                    self._apply_file_op(op, mode=mode, dry_run=dry_run, delete_source_duplicates=delete_source_duplicates, progress=op_progress, fast_same_volume_moves=fast_same_volume_moves)
+                    done_work += 1
+                    action = op.get("action") or "skipped"
+                    if action == "copy":
+                        result["copied"] += 1
+                    elif action == "symlink":
+                        result["symlinked"] += 1
+                    elif action in {"move", "move_fast", "move_dir", "move_dir_fast"}:
+                        result["moved"] += int(op.get("files") or 1)
+                    elif action == "replace":
+                        result["replaced"] += 1
+                    elif action in {"delete_duplicate_source", "delete_duplicate_group_source"}:
+                        result["deleted_source_duplicates"] += int(op.get("files") or 1)
+                    else:
+                        result["skipped"] += 1
+                    result["files_total"] += 1
+                    file_detail_limit = min(int(getattr(self, "RESULT_FILE_DETAIL_LIMIT", 500) or 500), 500)
+                    if dry_run or len(result["files"]) < file_detail_limit:
+                        result["files"].append(op)
+                    else:
+                        result["files_truncated"] = True
+                        result["files_omitted"] = int(result.get("files_omitted") or 0) + 1
+                except Exception as exc:
+                    op["error"] = str(exc)
+                    result["errors"].append(op)
         if include.get("tag_database", False):
             for root in roots:
+                root_start = done_work / total_work
+                root_end = (done_work + 1) / total_work
                 done_work += 1
                 old_db = root / "runtime" / "app.db"
                 tick(f"Importing tag database rows from {old_db}")
                 if not old_db.exists():
                     result["tag_database"].append({"path": str(old_db), "skipped": "missing"})
                     continue
+                def db_progress(local_value: float, message: str = "", _start=root_start, _end=root_end) -> None:
+                    if not progress:
+                        return
+                    try:
+                        local = max(0.0, min(1.0, float(local_value or 0.0)))
+                    except Exception:
+                        local = 0.0
+                    progress(overall_progress(_start + (_end - _start) * local), message or f"Importing tag database rows from {old_db}")
                 try:
-                    db_result = self.import_tag_database(old_db, dry_run=dry_run)
+                    db_result = self.import_tag_database(old_db, dry_run=dry_run, progress=db_progress)
                     result["tag_database"].append(db_result)
                 except Exception as exc:
                     result["errors"].append({"asset": "tag_database", "source": str(old_db), "error": str(exc)})
+        if result.get("files_omitted"):
+            result["files_result_limit"] = 500
+            result["files_result_note"] = "Large migration result was summarized to keep job completion and Dashboard refresh responsive. Use Scan for the full plan preview."
         if include.get("custom_models", False) or include.get("models", False):
             for root in roots:
                 try:
@@ -370,10 +568,15 @@ class InstallMigrationService:
             progress(1.0, "Asset migration completed" if not dry_run else "Asset migration dry-run completed")
         return result
 
-    def _build_file_plan(self, roots: list[Path], include: dict[str, bool], conflict: str) -> list[dict[str, Any]]:
+    def _build_file_plan(self, roots: list[Path], include: dict[str, bool], conflict: str, progress: ProgressCallback | None = None, mode: str = "copy", fast_same_volume_moves: bool = True) -> list[dict[str, Any]]:
         plan: list[dict[str, Any]] = []
         planned_targets: set[str] = set()
-        for root in roots:
+        for root_index, root in enumerate(roots, start=1):
+            if progress:
+                try:
+                    progress(0.01, f"Scanning install {root_index}/{len(roots)}: {root}")
+                except Exception:
+                    pass
             for spec in self.ASSET_SPECS:
                 if not include.get(spec.key, False):
                     continue
@@ -383,20 +586,56 @@ class InstallMigrationService:
                 target_base = self._target_for_spec(spec)
                 if spec.key == "models" and src_base.is_dir():
                     for group_path, group_files, valid, reason in self._iter_model_asset_groups(src_base):
+                        try:
+                            rel_group = group_path.relative_to(src_base)
+                        except Exception:
+                            rel_group = Path(group_path.name)
+                        group_target = target_base / rel_group
+                        group_bytes = sum(int(f.stat().st_size) for f in group_files if f.exists() and f.is_file())
                         if not valid:
-                            try:
-                                rel_group = group_path.relative_to(src_base)
-                            except Exception:
-                                rel_group = Path(group_path.name)
                             plan.append({
                                 "asset": spec.key,
                                 "source": str(group_path),
-                                "target": str(target_base / rel_group),
+                                "target": str(group_target),
                                 "action": "skip_corrupt_model",
                                 "reason": reason,
                                 "bytes": 0,
+                                "files": 0,
                             })
                             continue
+                        # In move mode, a complete model directory is the atomic
+                        # unit the user actually wants migrated.  Moving every
+                        # shard independently can turn same-SSD migration into
+                        # thousands of tiny operations and can also leave the UI
+                        # apparently stuck on the final few large files.  When the
+                        # target group does not exist, plan one directory rename.
+                        if mode == "move" and fast_same_volume_moves and group_path.is_dir():
+                            if not group_target.exists():
+                                plan.append({
+                                    "asset": spec.key,
+                                    "source": str(group_path),
+                                    "target": str(group_target),
+                                    "action": "move_dir_fast",
+                                    "bytes": int(group_bytes),
+                                    "files": len(group_files),
+                                    "model_group": str(group_path),
+                                    "reason": "same-volume model directory move candidate",
+                                })
+                                planned_targets.add(str(group_target.resolve()).lower())
+                                continue
+                            if self._model_group_target_complete(group_path, group_target, group_files):
+                                plan.append({
+                                    "asset": spec.key,
+                                    "source": str(group_path),
+                                    "target": str(group_target),
+                                    "action": "skip_duplicate_group",
+                                    "duplicate": True,
+                                    "bytes": int(group_bytes),
+                                    "files": len(group_files),
+                                    "model_group": str(group_path),
+                                    "reason": "target model directory already contains matching files",
+                                })
+                                continue
                         for source_file in group_files:
                             try:
                                 rel = source_file.relative_to(src_base)
@@ -476,11 +715,25 @@ class InstallMigrationService:
             return {"asset": asset_key, "source": str(source), "target": str(target), "action": "skip_existing", "bytes": int(size)}
         return {"asset": asset_key, "source": str(source), "target": str(target), "action": "copy", "bytes": int(size)}
 
-    def _apply_file_op(self, op: dict[str, Any], *, mode: str, dry_run: bool, delete_source_duplicates: bool) -> None:
+    def _apply_file_op(self, op: dict[str, Any], *, mode: str, dry_run: bool, delete_source_duplicates: bool, progress: Callable[[int, int], None] | None = None, fast_same_volume_moves: bool = True) -> None:
         source = Path(op["source"])
         target = Path(op["target"])
         action = str(op.get("action") or "")
         if action in {"skip_same_path", "skip_nested_target", "skip_existing", "skip_planned_newer", "skip_corrupt_model"}:
+            return
+        if action == "skip_duplicate_group":
+            total = int(op.get("bytes") or 1)
+            if mode == "move" and delete_source_duplicates and not dry_run and source.exists() and source.is_dir():
+                try:
+                    shutil.rmtree(source)
+                    op["action"] = "delete_duplicate_group_source"
+                except Exception:
+                    op["action"] = "skip_duplicate_group"
+            if progress:
+                try:
+                    progress(total, total)
+                except Exception:
+                    pass
             return
         if action == "skip_duplicate":
             if mode == "move" and delete_source_duplicates and not dry_run and source.exists():
@@ -490,22 +743,237 @@ class InstallMigrationService:
         if dry_run:
             op["action"] = "replace" if action == "replace" else mode
             return
+        # Re-check at execution time.  A previous failed/interrupted migration,
+        # another worker, or a user retry can leave the target already present
+        # even when the plan classified this row as transferable.  Never rewrite
+        # a multi-GB model shard if the target is already complete.
+        try:
+            if target.exists() and source.exists() and source.is_file() and target.is_file() and self._same_file_content(source, target):
+                total = int(op.get("bytes") or source.stat().st_size or 1)
+                if mode == "move" and delete_source_duplicates:
+                    try:
+                        source.unlink()
+                        op["action"] = "delete_duplicate_source"
+                    except Exception:
+                        op["action"] = "skip_duplicate_runtime"
+                else:
+                    op["action"] = "skip_duplicate_runtime"
+                if progress:
+                    try:
+                        progress(total, total)
+                    except Exception:
+                        pass
+                return
+        except Exception:
+            pass
         target.parent.mkdir(parents=True, exist_ok=True)
-        if action == "replace" and target.exists():
+        if action == "move_dir_fast":
+            moved_fast = self._move_directory_with_progress(source, target, progress=progress, fast_same_volume_moves=fast_same_volume_moves)
+            op["action"] = "move_dir_fast" if moved_fast else "move_dir"
+            return
+        if mode == "copy":
+            if action == "replace" and target.exists():
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+                op["action"] = "replace"
+            else:
+                op["action"] = "copy"
+            self._copy_file_with_progress(source, target, progress=progress)
+        elif mode == "symlink":
+            if action == "replace" and target.exists():
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            self._create_symlink(source, target)
+            op["action"] = "symlink"
+            if progress:
+                try:
+                    progress(int(op.get("bytes") or 1), int(op.get("bytes") or 1))
+                except Exception:
+                    pass
+        else:
+            moved_fast = self._move_file_with_progress(source, target, replace_existing=(action == "replace"), progress=progress, fast_same_volume_moves=fast_same_volume_moves)
+            op["action"] = "move_fast" if moved_fast else "move"
+
+    def _move_directory_with_progress(self, source: Path, target: Path, *, progress: Callable[[int, int], None] | None = None, fast_same_volume_moves: bool = True) -> bool:
+        """Move a complete directory, preferring an O(1) same-volume rename."""
+        files = list(self._iter_reusable_files(source)) if source.exists() else []
+        total = sum(int(f.stat().st_size) for f in files if f.exists()) or int(1)
+        if progress:
+            try:
+                progress(0, total)
+            except Exception:
+                pass
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if fast_same_volume_moves:
+            try:
+                if target.exists():
+                    # The directory-level fast path is only safe when the target
+                    # is absent.  Complete existing targets are handled by the
+                    # duplicate-group shortcut before this method is called.
+                    raise FileExistsError(str(target))
+                source.replace(target)
+                if progress:
+                    try:
+                        progress(total, total)
+                    except Exception:
+                        pass
+                return True
+            except OSError:
+                if not source.exists():
+                    raise
+            except Exception:
+                if not source.exists():
+                    raise
+        self._copy_directory_with_progress(source, target, progress=progress)
+        try:
+            shutil.rmtree(source)
+        except FileNotFoundError:
+            pass
+        return False
+
+    def _copy_directory_with_progress(self, source: Path, target: Path, *, progress: Callable[[int, int], None] | None = None) -> None:
+        files = list(self._iter_reusable_files(source)) if source.exists() else []
+        total = sum(int(f.stat().st_size) for f in files if f.exists()) or int(1)
+        done = 0
+        for file in files:
+            try:
+                rel = file.relative_to(source)
+            except Exception:
+                rel = Path(file.name)
+            dst = target / rel
+            size = int(file.stat().st_size if file.exists() else 0)
+            def file_progress(partial: int, file_total: int, _base=done, _size=size):
+                if progress:
+                    try:
+                        progress(min(total, _base + int(partial or 0)), total)
+                    except Exception:
+                        pass
+            self._copy_file_with_progress(file, dst, progress=file_progress)
+            done += size
+            if progress:
+                try:
+                    progress(done, total)
+                except Exception:
+                    pass
+
+    def _move_file_with_progress(self, source: Path, target: Path, *, replace_existing: bool = False, progress: Callable[[int, int], None] | None = None, fast_same_volume_moves: bool = True) -> bool:
+        """Move one file, preferring an O(1) same-volume rename.
+
+        Older builds copied every model shard and then unlinked the source, even
+        in Move mode.  For hundreds of GiB on the same SSD this turns migration
+        into a full byte-for-byte rewrite.  A filesystem rename/replace on the
+        same volume is effectively metadata-only and is the intended fast path.
+        If the source/target are on different volumes, or the OS refuses the
+        rename, this method falls back to the existing chunked copy+unlink path.
+        """
+        total = int(source.stat().st_size if source.exists() else 0)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if progress:
+            try:
+                progress(0, total)
+            except Exception:
+                pass
+        if fast_same_volume_moves:
+            try:
+                if target.exists() and target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                # Path.replace maps to os.replace.  On the same filesystem this
+                # is a rename, not a data copy; on cross-device moves it raises.
+                source.replace(target)
+                if progress:
+                    try:
+                        progress(total, total)
+                    except Exception:
+                        pass
+                return True
+            except OSError as exc:
+                # Cross-device moves and locked/blocked renames fall back to the
+                # slower but safe chunked copy path.  If the source disappeared,
+                # the rename likely partially succeeded or another worker moved
+                # it, so surface the real error instead of silently copying.
+                if not source.exists():
+                    raise
+                # If os.replace failed after creating/replacing a target on an
+                # unusual platform, keep going only when the original source is
+                # still present.  Copy mode below will repair/replace target.
+                _ = exc.errno in {errno.EXDEV, errno.EACCES, errno.EPERM, errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT}
+            except Exception:
+                if not source.exists():
+                    raise
+        if replace_existing and target.exists():
             if target.is_dir() and not target.is_symlink():
                 shutil.rmtree(target)
             else:
                 target.unlink()
-            op["action"] = "replace"
-        else:
-            op["action"] = mode
-        if mode == "copy":
-            shutil.copy2(source, target)
-        elif mode == "symlink":
-            self._create_symlink(source, target)
-            op["action"] = "symlink"
-        else:
-            shutil.move(str(source), str(target))
+        self._copy_file_with_progress(source, target, progress=progress)
+        try:
+            source.unlink()
+        except FileNotFoundError:
+            pass
+        return False
+
+    def _copy_file_with_progress(self, source: Path, target: Path, *, progress: Callable[[int, int], None] | None = None) -> None:
+        """Copy a single file with live progress callbacks.
+
+        shutil.copy2 is opaque for large model shards; a multi-GB copy can make
+        the Dashboard appear dead even though migration is still working.  This
+        chunked copy keeps the Jobs row and Startup Maintenance card alive while
+        still preserving file metadata after a successful copy.
+        """
+        total = int(source.stat().st_size if source.exists() else 0)
+        copied = 0
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temp = target.with_name(target.name + ".dctmigpart")
+        if temp.exists():
+            try:
+                temp.unlink()
+            except OSError:
+                pass
+        last_emit = 0.0
+        chunk_size = 16 * 1024 * 1024
+        if progress:
+            try:
+                progress(0, total)
+            except Exception:
+                pass
+        with source.open("rb") as src, temp.open("wb") as dst:
+            while True:
+                chunk = src.read(chunk_size)
+                if not chunk:
+                    break
+                dst.write(chunk)
+                copied += len(chunk)
+                now = time.monotonic()
+                if progress and (now - last_emit >= 0.35 or copied >= total):
+                    last_emit = now
+                    try:
+                        progress(copied, total)
+                    except Exception:
+                        pass
+            try:
+                dst.flush()
+                os.fsync(dst.fileno())
+            except Exception:
+                pass
+        try:
+            shutil.copystat(source, temp, follow_symlinks=True)
+        except Exception:
+            pass
+        if target.exists() or target.is_symlink():
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        temp.replace(target)
+        if progress:
+            try:
+                progress(total, total)
+            except Exception:
+                pass
 
     def _create_symlink(self, source: Path, target: Path) -> None:
         try:
@@ -612,7 +1080,7 @@ class InstallMigrationService:
                 pass
         return {"paths": source_paths, "imported": imported, "skipped": skipped, "available": len(rows), "errors": errors, "dry_run": bool(dry_run)}
 
-    def import_tag_database(self, old_db_path: str | os.PathLike[str], *, dry_run: bool = False) -> dict[str, Any]:
+    def import_tag_database(self, old_db_path: str | os.PathLike[str], *, dry_run: bool = False, progress: ProgressCallback | None = None) -> dict[str, Any]:
         old_db = Path(old_db_path).expanduser().resolve()
         if not old_db.exists():
             return {"path": str(old_db), "skipped": "missing", "tables": {}}
@@ -620,27 +1088,143 @@ class InstallMigrationService:
             return {"path": str(old_db), "skipped": "current database unavailable", "tables": {}}
         result: dict[str, Any] = {"path": str(old_db), "dry_run": bool(dry_run), "tables": {}, "imported_at": now_iso()}
         attach_name = "old_migration"
-        with self.db._lock, self.db.connect() as conn:
+
+        # Do not use Database._lock around the entire import.  The migration job's
+        # progress callback also writes to the jobs table.  Holding a long-running
+        # SQLite write transaction while calling progress can make the app look
+        # stuck because the progress update waits on the migration import itself.
+        # SQLite/WAL handles the connection-level locking; this method commits
+        # before every external progress callback so the Dashboard/Jobs row can
+        # update live and other UI reads are not starved.
+        with self.db.connect() as conn:
+            conn.execute("PRAGMA busy_timeout=60000")
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA temp_store=MEMORY")
             conn.execute(f"ATTACH DATABASE ? AS {attach_name}", (str(old_db),))
+
+            def emit(value: float, message: str) -> None:
+                if not progress:
+                    return
+                # Release any pending write transaction before progress() updates
+                # the jobs table through a different connection.
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+                try:
+                    progress(max(0.0, min(1.0, float(value or 0.0))), message)
+                except Exception:
+                    pass
+
             try:
-                for table, columns in self.TAG_DB_TABLES.items():
+                tables = list(self.TAG_DB_TABLES.items())
+                normalized_source_rows = 0
+                try:
+                    if self._table_exists(conn, "tag_dictionary_entries", attach_name):
+                        normalized_source_rows = int(conn.execute(f"SELECT COUNT(*) FROM {attach_name}.tag_dictionary_entries").fetchone()[0] or 0)
+                except Exception:
+                    normalized_source_rows = 0
+
+                for index, (table, columns) in enumerate(tables, start=1):
+                    emit((index - 1) / max(1, len(tables)), f"Checking migrated tag table {table}")
                     if not self._table_exists(conn, table, "main") or not self._table_exists(conn, table, attach_name):
                         result["tables"][table] = {"skipped": "table missing"}
                         continue
                     quoted_cols = ", ".join(columns)
                     source_count = int(conn.execute(f"SELECT COUNT(*) FROM {attach_name}.{table}").fetchone()[0] or 0)
+                    if table in self.TAG_DB_REBUILD_FROM_CACHE_TABLES:
+                        # Previous-install local_path values are stale after a
+                        # migration.  Rebuild this table from runtime/tag_exports
+                        # in the current install instead of importing old rows.
+                        result["tables"][table] = {
+                            "source_rows": source_count,
+                            "inserted": 0,
+                            "skipped": "rebuilt from migrated tag-export cache",
+                        }
+                        emit(index / max(1, len(tables)), f"Skipped migrated tag table {table}; export-cache metadata will be rebuilt from local files")
+                        continue
+                    if table in self.TAG_DB_LEGACY_MIRROR_TABLES and normalized_source_rows > 0:
+                        result["tables"][table] = {
+                            "source_rows": source_count,
+                            "inserted": 0,
+                            "skipped": "modern normalized tag tables were present",
+                        }
+                        emit(index / max(1, len(tables)), f"Skipped migrated legacy tag table {table}; normalized dictionary rows were already imported")
+                        continue
                     if dry_run:
                         result["tables"][table] = {"source_rows": source_count, "inserted": 0, "dry_run": True}
                         continue
+                    emit((index - 0.45) / max(1, len(tables)), f"Importing {source_count:,} row(s) from migrated tag table {table}")
                     before = int(conn.execute(f"SELECT COUNT(*) FROM main.{table}").fetchone()[0] or 0)
-                    conn.execute(f"INSERT OR IGNORE INTO main.{table} ({quoted_cols}) SELECT {quoted_cols} FROM {attach_name}.{table}")
+                    chunk_size = 50000
+                    last_rowid = 0
+                    chunk_index = 0
+                    try:
+                        while True:
+                            rowids = conn.execute(f"SELECT rowid FROM {attach_name}.{table} WHERE rowid > ? ORDER BY rowid LIMIT ?", (last_rowid, chunk_size)).fetchall()
+                            if not rowids:
+                                break
+                            hi = int(rowids[-1][0])
+                            conn.execute(f"INSERT OR IGNORE INTO main.{table} ({quoted_cols}) SELECT {quoted_cols} FROM {attach_name}.{table} WHERE rowid > ? AND rowid <= ?", (last_rowid, hi))
+                            last_rowid = hi
+                            chunk_index += 1
+                            # Commit every chunk.  This keeps SQLite locks short,
+                            # lets the progress callback update the Jobs table,
+                            # and makes the app responsive while importing large
+                            # tag dictionaries.
+                            conn.commit()
+                            if progress:
+                                chunk_fraction = min(1.0, (index - 0.45 + 0.40 * min(1.0, (chunk_index * chunk_size) / max(1, source_count))) / max(1, len(tables)))
+                                emit(chunk_fraction, f"Importing migrated tag table {table}: copied {min(source_count, chunk_index * chunk_size):,}/{source_count:,} row(s)")
+                            if len(rowids) < chunk_size:
+                                break
+                    except sqlite3.DatabaseError:
+                        # Fallback for unusual SQLite tables without normal rowid access.
+                        conn.execute(f"INSERT OR IGNORE INTO main.{table} ({quoted_cols}) SELECT {quoted_cols} FROM {attach_name}.{table}")
+                        conn.commit()
                     after = int(conn.execute(f"SELECT COUNT(*) FROM main.{table}").fetchone()[0] or 0)
                     result["tables"][table] = {"source_rows": source_count, "inserted": max(0, after - before), "current_rows": after}
+                    emit(index / max(1, len(tables)), f"Imported migrated tag table {table}: {max(0, after - before):,} new row(s)")
                 conn.commit()
             finally:
-                conn.execute(f"DETACH DATABASE {attach_name}")
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+                try:
+                    conn.execute(f"DETACH DATABASE {attach_name}")
+                except Exception:
+                    pass
         return result
 
+
+    def _model_group_target_complete(self, group_path: Path, group_target: Path, group_files: list[Path]) -> bool:
+        """Return true when a target model group already has matching files.
+
+        This is intentionally size-based for large model assets.  Full hashes of
+        hundreds of GiB are too expensive during migration, and the existing
+        per-file duplicate logic already treats large same-size model shards as
+        reusable duplicates.
+        """
+        if not group_target.exists() or not group_target.is_dir():
+            return False
+        if not group_files:
+            return False
+        for source_file in group_files:
+            try:
+                rel = source_file.relative_to(group_path)
+            except Exception:
+                rel = Path(source_file.name)
+            target_file = group_target / rel
+            try:
+                if not target_file.exists() or not target_file.is_file():
+                    return False
+                if source_file.stat().st_size != target_file.stat().st_size:
+                    return False
+            except OSError:
+                return False
+        return True
 
     def _iter_model_asset_groups(self, models_root: Path):
         """Yield complete model groups so migration can skip corrupt partial downloads.

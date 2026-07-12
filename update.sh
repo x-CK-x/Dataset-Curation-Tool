@@ -38,16 +38,23 @@ if ! ensure_conda_env; then
 
 [ERROR] Conda failed to create/update the data-curation-tool environment.
 Check the dependency name above, then run: conda clean --all
-Note: the importable Python module soundfile is installed via conda package pysoundfile and/or pip package soundfile.
+Note: soundfile uses conda package pysoundfile; Hydra local inference uses conda-forge pyvips/libvips plus pip pyvips[binary] fallback.
 TXT
   exit 1
 fi
 
 conda activate "$DCT_ENV_NAME"
 python -m pip install --upgrade pip
+python scripts/repair_onnxruntime_runtime.py --ensure-gpu
 python -m pip install -r requirements.txt --upgrade-strategy only-if-needed
+python scripts/repair_onnxruntime_runtime.py --ensure-gpu
+python -m pip install 'pyvips[binary]>=3.0.0' --upgrade-strategy only-if-needed
 python -m pip install -e . --no-deps
+# Hydra repair fallback uses pyvips[binary]>=3.0.0 pyvips-binary>=8.16.0 cffi>=1.17.1
 python scripts/check_core_dependencies.py
+if ! python scripts/repair_hydra_runtime_dependencies.py; then
+  echo "[WARN] Hydra pyvips/libvips auto-repair did not complete. Run ./install_hydra_runtime_deps.sh before using RedRocket Hydra 3.5 locally."
+fi
 MODE="${DCT_INSTALL_TORCH:-auto}"
 if [ "$MODE" = "auto" ]; then
   if command -v nvidia-smi >/dev/null 2>&1; then MODE="cu128"; else MODE="skip"; fi

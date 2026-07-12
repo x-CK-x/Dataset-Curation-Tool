@@ -1,0 +1,42 @@
+{
+  "version": "5.8.17",
+  "new_files": [
+    "docs/V5_8_17_GRAPH_CANVAS_AND_MIGRATION_FINALIZATION.md",
+    "docs/wiki/47-Graph-Canvas-Interaction-and-Migration-Finalization.md",
+    "tests/test_v610_graph_canvas_migration_progress.py",
+    "docs/V5_8_17_FILE_CHANGES.json"
+  ],
+  "edited_files": [
+    "README.md",
+    "data_curation_tool/__init__.py",
+    "data_curation_tool/jobs.py",
+    "data_curation_tool/routers/migration.py",
+    "data_curation_tool/services/install_migration_service.py",
+    "data_curation_tool/static/app.js",
+    "data_curation_tool/static/styles.css",
+    "docs/wiki/Home.md",
+    "docs/wiki/README.md",
+    "docs/wiki/_Sidebar.md",
+    "pyproject.toml",
+    "tests/test_v593_legacy_taggers_translation_release.py",
+    "tests/test_v594_character_reference_lora_augmentation.py",
+    "tests/test_v595_automation_workflows.py",
+    "tests/test_v596_agentic_graph_editor.py",
+    "tests/test_v597_hydra_pyvips_runtime_fix.py",
+    "tests/test_v598_hydra_windows_libvips_loader.py",
+    "tests/test_v599_hydra_queue_patch_z3d_removal.py",
+    "tests/test_v600_hydra_loader_alias_gallery_workflow_fixes.py",
+    "tests/test_v601_hydra_utf8_startup_progress.py",
+    "tests/test_v602_startup_time_import_fix.py",
+    "tests/test_v603_graph_editor_browser_mcp_integration.py",
+    "tests/test_v604_scroll_startup_resume.py",
+    "tests/test_v605_model_prediction_normalization_unload_ui.py",
+    "tests/test_v606_startup_attention_graph_functionality.py",
+    "tests/test_v606_startup_migration_heatmap_graph_runtime.py",
+    "tests/test_v607_legacy_tagger_preprocess_scroll_fix.py",
+    "tests/test_v608_dashboard_migration_progress_refresh.py",
+    "tests/test_v609_graph_palette_prediction_refresh_eva.py",
+    "tests/test_v609_graph_palette_prediction_refresh_eva_fix.py"
+  ],
+  "removed_files": []
+}

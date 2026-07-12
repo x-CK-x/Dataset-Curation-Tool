@@ -19,6 +19,8 @@ from ..schemas import (
     TagPrecedenceUpdateRequest,
     TagProfileUpdateRequest,
     TagMetadataRequest,
+    TagFormatTranslateRequest,
+    ModelChatRequest,
     TagPruneRequest,
     TagReorderRequest,
 )
@@ -49,6 +51,11 @@ def dictionary_default_urls(request: Request, profile_key: str = "e621"):
     return {"profile_key": profile_key, "urls": ctx(request).tags.default_export_urls(profile_key)}
 
 
+@router.get("/dictionary/sync-capabilities")
+def dictionary_sync_capabilities(request: Request, profile_key: str = "e621"):
+    return ctx(request).tags.tag_sync_capabilities(profile_key)
+
+
 @router.get("/categories")
 def categories(request: Request, profile_key: str = "e621"):
     return ctx(request).tags.categories(profile_key)
@@ -70,6 +77,38 @@ def suggest_tags(request: Request, q: str = Query("", alias="q"), prefix: str = 
 @router.post("/metadata")
 def tag_metadata(payload: TagMetadataRequest, request: Request):
     return ctx(request).tags.metadata(payload.tags, payload.profile_key)
+
+
+@router.post("/translate-format")
+def translate_tag_format(payload: TagFormatTranslateRequest, request: Request):
+    c = ctx(request)
+    result = c.tags.translate_format(payload)
+    if payload.use_model and payload.model_name:
+        prompt = result.get("model_prompt") or c.tags.translation_prompt(result)
+        chat_payload = ModelChatRequest(
+            model_name=payload.model_name,
+            prompt=prompt,
+            use_selected_media=False,
+            device=payload.device,
+            device_ids=payload.device_ids,
+            sharding_strategy=payload.sharding_strategy,
+            device_map=payload.device_map,
+            max_memory=payload.max_memory,
+            torch_dtype=payload.torch_dtype,
+            quantization=payload.quantization,
+            runtime_engine=payload.runtime_engine,
+            tensor_parallel_size=payload.tensor_parallel_size,
+            options={**(payload.options or {}), "tag_caption_translation": True, "recent_message_window": 8},
+        )
+        model_result = c.models.chat(chat_payload)
+        result["model_result"] = model_result
+        parsed = c.tags.parse_translation_model_response(model_result.get("response") or "")
+        if parsed:
+            result["model_parsed"] = parsed
+            if not payload.dry_run:
+                result["translated_tags"] = parsed.get("tags") or result.get("translated_tags")
+                result["caption"] = parsed.get("caption") or result.get("caption")
+    return result
 
 @router.post("/custom")
 def add_custom_tag(payload: CustomTagRequest, request: Request):
@@ -137,9 +176,10 @@ def import_default_dictionary(payload: TagDictionaryDefaultImportRequest, reques
             profile_key=payload.profile_key,
             url=payload.url,
             user_agent=c.settings.downloader_user_agent or "DataCurationTool/5.36.0",
-            cache_hours=int(getattr(c.settings, "tag_db_export_cache_hours", 336) or 336),
+            cache_hours=int(getattr(c.settings, "tag_db_export_cache_hours", 168) or 168),
             progress=progress,
             replace_existing=True,
+            force_download=bool(getattr(payload, "force_download", False)),
         )
 
     job_id = c.jobs.submit("tag_dictionary_import", payload.model_dump(), task)

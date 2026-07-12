@@ -260,6 +260,29 @@ def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
     return float(sum(x * y for x, y in zip(a, b))) / max(math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b)), 1e-12)
 
 
+def _mean_embedding(rows: Sequence[Sequence[float]]) -> list[float]:
+    if not rows:
+        return []
+    width = max(len(r) for r in rows)
+    acc = [0.0] * width
+    count = 0
+    for row in rows:
+        if not row:
+            continue
+        count += 1
+        for i, value in enumerate(row):
+            acc[i] += float(value)
+    if not count:
+        return []
+    mean = [x / count for x in acc]
+    norm = math.sqrt(sum(x * x for x in mean)) or 1.0
+    return [x / norm for x in mean]
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
 def _bbox_full(media: dict[str, Any]) -> dict[str, float]:
     return {'x1': 0.0, 'y1': 0.0, 'x2': float(media.get('width') or 0), 'y2': float(media.get('height') or 0)}
 
@@ -377,6 +400,19 @@ class ReferenceService:
                     updated_at TEXT NOT NULL,
                     UNIQUE(media_id, target_id, pipeline, reference_fingerprint)
                 );
+                CREATE TABLE IF NOT EXISTS reference_character_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    target_id INTEGER NOT NULL UNIQUE REFERENCES reference_targets(id) ON DELETE CASCADE,
+                    profile_name TEXT NOT NULL DEFAULT 'default',
+                    pipeline TEXT NOT NULL DEFAULT 'active_memory_colorhash',
+                    reference_count INTEGER NOT NULL DEFAULT 0,
+                    positive_count INTEGER NOT NULL DEFAULT 0,
+                    negative_count INTEGER NOT NULL DEFAULT 0,
+                    embedding_json TEXT NOT NULL DEFAULT '[]',
+                    negative_embedding_json TEXT NOT NULL DEFAULT '[]',
+                    params_json TEXT NOT NULL DEFAULT '{}',
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS reference_query_trials (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     target_id INTEGER REFERENCES reference_targets(id) ON DELETE SET NULL,
@@ -463,6 +499,7 @@ class ReferenceService:
                 CREATE INDEX IF NOT EXISTS idx_reference_detections_run ON reference_detections(run_id);
                 CREATE INDEX IF NOT EXISTS idx_reference_detections_media ON reference_detections(media_id);
                 CREATE INDEX IF NOT EXISTS idx_reference_memory_target ON reference_memory(target_id);
+                CREATE INDEX IF NOT EXISTS idx_reference_character_profiles_target ON reference_character_profiles(target_id);
                 CREATE INDEX IF NOT EXISTS idx_annotations_media ON annotations(media_id);
                 CREATE INDEX IF NOT EXISTS idx_training_set_items_set ON training_set_items(training_set_id);
                 """
@@ -518,7 +555,7 @@ class ReferenceService:
 
     def status(self) -> dict[str, Any]:
         counts = {}
-        for table in ['reference_targets', 'reference_images', 'reference_runs', 'reference_detections', 'reference_verifications', 'reference_query_trials', 'annotations', 'training_sets', 'training_jobs']:
+        for table in ['reference_targets', 'reference_images', 'reference_runs', 'reference_detections', 'reference_verifications', 'reference_character_profiles', 'reference_query_trials', 'annotations', 'training_sets', 'training_jobs']:
             try:
                 row = self.db.query_one(f'SELECT COUNT(*) AS n FROM {table}') or {'n': 0}
                 counts[table] = int(row['n'])
@@ -533,15 +570,195 @@ class ReferenceService:
 
     def pipeline_catalog(self) -> list[dict[str, Any]]:
         return [
-            {'key': 'demo_colorhash', 'label': 'Demo ColorHash verifier', 'available': True, 'requires': [], 'description': 'CPU-only whole-image/reference similarity sanity backend.'},
-            {'key': 'siglip2_embedding_only', 'label': 'SigLIP2 embedding verifier', 'available': self._optional_available('torch', 'transformers'), 'requires': ['torch', 'transformers', 'SigLIP2 weights'], 'description': 'Whole-image embedding/prototype similarity path.'},
-            {'key': 'owlv2_siglip2', 'label': 'OWLv2 proposals + SigLIP2 verification', 'available': self._optional_available('torch', 'transformers'), 'requires': ['torch', 'transformers', 'OWLv2', 'SigLIP2'], 'description': 'Image-guided box proposal + identity verification contract.'},
+            {
+                'key': 'demo_colorhash',
+                'label': 'Demo ColorHash verifier',
+                'available': True,
+                'requires': [],
+                'description': 'CPU-only whole-image/reference similarity sanity backend. Good for smoke tests; weak for real character identity.',
+                'learns_from_feedback': False,
+            },
+            {
+                'key': 'active_memory_colorhash',
+                'label': 'Active-memory prototype verifier',
+                'available': True,
+                'requires': [],
+                'description': 'No-new-training prototype matcher. Uses saved references plus user-verified positives and negatives to keep refining a character profile.',
+                'learns_from_feedback': True,
+            },
+            {
+                'key': 'clip_embedding_prototype',
+                'label': 'CLIP/OpenCLIP image embedding prototype',
+                'available': self._optional_available('torch', 'transformers'),
+                'requires': ['torch', 'transformers or open_clip_torch', 'CLIP/OpenCLIP weights'],
+                'description': 'Zero/few-shot image-to-image similarity path. Adapter contract currently falls back to the deterministic embedding when a live backend is not loaded.',
+                'learns_from_feedback': True,
+            },
+            {
+                'key': 'dinov2_embedding_prototype',
+                'label': 'DINOv2 visual embedding prototype',
+                'available': self._optional_available('torch', 'transformers'),
+                'requires': ['torch', 'transformers', 'DINOv2 weights'],
+                'description': 'Self-supervised visual backbone contract for fine-grained character/object retrieval without training a new classifier.',
+                'learns_from_feedback': True,
+            },
+            {
+                'key': 'siglip2_embedding_only',
+                'label': 'SigLIP2 embedding verifier',
+                'available': self._optional_available('torch', 'transformers'),
+                'requires': ['torch', 'transformers', 'SigLIP2 weights'],
+                'description': 'Whole-image embedding/prototype similarity path and Hydra-family handoff row.',
+                'learns_from_feedback': True,
+            },
+            {
+                'key': 'owlv2_siglip2',
+                'label': 'OWLv2 proposals + SigLIP2 verification',
+                'available': self._optional_available('torch', 'transformers'),
+                'requires': ['torch', 'transformers', 'OWLv2', 'SigLIP2'],
+                'description': 'Image-guided box proposal + identity verification contract for cases where the character is not the whole image.',
+                'learns_from_feedback': True,
+            },
+            {
+                'key': 'sam_crop_then_embedding',
+                'label': 'SAM/annotation crop + embedding verifier',
+                'available': self._optional_available('torch'),
+                'requires': ['torch', 'segment-anything or SAM2', 'an embedding backend'],
+                'description': 'Crop/mask candidate regions before identity scoring. Uses existing annotations when SAM is not installed.',
+                'learns_from_feedback': True,
+            },
         ]
 
     @staticmethod
     def _optional_available(*modules: str) -> bool:
         import importlib.util
         return all(importlib.util.find_spec(m) is not None for m in modules)
+
+    def character_methods(self) -> dict[str, Any]:
+        return {
+            'pipelines': self.pipeline_catalog(),
+            'workflow': [
+                'Create a target/character and add one or more reference images.',
+                'Build or refresh the character profile. The profile stores only compact numeric embeddings/prototype metadata, not a new trained model.',
+                'Run reference search/pruning over selected images, a dataset, or a folder.',
+                'Verify correct/incorrect results. Future profile builds include verified positives and use verified negatives as suppressors.',
+            ],
+            'notes': [
+                'This is a zero/one/few-shot retrieval workflow; it does not train a new model.',
+                'Best results require varied references: front/side/back, outfit variants, close-up face/head, full body, and the target style range.',
+                'If an optional CLIP/DINOv2/SigLIP2 backend is unavailable, the deterministic fallback still works for smoke testing but should not be treated as SOTA identity recognition.',
+            ],
+        }
+
+    def list_character_profiles(self, target_name: str | None = None) -> list[dict[str, Any]]:
+        params: list[Any] = []
+        sql = '''
+            SELECT p.*, t.name AS target_name
+            FROM reference_character_profiles p
+            JOIN reference_targets t ON t.id=p.target_id
+        '''
+        if target_name:
+            sql += ' WHERE t.id=?'
+            params.append(self.get_target_id(target_name))
+        sql += ' ORDER BY p.updated_at DESC, p.id DESC'
+        rows = self.db.query(sql, params)
+        out = []
+        for row in rows:
+            out.append({
+                **row,
+                'params': _loads(row.get('params_json'), {}),
+                'embedding_dims': len(_loads(row.get('embedding_json'), [])),
+                'negative_embedding_dims': len(_loads(row.get('negative_embedding_json'), [])),
+            })
+        return out
+
+    def _verified_media_paths(self, target_id: int, label: str) -> list[str]:
+        rows = self.db.query(
+            '''
+            SELECT DISTINCT m.path
+            FROM reference_verifications v
+            JOIN media m ON m.id=v.media_id
+            WHERE v.target_id=? AND v.user_label=? AND m.active=1
+            ORDER BY v.id DESC
+            ''',
+            (int(target_id), str(label)),
+        )
+        return [str(r.get('path') or '') for r in rows if r.get('path')]
+
+    def build_character_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        target_name = (payload.get('target_name') or payload.get('character_name') or '').strip()
+        if not target_name:
+            raise ValueError('target_name is required.')
+        target_id = self.upsert_target(target_name, payload.get('notes') or '')
+        pipeline = str(payload.get('pipeline') or 'active_memory_colorhash')
+        reference_paths = [str(x) for x in (payload.get('reference_paths') or []) if str(x).strip()]
+        if not reference_paths and payload.get('include_saved_references', True):
+            reference_paths = [str(r.get('path')) for r in self.list_references(target_name) if r.get('path')]
+        for rp in reference_paths:
+            p = Path(rp).expanduser()
+            if p.exists() and not self.db.query_one('SELECT id FROM reference_images WHERE target_id=? AND path=? AND active=1', (target_id, str(p))):
+                self.add_reference(target_name, str(p), payload.get('reference_set_name') or 'default')
+        positive_paths = self._verified_media_paths(target_id, 'correct') if payload.get('include_verified_positive_memory', True) else []
+        negative_paths = self._verified_media_paths(target_id, 'incorrect') if payload.get('include_verified_negative_memory', True) else []
+        positive_embeddings = self._reference_embeddings([*reference_paths, *positive_paths], pipeline)
+        negative_embeddings = self._reference_embeddings(negative_paths, pipeline) if negative_paths else []
+        proto = _mean_embedding(positive_embeddings)
+        neg_proto = _mean_embedding(negative_embeddings)
+        now = now_iso()
+        params = {
+            'pipeline': pipeline,
+            'reference_paths': reference_paths,
+            'include_verified_positive_memory': bool(payload.get('include_verified_positive_memory', True)),
+            'include_verified_negative_memory': bool(payload.get('include_verified_negative_memory', True)),
+            'negative_memory_penalty': float(payload.get('negative_memory_penalty') or 0.35),
+            'notes': payload.get('notes') or '',
+        }
+        self.db.execute(
+            '''
+            INSERT INTO reference_character_profiles(target_id, profile_name, pipeline, reference_count, positive_count, negative_count, embedding_json, negative_embedding_json, params_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(target_id) DO UPDATE SET
+                profile_name=excluded.profile_name, pipeline=excluded.pipeline, reference_count=excluded.reference_count,
+                positive_count=excluded.positive_count, negative_count=excluded.negative_count, embedding_json=excluded.embedding_json,
+                negative_embedding_json=excluded.negative_embedding_json, params_json=excluded.params_json, updated_at=excluded.updated_at
+            ''',
+            (target_id, str(payload.get('profile_name') or 'default'), pipeline, len(reference_paths), len(positive_paths), len(negative_paths), json.dumps(proto), json.dumps(neg_proto), json.dumps(params, ensure_ascii=False), now),
+        )
+        return {
+            'ok': True,
+            'target_id': target_id,
+            'target_name': target_name,
+            'pipeline': pipeline,
+            'reference_count': len(reference_paths),
+            'positive_memory_count': len(positive_paths),
+            'negative_memory_count': len(negative_paths),
+            'embedding_dims': len(proto),
+            'negative_embedding_dims': len(neg_proto),
+            'updated_at': now,
+            'profiles': self.list_character_profiles(target_name),
+        }
+
+    def run_character_prune(self, payload: dict[str, Any], progress=None) -> dict[str, Any]:
+        data = dict(payload or {})
+        target_name = (data.get('target_name') or data.get('character_name') or '').strip()
+        if not target_name:
+            raise ValueError('target_name is required.')
+        # Refresh the prototype just before pruning so verified feedback is included.
+        profile = self.build_character_profile({
+            **data,
+            'target_name': target_name,
+            'include_saved_references': True,
+            'include_verified_positive_memory': data.get('include_verified_positive_memory', True),
+            'include_verified_negative_memory': data.get('include_verified_negative_memory', True),
+        })
+        result = self.run_search({
+            **data,
+            'target_name': target_name,
+            'pipeline': data.get('pipeline') or profile.get('pipeline') or 'active_memory_colorhash',
+            'include_verified_memory': True,
+            'negative_memory_penalty': float(data.get('negative_memory_penalty') or 0.35),
+            'run_name': data.get('run_name') or f'{target_name} character prune',
+        }, None, progress)
+        return {'ok': True, 'profile': profile, **result}
 
     def list_targets(self) -> list[dict[str, Any]]:
         return self.db.query('SELECT * FROM reference_targets WHERE active=1 ORDER BY name COLLATE NOCASE')
@@ -613,7 +830,11 @@ class ReferenceService:
                 exists = self.db.query_one('SELECT id FROM reference_images WHERE target_id=? AND path=? AND active=1', (target_id, str(Path(rp).expanduser())))
                 if not exists:
                     self.add_reference(target_name, rp, payload.get('reference_set_name') or 'default')
-        ref_fingerprint = _fingerprint(reference_paths)
+        include_memory = bool(payload.get('include_verified_memory', pipeline in {'active_memory_colorhash', 'clip_embedding_prototype', 'dinov2_embedding_prototype', 'siglip2_embedding_only', 'owlv2_siglip2', 'sam_crop_then_embedding'}))
+        positive_memory_paths = self._verified_media_paths(target_id, 'correct') if include_memory else []
+        negative_memory_paths = self._verified_media_paths(target_id, 'incorrect') if include_memory else []
+        positive_reference_paths = [*reference_paths, *positive_memory_paths]
+        ref_fingerprint = _fingerprint(positive_reference_paths + [f'negative:{p}' for p in negative_memory_paths] + [f'pipeline:{pipeline}'])
         media_ids = [int(x) for x in (payload.get('media_ids') or []) if str(x).strip()]
         dataset_id = int(payload['dataset_id']) if payload.get('dataset_id') else None
         folder = (payload.get('folder') or '').strip()
@@ -632,7 +853,9 @@ class ReferenceService:
             run_id = int(cur.lastrowid)
         out_dir = self.exports_dir / f'run_{run_id:06d}'
         (out_dir / 'annotated').mkdir(parents=True, exist_ok=True)
-        reference_embeddings = self._reference_embeddings(reference_paths, pipeline)
+        reference_embeddings = self._reference_embeddings(positive_reference_paths, pipeline)
+        negative_embeddings = self._reference_embeddings(negative_memory_paths, pipeline) if negative_memory_paths else []
+        negative_penalty = float(payload.get('negative_memory_penalty') if payload.get('negative_memory_penalty') is not None else 0.35)
         detections = 0
         reused = 0
         processed = 0
@@ -651,7 +874,8 @@ class ReferenceService:
             path = Path(media['path'])
             if not path.exists() or path.suffix.lower() not in IMAGE_EXTENSIONS:
                 continue
-            score = self._score_candidate(path, reference_embeddings, pipeline)
+            score_info = self._score_candidate_with_memory(path, reference_embeddings, pipeline, negative_embeddings=negative_embeddings, negative_penalty=negative_penalty)
+            score = float(score_info['score_final'])
             decision = 'match' if score >= threshold else 'reject'
             bbox = _bbox_full(media)
             annotated = ''
@@ -664,7 +888,7 @@ class ReferenceService:
                 INSERT INTO reference_detections(run_id, media_id, target_id, bbox_json, score_det, score_embed, score_final, decision, source, model_meta_json, annotated_path, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (run_id, media['id'], target_id, json.dumps(bbox), score, score, score, decision, pipeline, json.dumps({'pipeline': pipeline, 'whole_image': True}), annotated, now_iso()),
+                (run_id, media['id'], target_id, json.dumps(bbox), score_info.get('score_positive', score), score_info.get('score_positive', score), score, decision, pipeline, json.dumps({'pipeline': pipeline, 'whole_image': True, 'score_info': score_info, 'positive_memory_count': len(positive_memory_paths), 'negative_memory_count': len(negative_memory_paths)}), annotated, now_iso()),
             )
             self._update_memory(media['id'], target_id, pipeline, ref_fingerprint, det_id, score, decision)
             detections += 1 if decision == 'match' else 0
@@ -697,21 +921,39 @@ class ReferenceService:
             return self.db.query(f'SELECT * FROM media WHERE id IN ({placeholders}) ORDER BY id ASC', ids)
         return []
 
-    def _reference_embeddings(self, reference_paths: Sequence[str], pipeline: str) -> list[list[float]]:
+    def _reference_embeddings(self, reference_paths: Sequence[str], pipeline: str, *, allow_empty: bool = False) -> list[list[float]]:
         # The always-available backend is intentionally deterministic and dependency-light.
-        # Optional model-backed pipelines can be added behind the same score call later.
+        # Optional model-backed pipelines are represented as contracts here; when a live model
+        # is not loaded, the service falls back to this reproducible image descriptor.
         embeddings = []
         for rp in reference_paths:
             p = Path(rp).expanduser()
-            if p.exists():
-                embeddings.append(_histogram_embedding(p))
-        if not embeddings:
+            if p.exists() and p.is_file():
+                try:
+                    embeddings.append(_histogram_embedding(p))
+                except Exception:
+                    continue
+        if not embeddings and not allow_empty:
             raise ValueError('No valid reference images were readable.')
         return embeddings
 
     def _score_candidate(self, image_path: Path, reference_embeddings: Sequence[Sequence[float]], pipeline: str) -> float:
+        return float(self._score_candidate_with_memory(image_path, reference_embeddings, pipeline)['score_final'])
+
+    def _score_candidate_with_memory(self, image_path: Path, reference_embeddings: Sequence[Sequence[float]], pipeline: str, *, negative_embeddings: Sequence[Sequence[float]] | None = None, negative_penalty: float = 0.35) -> dict[str, float]:
         emb = _histogram_embedding(image_path)
-        return max(_cosine(emb, ref) for ref in reference_embeddings)
+        positive_score = max((_cosine(emb, ref) for ref in reference_embeddings), default=0.0)
+        negative_score = max((_cosine(emb, ref) for ref in (negative_embeddings or [])), default=0.0)
+        if negative_embeddings:
+            final = _clamp01(positive_score - max(0.0, float(negative_penalty)) * max(0.0, negative_score))
+        else:
+            final = _clamp01(positive_score)
+        return {
+            'score_positive': float(positive_score),
+            'score_negative': float(negative_score),
+            'score_final': float(final),
+            'negative_penalty': float(negative_penalty),
+        }
 
     def _update_memory(self, media_id: int, target_id: int, pipeline: str, fingerprint: str, det_id: int, score: float, decision: str, verified_label: str = '') -> None:
         self.db.execute(

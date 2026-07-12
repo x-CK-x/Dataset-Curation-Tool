@@ -14,10 +14,14 @@ dependencies:
   # Conda package name is pysoundfile; it provides the importable soundfile module.
   # Do not use a conda dependency named "soundfile" here; that is the PyPI name.
   - libsndfile
-  - cffi
+  - cffi>=1.17.1
   - pysoundfile>=0.12
   - librosa
   - pyarrow>=16
+  # Hydra 3.5 uses pyvips/libvips for image loading/preprocessing.
+  # Install through conda-forge so the libvips shared libraries/DLLs are included.
+  - libvips
+  - pyvips
   - pandas>=2.2
   - requests>=2.31
   - tqdm>=4.66
@@ -32,6 +36,7 @@ dependencies:
   - pip:
       - transformers>=4.57
       - huggingface_hub>=0.23
+      - onnxruntime-gpu[cuda,cudnn]>=1.21,<1.23
       - accelerate>=0.30
       - timm>=1.0
       - safetensors>=0.4
@@ -39,3 +44,5 @@ dependencies:
       - selenium>=4.20
       - einops>=0.7
       - sounddevice>=0.4
+      - "pyvips[binary]>=3.0.0"
+      - pyvips-binary>=8.16.0

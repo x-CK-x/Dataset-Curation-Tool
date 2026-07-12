@@ -18,7 +18,7 @@ Supported forms include:
       "tool": "run_shell_command",
       "arguments": {
         "shell": "powershell",
-        "command": "Get-Content -Path \"C:\\Users\\<USERNAME>\\Downloads\\filename.download.json\" -Raw"
+        "command": "Get-Content -Path \"C:\\Users\\<USERNAME>\\Downloads\\<YOUR_IMG>.download.json\" -Raw"
       },
       "risk": "high",
       "requires_approval": true

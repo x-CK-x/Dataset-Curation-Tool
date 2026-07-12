@@ -1,3 +1,1 @@
-"""Modern data curation application backend."""
-
-__version__ = "5.78.9"
+__version__ = "5.8.48"

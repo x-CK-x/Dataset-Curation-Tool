@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _default_if_blank(value: Any, default: str) -> Any:
@@ -180,6 +180,29 @@ class TagMetadataRequest(BaseModel):
     profile_key: str = "e621"
 
 
+class TagFormatTranslateRequest(ModelPlacementDefaultsMixin):
+    tags: list[str] = Field(default_factory=list)
+    tag_string: str = ""
+    source_profile_key: str = "e621"
+    target_profile_key: str = "danbooru"
+    output_format: Literal["booru_tags", "comma_caption", "natural_caption", "json"] = "booru_tags"
+    model_name: str | None = None
+    use_model: bool = False
+    dry_run: bool = True
+    preserve_unknown: bool = True
+    include_prompt: bool = True
+    device: str = "auto"
+    device_ids: list[int] = Field(default_factory=list)
+    sharding_strategy: Literal["none", "auto", "balanced", "balanced_low_0", "sequential", "custom"] = "none"
+    device_map: dict[str, Any] | str | None = None
+    max_memory: dict[str, str] = Field(default_factory=dict)
+    torch_dtype: str = "auto"
+    quantization: Literal["none", "8bit", "4bit"] = "none"
+    runtime_engine: Literal["transformers", "vllm", "sglang", "llama.cpp", "cloud", "auto"] = "transformers"
+    tensor_parallel_size: int = 1
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 class CustomTagRequest(BaseModel):
     tag: str
     category: str = "custom"
@@ -231,6 +254,7 @@ class TagPrecedenceUpdateRequest(BaseModel):
 class TagDictionaryDefaultImportRequest(BaseModel):
     profile_key: str = "e621"
     url: str | None = None
+    force_download: bool = False
 
 
 
@@ -434,7 +458,7 @@ class ModelRunRequest(ModelPlacementDefaultsMixin):
     task: Literal["tag", "caption", "classify", "rating", "embed", "segment", "caption_split"] = "tag"
     device: str = "auto"
     batch_size: int = 1
-    threshold: float = 0.35
+    threshold: float = 0.70
     apply_tags: bool = False
     apply_caption: bool = False
     prompt: str | None = None
@@ -771,7 +795,7 @@ class OrchestrationStep(BaseModel):
     model_name: str | None = None
     task: str | None = None
     prompt: str | None = None
-    threshold: float = 0.35
+    threshold: float = 0.70
     categories: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     apply: bool = False
@@ -908,7 +932,7 @@ class DistributedNode(BaseModel):
     conda_env: str = "data-curation-tool"
     python_command: str = "python"
     worker_api_port: int = 7865
-    worker_mode: Literal["full", "lite", "downloader-only"] = "full"
+    worker_mode: Literal["full", "lite", "downloader-only", "model-worker", "hydra-tagger"] = "full"
     startup_command_template: str = ""
     notes: str = ""
 
@@ -928,6 +952,10 @@ class AssetMigrationRequest(BaseModel):
     dry_run: bool = False
     newest_first: bool = True
     delete_source_duplicates: bool = False
+    skip_internet_refresh: bool = True
+    parallel_file_transfers: bool = True
+    file_transfer_workers: int = Field(default=4, ge=1, le=32)
+    fast_same_volume_moves: bool = True
 
 
 class AssetMigrationSettingsRequest(BaseModel):
@@ -938,3 +966,263 @@ class AssetMigrationSettingsRequest(BaseModel):
     conflict: Literal["skip_existing", "replace_if_newer", "replace"] = "skip_existing"
     newest_first: bool = True
     delete_source_duplicates: bool = False
+    skip_internet_refresh: bool = True
+    parallel_file_transfers: bool = True
+    file_transfer_workers: int = Field(default=4, ge=1, le=32)
+    fast_same_volume_moves: bool = True
+
+
+class GlobalDatasetSettingsUpdate(BaseModel):
+    enabled: bool = True
+    root_path: str | None = None
+    auto_register_downloads: bool = True
+    auto_link_downloads_to_branch: bool = False
+    default_branch: str = "default"
+    ingest_copy_mode: Literal["copy", "hardlink", "symlink", "reference"] = "copy"
+
+
+class GlobalAssetRegisterRequest(BaseModel):
+    path: str
+    source: str = "manual"
+    source_site: str | None = None
+    source_post_id: str | None = None
+    source_url: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    caption: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    copy_to_store: bool = True
+
+
+class GlobalFolderIngestRequest(BaseModel):
+    root_path: str
+    recursive: bool = True
+    source: str = "manual-folder"
+    source_site: str | None = None
+    copy_to_store: bool = True
+    create_branch: bool = False
+    branch_name: str = "default"
+    read_sidecars: bool = True
+
+
+class GlobalBranchCreateRequest(BaseModel):
+    name: str
+    purpose: str = ""
+    root_path: str | None = None
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class GlobalBranchLinkRequest(BaseModel):
+    branch_id: int | None = None
+    branch_name: str | None = None
+    asset_ids: list[int] = Field(default_factory=list)
+    media_ids: list[int] = Field(default_factory=list)
+    copy_sidecars: bool = True
+    include: bool = True
+    note: str = ""
+
+
+class GlobalVariantRegisterRequest(BaseModel):
+    global_asset_id: int
+    branch_id: int | None = None
+    branch_name: str | None = None
+    variant_path: str
+    variant_kind: str = "augmentation"
+    transform: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    caption: str = ""
+    copy_to_branch: bool = True
+
+
+class GlobalAssetSearchRequest(BaseModel):
+    q: str = ""
+    source_site: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    page: int = 1
+    page_size: int = 80
+
+
+class DatasetPipelineRulesRequest(BaseModel):
+    target_model: str = "sdxl"
+    adapter_type: str = "lora"
+    dataset_goal: Literal["style", "character", "character_style", "concept"] = "character"
+    trigger_token: str = "<trigger_token>"
+    style_trigger_token: str = "<style_trigger>"
+    include_explicit_descriptor_policy: bool = True
+    additional_notes: str = ""
+
+
+class DatasetPipelinePlanRequest(DatasetPipelineRulesRequest):
+    branch_name: str = "default"
+    include_download_stage: bool = True
+    include_label_stage: bool = True
+    include_augmentation_stage: bool = True
+    include_final_export_stage: bool = True
+
+
+class DatasetPipelineBranchEvaluateRequest(DatasetPipelineRulesRequest):
+    branch_id: int | None = None
+    branch_name: str = "default"
+
+
+class DatasetPipelineBranchExportRequest(DatasetPipelineRulesRequest):
+    branch_id: int | None = None
+    branch_name: str = "default"
+    training_tool: str = "generic"
+    include_media: bool = False
+    link_mode: Literal["reference", "copy", "hardlink", "symlink"] = "reference"
+    include_variants: bool = True
+
+
+class DatasetPipelineTrainerHandoffRequest(BaseModel):
+    training_tool: str = "generic"
+    export_dir: str = ""
+    provider_profile: str = ""
+    notes: str = ""
+
+
+class ThreeDPrintPackageRequest(BaseModel):
+    asset_path: str
+    package_name: str = ""
+    target_formats: list[str] = Field(default_factory=lambda: ["stl", "3mf"])
+    slicer: str = "prusaslicer"
+    unit_scale: Literal["millimeters", "centimeters", "meters", "inches", "asset_native"] = "millimeters"
+    repair_policy: Literal["none", "make_manifold_if_needed", "decimate_and_make_manifold", "manual_review_only"] = "make_manifold_if_needed"
+
+
+
+class GraphEditorNodeDefinition(BaseModel):
+    id: str = ""
+    kind: str = "manual_review_gate"
+    label: str = ""
+    x: int = 0
+    y: int = 0
+    enabled: bool = True
+    requires_approval: bool = False
+    workflow_step_type: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphEditorEdgeDefinition(BaseModel):
+    id: str = ""
+    from_: str = Field(default="", alias="from")
+    to: str = ""
+    label: str = ""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class GraphEditorCreateRequest(BaseModel):
+    name: str = "Agentic curation graph"
+    goal: str = ""
+    instructions: str = ""
+    template_key: str = "full_dataset_curation"
+    assistant_model: str = "dataset-assistant"
+    source_dataset_id: int | None = None
+    branch_name: str = "default"
+    target_model: str = "sdxl"
+    adapter_type: str = "lora"
+    dataset_goal: str = "character"
+    training_tool: str = "generic"
+    automation_level: str = "guided"
+    created_by: str = "user_or_model"
+    options: dict[str, Any] = Field(default_factory=dict)
+    graph: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphEditorPlanRequest(GraphEditorCreateRequest):
+    use_model: bool = False
+
+
+class GraphEditorSaveRequest(BaseModel):
+    graph: dict[str, Any]
+
+
+class GraphEditorRefineRequest(BaseModel):
+    instructions: str = ""
+    graph: dict[str, Any] = Field(default_factory=dict)
+    assistant_model: str | None = None
+    use_model: bool = False
+
+
+class GraphEditorRunRequest(BaseModel):
+    dry_run: bool = False
+    approve_unsafe_steps: bool = False
+    stop_on_approval_gate: bool = True
+    continue_on_error: bool = False
+    start_at_step: int = 1
+    stop_after_step: int | None = None
+    branch_name: str | None = None
+    source_dataset_id: int | None = None
+    target_model: str | None = None
+    adapter_type: str | None = None
+    dataset_goal: str | None = None
+    training_tool: str | None = None
+    assistant_model: str | None = None
+    workflow_id: str | None = None
+    save_compiled_workflow: bool = False
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowStepDefinition(BaseModel):
+    id: str = ""
+    type: str
+    label: str = ""
+    enabled: bool = True
+    requires_approval: bool = False
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowCreateRequest(BaseModel):
+    name: str = "Automated curation workflow"
+    goal: str = ""
+    instructions: str = ""
+    template_key: str = "full_dataset_curation"
+    assistant_model: str = "dataset-assistant"
+    source_dataset_id: int | None = None
+    branch_name: str = ""
+    target_model: str = "sdxl"
+    adapter_type: str = "lora"
+    dataset_goal: Literal["style", "character", "character_style", "concept"] = "character"
+    training_tool: str = "generic"
+    tag_profile: str = "e621"
+    trigger_token: str = "<trigger_token>"
+    style_trigger_token: str = "<style_trigger>"
+    max_items: int = 0
+    automation_level: Literal["manual", "guided", "supervised_auto", "full_auto_with_approval_gates"] = "guided"
+    approval_policy: Literal["unsafe_steps_require_approval", "always_ask", "run_all_approved"] = "unsafe_steps_require_approval"
+    memory_policy: Literal["none", "persist_prompt_refinements", "persist_prompt_and_run_summaries"] = "persist_prompt_refinements"
+    download_request: dict[str, Any] = Field(default_factory=dict)
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowPlanRequest(WorkflowCreateRequest):
+    use_model: bool = False
+
+
+class WorkflowUpdateRequest(BaseModel):
+    workflow: dict[str, Any]
+
+
+class WorkflowRefineRequest(BaseModel):
+    instructions: str = ""
+    workflow: dict[str, Any] = Field(default_factory=dict)
+    assistant_model: str | None = None
+    use_model: bool = False
+
+
+class WorkflowRunRequest(BaseModel):
+    dry_run: bool = False
+    approve_unsafe_steps: bool = False
+    stop_on_approval_gate: bool = True
+    continue_on_error: bool = False
+    start_at_step: int = 1
+    stop_after_step: int | None = None
+    branch_name: str | None = None
+    source_dataset_id: int | None = None
+    target_model: str | None = None
+    adapter_type: str | None = None
+    dataset_goal: str | None = None
+    training_tool: str | None = None
+    assistant_model: str | None = None
+    options: dict[str, Any] = Field(default_factory=dict)
+

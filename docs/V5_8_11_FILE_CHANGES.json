@@ -1,0 +1,40 @@
+{
+  "added": [
+    "DataCurationToolModern/docs/V5_8_10_AGENTIC_GRAPH_BROWSER_MCP.md",
+    "DataCurationToolModern/docs/V5_8_11_FILE_CHANGES.json",
+    "DataCurationToolModern/docs/V5_8_11_GRAPH_SCROLL_STARTUP_RESUME_FIXES.md",
+    "DataCurationToolModern/docs/wiki/40-Agentic-Graph-Editor-Standalone-Port-and-Browser-MCPs.md",
+    "DataCurationToolModern/docs/wiki/41-Graph-Editor-Browser-MCP-Scroll-and-Startup-Resume.md",
+    "DataCurationToolModern/tests/test_v603_graph_editor_browser_mcp_integration.py",
+    "DataCurationToolModern/tests/test_v604_scroll_startup_resume.py"
+  ],
+  "edited": [
+    "DataCurationToolModern/README.md",
+    "DataCurationToolModern/data_curation_tool/__init__.py",
+    "DataCurationToolModern/data_curation_tool/app.py",
+    "DataCurationToolModern/data_curation_tool/config.py",
+    "DataCurationToolModern/data_curation_tool/routers/migration.py",
+    "DataCurationToolModern/data_curation_tool/services/graph_editor_service.py",
+    "DataCurationToolModern/data_curation_tool/services/mcp_tools_service.py",
+    "DataCurationToolModern/data_curation_tool/static/app.js",
+    "DataCurationToolModern/data_curation_tool/static/styles.css",
+    "DataCurationToolModern/docs/wiki/27-3D-Generation-MCP-Cloud-and-Booru-Logic.md",
+    "DataCurationToolModern/docs/wiki/34-Agentic-Graph-Editor.md",
+    "DataCurationToolModern/docs/wiki/Home.md",
+    "DataCurationToolModern/docs/wiki/README.md",
+    "DataCurationToolModern/docs/wiki/_Sidebar.md",
+    "DataCurationToolModern/integrations/mcp_servers/dct_mcp_tool_bridge.py",
+    "DataCurationToolModern/pyproject.toml",
+    "DataCurationToolModern/tests/test_v593_legacy_taggers_translation_release.py",
+    "DataCurationToolModern/tests/test_v594_character_reference_lora_augmentation.py",
+    "DataCurationToolModern/tests/test_v595_automation_workflows.py",
+    "DataCurationToolModern/tests/test_v596_agentic_graph_editor.py",
+    "DataCurationToolModern/tests/test_v597_hydra_pyvips_runtime_fix.py",
+    "DataCurationToolModern/tests/test_v598_hydra_windows_libvips_loader.py",
+    "DataCurationToolModern/tests/test_v599_hydra_queue_patch_z3d_removal.py",
+    "DataCurationToolModern/tests/test_v600_hydra_loader_alias_gallery_workflow_fixes.py",
+    "DataCurationToolModern/tests/test_v601_hydra_utf8_startup_progress.py",
+    "DataCurationToolModern/tests/test_v602_startup_time_import_fix.py"
+  ],
+  "removed": []
+}

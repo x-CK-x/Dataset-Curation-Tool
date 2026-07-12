@@ -279,8 +279,20 @@ class JobManager:
             executor.shutdown(wait=wait, cancel_futures=True)
 
     def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
-        rows = self.db.query("SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,))
-        return [self._decode(row) for row in rows]
+        # The jobs table can contain large result_json payloads for migration,
+        # dictionary import, and model jobs.  Polling /api/jobs every few seconds
+        # must not deserialize those payloads, or the UI appears to stall right
+        # after a job reaches 100%.  The full result remains available through
+        # get_job(job_id) / the single-job endpoint.
+        rows = self.db.query(
+            """
+            SELECT id, type, status, progress, message, params_json, error, created_at, updated_at, finished_at,
+                   CASE WHEN result_json IS NOT NULL AND result_json != '' THEN 1 ELSE 0 END AS result_available
+            FROM jobs ORDER BY id DESC LIMIT ?
+            """,
+            (limit,),
+        )
+        return [self._decode(row, decode_result=False) for row in rows]
 
     def get_job(self, job_id: int) -> dict[str, Any] | None:
         row = self.db.query_one("SELECT * FROM jobs WHERE id=?", (job_id,))
@@ -305,11 +317,16 @@ class JobManager:
         return {"deleted": int(before.get("n") or 0)}
 
     @staticmethod
-    def _decode(row: dict[str, Any]) -> dict[str, Any]:
+    def _decode(row: dict[str, Any], *, decode_result: bool = True) -> dict[str, Any]:
         import json
 
         payload = dict(row)
         payload["params"] = json.loads(payload.pop("params_json") or "{}")
         result_json = payload.pop("result_json", None)
-        payload["result"] = json.loads(result_json) if result_json else None
+        if decode_result:
+            payload["result"] = json.loads(result_json) if result_json else None
+            payload["result_available"] = bool(payload.get("result_available") or payload["result"] is not None)
+        else:
+            payload["result"] = None
+            payload["result_available"] = bool(payload.get("result_available") or result_json)
         return payload

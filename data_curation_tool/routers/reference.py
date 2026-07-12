@@ -43,6 +43,26 @@ class ReferenceRunPayload(BaseModel):
     notes: str = ''
 
 
+class CharacterProfilePayload(BaseModel):
+    target_name: str
+    reference_paths: list[str] = Field(default_factory=list)
+    reference_set_name: str = 'default'
+    profile_name: str = 'default'
+    pipeline: str = 'active_memory_colorhash'
+    include_saved_references: bool = True
+    include_verified_positive_memory: bool = True
+    include_verified_negative_memory: bool = True
+    negative_memory_penalty: float = 0.35
+    notes: str = ''
+
+
+class CharacterPrunePayload(ReferenceRunPayload):
+    include_verified_positive_memory: bool = True
+    include_verified_negative_memory: bool = True
+    include_saved_references: bool = True
+    negative_memory_penalty: float = 0.35
+
+
 class VerifyPayload(BaseModel):
     detection_id: int
     label: str
@@ -163,6 +183,37 @@ class TrainingJobPayload(BaseModel):
 @router.get('/status')
 def status(request: Request):
     return ctx(request).reference.status()
+
+
+@router.get('/character-methods')
+def character_methods(request: Request):
+    return ctx(request).reference.character_methods()
+
+
+@router.get('/character-profiles')
+def character_profiles(request: Request, target_name: str | None = None):
+    return ctx(request).reference.list_character_profiles(target_name)
+
+
+@router.post('/character-profiles/build')
+def build_character_profile(payload: CharacterProfilePayload, request: Request):
+    return ctx(request).reference.build_character_profile(payload.model_dump())
+
+
+@router.post('/character-prune')
+def character_prune(payload: CharacterPrunePayload, request: Request):
+    c = ctx(request)
+
+    def task(progress):
+        return c.reference.run_character_prune(payload.model_dump(), progress)
+
+    job_id = c.jobs.submit('character_reference_prune', payload.model_dump(), task)
+    return {'job_id': job_id, 'status': 'queued'}
+
+
+@router.post('/character-prune-now')
+def character_prune_now(payload: CharacterPrunePayload, request: Request):
+    return ctx(request).reference.run_character_prune(payload.model_dump())
 
 
 @router.get('/targets')

@@ -5,6 +5,7 @@ import json
 import mimetypes
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -363,6 +364,52 @@ class ThreeDService:
                 "supports_texture": True,
                 "description": "Rodin/Hyper3D multi-image adapter contract for production-ready meshes from several reference views.",
             },
+
+            {
+                "key": "tripo_p1_smart_mesh_api",
+                "label": "Tripo P1.0 Smart Mesh / P1 API (cloud)",
+                "mode": "cloud_api",
+                "inputs": ["text", "image", "multi_image"],
+                "outputs": ["glb", "fbx", "obj", "usdz", "stl", "3mf"],
+                "api_key_required": True,
+                "supports_texture": True,
+                "supports_pbr": True,
+                "supports_animation": True,
+                "availability": "hosted_saas_api",
+                "open_source": False,
+                "local_runtime": False,
+                "api_model_ids": ["Tripo-P1.0", "P1", "p1-smart-mesh"],
+                "description": "Tripo P1.0 / Smart Mesh is exposed as a hosted/API provider row. Configure endpoint/API key; do not assume local open weights.",
+            },
+            {
+                "key": "hunyuan3d_31_cloud_api",
+                "label": "Hunyuan3D 3.1 / Tencent Cloud 3D API (cloud)",
+                "mode": "cloud_api",
+                "inputs": ["text", "image", "multi_image"],
+                "outputs": ["glb", "fbx", "obj", "ply", "stl"],
+                "api_key_required": True,
+                "supports_texture": True,
+                "supports_pbr": True,
+                "availability": "hosted_saas_api",
+                "open_source": False,
+                "local_runtime": False,
+                "api_model_ids": ["Hunyuan3D-3.1", "Hunyuan-3D-Global-v3", "hunyuan3d_31"],
+                "description": "Hunyuan3D 3.1 is represented as a cloud/API contract. Use Hunyuan3D 2.x/2.1 rows for local/open-source workflows.",
+            },
+            {
+                "key": "rodin_hyper3d_api",
+                "label": "Rodin / Hyper3D Production API (cloud)",
+                "mode": "cloud_api",
+                "inputs": ["text", "image", "multi_image"],
+                "outputs": ["glb", "fbx", "obj", "usdz"],
+                "api_key_required": True,
+                "supports_texture": True,
+                "supports_pbr": True,
+                "availability": "hosted_saas_api",
+                "open_source": False,
+                "local_runtime": False,
+                "description": "Hosted Rodin/Hyper3D provider row for production text/image/multiview 3D generation and downloadable assets.",
+            },
             {
                 "key": "comfyui_3d_workflow_api",
                 "label": "ComfyUI 3D Workflow / Partner Nodes",
@@ -387,6 +434,50 @@ class ThreeDService:
                 "vram_gb": 12,
                 "supports_texture": True,
                 "description": "Video/turntable-to-3D provider contract for local photogrammetry/NeRF/Gaussian-splat pipelines. Use command_options to point at the exact training/export CLI.",
+            },
+            {
+                "key": "dream_textures_blender_bridge",
+                "label": "Dream Textures Blender Add-on / Backend Bridge",
+                "mode": "blender_addon",
+                "inputs": ["text", "image"],
+                "outputs": ["texture", "material", "image", "blend"],
+                "repo_url": "https://github.com/carson-katri/dream-textures",
+                "api_key_required": False,
+                "vram_gb": 8,
+                "supports_texture": True,
+                "description": "Creates a Blender handoff manifest for Dream Textures texture/material workflows; use Blender/MCP or the Dream Textures backend API to execute generation.",
+            },
+            {
+                "key": "quickmaker_blender_bridge",
+                "label": "QuickMaker Blender AI Suite Bridge",
+                "mode": "blender_addon",
+                "inputs": ["text", "image", "multi_image", "video"],
+                "outputs": ["image", "video", "texture", "glb", "fbx", "obj", "blend"],
+                "api_key_required": False,
+                "supports_texture": True,
+                "supports_pbr": True,
+                "description": "Creates a Blender handoff manifest for QuickMaker account/add-on workflows covering 2D, video, texture, and 3D assets.",
+            },
+            {
+                "key": "blender_mcp_addon",
+                "label": "Blender MCP Add-on / Server Handoff",
+                "mode": "mcp_handoff",
+                "inputs": ["text", "image", "multi_image", "video"],
+                "outputs": ["blend", "glb", "fbx", "obj", "render"],
+                "api_key_required": False,
+                "supports_texture": True,
+                "supports_pbr": True,
+                "description": "Creates an approved MCP handoff manifest for scene creation, mesh cleanup, retopology, rendering, and export inside Blender.",
+            },
+            {
+                "key": "zbrush_mcp_bridge",
+                "label": "ZBrush MCP/Python Sculpt Refinement Bridge",
+                "mode": "mcp_handoff",
+                "inputs": ["text", "image", "asset"],
+                "outputs": ["obj", "fbx", "ztl", "blend", "normal_maps"],
+                "api_key_required": False,
+                "supports_texture": False,
+                "description": "Creates an approved ZBrush handoff manifest for sculpt review, GoZ-style import/export, high-resolution mesh cleanup, and normal/detail-map workflows.",
             },
             {
                 "key": "generic_text_to_3d_api",
@@ -453,8 +544,129 @@ class ThreeDService:
             },
         ]
 
+    @staticmethod
+    def print_providers() -> list[dict[str, Any]]:
+        return [
+            {
+                "key": "prusaslicer",
+                "label": "PrusaSlicer CLI",
+                "mode": "slicer_cli",
+                "inputs": ["stl", "obj", "3mf", "amf"],
+                "outputs": ["gcode", "stl", "3mf", "obj", "amf"],
+                "default_executable": "prusa-slicer-console.exe" if os.name == "nt" else "prusa-slicer",
+                "command_notes": "Uses --export-gcode/--export-stl/--export-3mf/--export-obj/--export-amf with optional --load profile.ini.",
+                "mcp_tool": "prusaslicer",
+            },
+            {
+                "key": "orcaslicer",
+                "label": "OrcaSlicer CLI",
+                "mode": "slicer_cli",
+                "inputs": ["stl", "obj", "3mf"],
+                "outputs": ["gcode", "3mf", "stl"],
+                "default_executable": "OrcaSlicer.exe" if os.name == "nt" else "orca-slicer",
+                "command_notes": "Builds a PrusaSlicer-compatible command contract where supported by the installed OrcaSlicer build.",
+                "mcp_tool": "orcaslicer",
+            },
+            {
+                "key": "bambu_studio",
+                "label": "Bambu Studio handoff",
+                "mode": "slicer_project_handoff",
+                "inputs": ["3mf", "stl", "obj"],
+                "outputs": ["3mf", "gcode", "project"],
+                "default_executable": "BambuStudio.exe" if os.name == "nt" else "bambu-studio",
+                "command_notes": "Prefer project/profile handoff; exact CLI behavior may depend on the installed build.",
+                "mcp_tool": "bambu_studio",
+            },
+            {
+                "key": "curaengine",
+                "label": "CuraEngine CLI",
+                "mode": "slicer_engine_cli",
+                "inputs": ["stl"],
+                "outputs": ["gcode"],
+                "default_executable": "CuraEngine.exe" if os.name == "nt" else "CuraEngine",
+                "command_notes": "Uses CuraEngine slice -l input.stl -o output.gcode and optional -j machine/extruder definition JSON.",
+                "mcp_tool": "curaengine",
+            },
+            {
+                "key": "slic3r",
+                "label": "Slic3r CLI",
+                "mode": "slicer_cli",
+                "inputs": ["stl", "obj", "3mf", "amf"],
+                "outputs": ["gcode", "stl", "3mf", "obj", "amf"],
+                "default_executable": "slic3r.exe" if os.name == "nt" else "slic3r",
+                "command_notes": "Uses Slic3r-style --export-gcode/--export-stl/--export-3mf/--export-obj/--export-amf where supported.",
+                "mcp_tool": "slic3r",
+            },
+        ]
+
     def provider_catalog(self) -> dict[str, Any]:
-        return {"generation": self.generation_providers(), "rigging": self.rigging_providers()}
+        return {"generation": self.generation_providers(), "rigging": self.rigging_providers(), "print": self.print_providers()}
+
+    def _print_provider_by_key(self, provider: str) -> dict[str, Any]:
+        for row in self.print_providers():
+            if row.get("key") == provider:
+                return row
+        return {}
+
+    def prepare_print_handoff(self, payload: dict[str, Any]) -> dict[str, Any]:
+        provider = str(payload.get("provider") or "prusaslicer").strip().lower()
+        meta = self._print_provider_by_key(provider)
+        if not meta:
+            raise ValueError(f"Unknown 3D print/slicer provider: {provider!r}")
+        asset = self._resolve_asset_input(payload)
+        fmt = str(payload.get("output_format") or "gcode").lower().lstrip(".")
+        profile_path = str(payload.get("profile_path") or payload.get("config_path") or "").strip()
+        exe = str(payload.get("executable_path") or payload.get("slicer_executable") or meta.get("default_executable") or provider).strip()
+        output_dir = Path(payload.get("output_dir") or (self.assets_root / "print_handoffs")).expanduser().resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = str(payload.get("output_path") or "").strip()
+        if not output_path:
+            output_path = str(output_dir / f"{asset.stem}.{('gcode' if fmt == 'gcode' else fmt)}")
+        extra_args = payload.get("extra_args") or []
+        if isinstance(extra_args, str):
+            extra_args = shlex.split(extra_args) if extra_args.strip() else []
+        command = self._slicer_command(provider, exe, asset, Path(output_path), fmt, profile_path=profile_path, extra_args=[str(x) for x in extra_args])
+        manifest = {
+            "version": 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "provider": provider,
+            "provider_meta": meta,
+            "input_asset": str(asset),
+            "output_path": output_path,
+            "output_format": fmt,
+            "profile_path": profile_path,
+            "command": command,
+            "command_string": " ".join(shlex.quote(str(x)) for x in command),
+            "mcp_tool": meta.get("mcp_tool"),
+            "manual_review_required": True,
+            "note": "This creates a slicer/MCP handoff manifest. Review printer/profile/material settings before running or sending G-code to any printer.",
+        }
+        manifest_path = output_dir / f"print_handoff_{asset.stem}_{provider}_{uuid.uuid4().hex[:8]}.json"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        result = {"ok": True, "manifest_path": str(manifest_path), "manifest": manifest, "dry_run": bool(payload.get("dry_run", True))}
+        if payload.get("run"):
+            if not payload.get("user_approved"):
+                raise ValueError("Running slicer commands requires user_approved=true. Use dry-run/manifest first.")
+            proc = subprocess.run(command, capture_output=True, text=True, timeout=max(30, int(payload.get("timeout_seconds") or 3600)))
+            result["run"] = {"returncode": proc.returncode, "stdout": proc.stdout[-20000:], "stderr": proc.stderr[-20000:], "ok": proc.returncode == 0}
+        return result
+
+    def _slicer_command(self, provider: str, executable: str, asset: Path, output: Path, fmt: str, *, profile_path: str = "", extra_args: list[str] | None = None) -> list[str]:
+        low = str(provider or "").lower().replace("_", "-")
+        extra_args = list(extra_args or [])
+        if low in {"prusaslicer", "orcaslicer", "orca-slicer", "slic3r", "bambu-studio", "bambu"}:
+            flag = {"gcode": "--export-gcode", "stl": "--export-stl", "3mf": "--export-3mf", "obj": "--export-obj", "amf": "--export-amf"}.get(fmt, "--export-gcode")
+            cmd = [executable]
+            if profile_path:
+                cmd += ["--load", profile_path]
+            cmd += [flag, "--output", str(output), str(asset)]
+            return cmd + extra_args
+        if low in {"curaengine", "cura-engine", "cura"}:
+            cmd = [executable, "slice", "-l", str(asset), "-o", str(output)]
+            if profile_path:
+                cmd += ["-j", profile_path]
+            return cmd + extra_args
+        return [executable, str(asset), *extra_args]
 
     def _safe_job_dir(self, root: Path, provider: str) -> Path:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -744,12 +956,13 @@ class ThreeDService:
         prompt = str(payload.get("prompt") or "").strip()
         inputs = set(str(x).lower() for x in (provider_meta.get("inputs") or []))
         text_only = inputs == {"text"}
-        image_required = ("image" in inputs and not text_only and "multi_image" not in inputs and "video" not in inputs)
+        image_required = ("image" in inputs and "text" not in inputs and not text_only and "multi_image" not in inputs and "video" not in inputs)
         image = self._resolve_image(payload, required=image_required)
         multi_images = self._resolve_multi_images(payload) if "multi_image" in inputs else []
         video = self._resolve_video(payload) if "video" in inputs or "image_sequence" in inputs else None
-        if "text" in inputs and not prompt and not image and not multi_images and not video:
-            raise ValueError(f"{provider_meta.get('label') or provider} requires a prompt or source media input.")
+        asset_input = str(payload.get("asset_path") or payload.get("input_asset_path") or "").strip()
+        if "text" in inputs and not prompt and not image and not multi_images and not video and not asset_input:
+            raise ValueError(f"{provider_meta.get('label') or provider} requires a prompt or source media/asset input.")
         if "multi_image" in inputs and not multi_images and not prompt:
             raise ValueError(f"{provider_meta.get('label') or provider} requires multi_image_paths/image_paths or a prompt.")
         if "video" in inputs and not video and not prompt and not image:
@@ -811,10 +1024,14 @@ class ThreeDService:
             assets, details = self._generate_meshy_text(payload, prompt, job_dir, timeout, progress)
         elif provider in {
             "generic_image_to_3d_api", "generic_text_to_3d_api", "generic_multi_image_to_3d_api", "generic_video_to_3d_api",
-            "rodin3d_api", "rodin_text_api", "rodin_multi_image_api",
-            "tripo_text_api", "tripo_image_api", "tripo_multi_image_api", "meshy_multi_image_api", "comfyui_3d_workflow_api",
+            "rodin3d_api", "rodin_text_api", "rodin_multi_image_api", "rodin_hyper3d_api",
+            "tripo_text_api", "tripo_image_api", "tripo_multi_image_api", "tripo_p1_smart_mesh_api",
+            "hunyuan3d_31_cloud_api", "meshy_multi_image_api", "comfyui_3d_workflow_api",
         }:
             assets, details = self._generate_generic(payload, image, prompt, job_dir, timeout, progress, images=multi_images, video=video)
+        elif provider in {"dream_textures_blender_bridge", "quickmaker_blender_bridge", "blender_mcp_addon", "zbrush_mcp_bridge"}:
+            details = self._generate_external_tool_handoff(provider, payload, image, prompt, job_dir, progress, images=multi_images, video=video)
+            assets = []
         elif provider in {"instantmesh_local", "wonder3d_local", "zero123plus_local", "sv3d_local", "sparc3d_local", "unique3d_local", "nerfstudio_video_to_3d_local"}:
             if image is None and multi_images:
                 image = multi_images[0]
@@ -822,6 +1039,9 @@ class ThreeDService:
                 raise ValueError(f"{provider_meta.get('label') or provider} requires an image/video path.")
             assets, details = self._generate_generic_local_repo(payload, image or video, prompt, job_dir, timeout, progress)
         if not assets:
+            if details.get("handoff_manifest"):
+                progress(1.0, "External tool handoff manifest created")
+                return {"ok": True, "provider": provider, "job_dir": str(job_dir), "handoff": True, "handoff_manifest": details.get("handoff_manifest"), "assets": [], "count": 0, "details": details}
             raise RuntimeError(f"{provider} completed but produced no supported 3D asset file.")
         progress(0.96, f"Cataloging {len(assets)} generated asset(s)")
         result = self._finalize(job_dir, provider, payload, assets, details)
@@ -867,6 +1087,12 @@ class ThreeDService:
             entry = payload.get("entry_script") or payload.get("options", {}).get("entry_script") or "<entry_script>"
             plan["command"] = [self._python(payload), str(repo / str(entry)), "--input", str(image or "<image>"), "--output-dir", str(job_dir)]
             plan["note"] = "Repository adapters differ. Set entry_script or command_options if the default CLI names do not match the local repository."
+        elif provider in {"dream_textures_blender_bridge", "quickmaker_blender_bridge", "blender_mcp_addon", "zbrush_mcp_bridge"}:
+            plan["handoff"] = {
+                "target_tool": "zbrush" if provider == "zbrush_mcp_bridge" else "blender",
+                "manifest": str(job_dir / "external_tool_handoff.json"),
+                "note": "This provider creates an MCP/add-on handoff manifest. Execute the generated instructions from the MCP Tools/Blender/ZBrush workflow after user approval.",
+            }
         elif provider in {"meshy_image_api", "meshy_text_api", "meshy_multi_image_api"}:
             default_endpoint = "https://api.meshy.ai/openapi/v2/text-to-3d" if provider == "meshy_text_api" else ("https://api.meshy.ai/openapi/v1/multi-image-to-3d" if provider == "meshy_multi_image_api" else "https://api.meshy.ai/openapi/v1/image-to-3d")
             plan["request"] = {"method": "POST", "endpoint": payload.get("endpoint") or default_endpoint, "asynchronous": True, "target_formats": payload.get("target_formats") or [payload.get("output_format") or "glb"]}
@@ -880,6 +1106,32 @@ class ThreeDService:
                 fields.append("video")
             plan["request"] = {"method": payload.get("method") or "POST", "endpoint": payload.get("endpoint") or "<endpoint>", "body_fields": fields, "response_url_path": payload.get("response_url_path") or ""}
         return plan
+
+    def _generate_external_tool_handoff(self, provider: str, payload: dict[str, Any], image: Path | None, prompt: str, job_dir: Path, progress: Progress, *, images: list[Path] | None = None, video: Path | None = None) -> dict[str, Any]:
+        progress(0.35, "Writing external tool/MCP handoff manifest")
+        target_tool = "zbrush" if provider == "zbrush_mcp_bridge" else "blender"
+        manifest = {
+            "provider": provider,
+            "target_tool": target_tool,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "prompt": prompt,
+            "input_image": str(image) if image else None,
+            "multi_images": [str(p) for p in (images or [])],
+            "video": str(video) if video else None,
+            "asset_path": payload.get("asset_path") or payload.get("input_asset_path") or "",
+            "requested_outputs": payload.get("target_formats") or payload.get("output_format") or [],
+            "instructions": payload.get("instructions") or payload.get("tool_instructions") or "",
+            "approval_note": "This manifest is for user-approved external tool execution. It does not run Blender/ZBrush commands by itself.",
+            "next_steps": [
+                "Open MCP Tools and confirm the target tool is detected/enabled.",
+                "Open the generated manifest in the target tool workflow or hand it to the local/cloud model via approved MCP tool use.",
+                "Save any generated/refined asset back into the listed output_dir so the 3D Assets catalog can pick it up.",
+            ],
+            "output_dir": str(job_dir),
+        }
+        path = job_dir / "external_tool_handoff.json"
+        path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {"handoff_manifest": str(path), "target_tool": target_tool, "manifest": manifest}
 
     def _generate_hunyuan(self, payload: dict[str, Any], image: Path, job_dir: Path, timeout: int, progress: Progress) -> tuple[list[Path], dict[str, Any]]:
         endpoint = str(payload.get("endpoint") or "http://127.0.0.1:8081/generate").rstrip("/")

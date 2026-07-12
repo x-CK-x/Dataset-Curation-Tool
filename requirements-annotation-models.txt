@@ -1,7 +1,7 @@
 -r requirements-models.txt
 ultralytics>=8.3
 pycocotools>=2.0
-onnxruntime>=1.18
+onnxruntime-gpu[cuda,cudnn]>=1.21,<1.23
 # SAM classic and SAM-HQ; install when using SAM/SAM-HQ rows.
 git+https://github.com/facebookresearch/segment-anything.git
 segment-anything-hq>=0.3

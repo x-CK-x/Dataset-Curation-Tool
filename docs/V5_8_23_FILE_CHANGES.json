@@ -1,0 +1,20 @@
+{
+  "version": "5.8.23",
+  "summary": "Fix migration startup-maintenance stall while importing migrated tag database metadata.",
+  "new_files": [
+    "docs/V5_8_23_MIGRATION_TAG_DB_STALL_FIX.md",
+    "docs/V5_8_23_FILE_CHANGES.json",
+    "docs/wiki/53-Migration-Tag-Database-Stall-Fix.md",
+    "tests/test_v616_migration_tag_database_stall_fix.py"
+  ],
+  "edited_files": [
+    "README.md",
+    "data_curation_tool/__init__.py",
+    "data_curation_tool/services/install_migration_service.py",
+    "docs/wiki/Home.md",
+    "docs/wiki/README.md",
+    "docs/wiki/_Sidebar.md",
+    "pyproject.toml"
+  ],
+  "removed_files": []
+}

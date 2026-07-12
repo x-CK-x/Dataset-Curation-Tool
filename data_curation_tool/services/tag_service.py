@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime, timezone
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 from pathlib import Path
@@ -22,7 +22,7 @@ from ..database import Database, now_iso
 from ..jobs import CancelledJobError
 from ..paths import AppPaths
 from ..schemas import BulkTagRequest, TagPruneRequest, TagPruneResult
-from ..utils import format_tag_for_mode, load_json, normalize_tag, parse_tag_string, save_json, tag_string, write_text
+from ..utils import format_tag_for_mode, load_json, normalize_tag, normalize_tag_canonical, parse_tag_string, save_json, tag_string, write_text
 
 DEFAULT_IMPLICATIONS = {"1girl": ["girl"], "1boy": ["boy"], "solo": ["single_person"], "portrait": ["face", "upper_body"]}
 # Guardrail for real booru startup syncs: if a generic export URL only imports
@@ -118,6 +118,148 @@ DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
     "yandere": {"label": "Yande.re", "categories": BASE_CATEGORIES, "precedence": ["rating", "artist", "copyright", "character", "style", "concept", "trigger", "quality", "general", "meta", "negative", "custom", "unknown", "invalid"], "db_export_url": ""},
     "lora-purpose": {"label": "LoRA / Model Purpose", "categories": LORA_CATEGORIES, "precedence": ["style", "character", "concept", "trigger", "quality", "general", "meta", "negative", "custom", "unknown"], "db_export_url": ""},
     "custom": {"label": "Custom Dataset", "categories": BASE_CATEGORIES, "precedence": ["rating", "style", "artist", "copyright", "character", "concept", "species", "trigger", "quality", "general", "meta", "custom", "unknown", "invalid", "negative"], "db_export_url": ""},
+}
+
+
+TAG_INDEX_API_PROFILES: dict[str, dict[str, Any]] = {
+    # e621/e926 are still primarily synced through /db_exports/ because those
+    # exports include tags, aliases, implications, artists, and much larger full
+    # dictionaries.  The API endpoints are kept as fallback/diagnostic routes.
+    "e621": {
+        "label": "e621 tag index API fallback",
+        "url": "https://e621.net/tags.json",
+        "params": {"search[order]": "count", "search[hide_empty]": "yes"},
+        "result_keys": ["tags"],
+        "page_param": "page",
+        "limit_param": "limit",
+        "page_start": 1,
+        "max_limit": 320,
+        "max_pages": 5000,
+        "delay_seconds": 1.0,
+        "name_keys": ["name"],
+        "category_keys": ["category"],
+        "count_keys": ["post_count"],
+    },
+    "e926": {
+        "label": "e926 tag index API fallback",
+        "url": "https://e926.net/tags.json",
+        "params": {"search[order]": "count", "search[hide_empty]": "yes"},
+        "result_keys": ["tags"],
+        "page_param": "page",
+        "limit_param": "limit",
+        "page_start": 1,
+        "max_limit": 320,
+        "max_pages": 5000,
+        "delay_seconds": 1.0,
+        "name_keys": ["name"],
+        "category_keys": ["category"],
+        "count_keys": ["post_count"],
+    },
+    "danbooru": {
+        "label": "Danbooru tags.json API fallback",
+        "url": "https://danbooru.donmai.us/tags.json",
+        "params": {"search[order]": "count", "search[hide_empty]": "yes"},
+        "result_keys": [],
+        "page_param": "page",
+        "limit_param": "limit",
+        "page_start": 1,
+        "max_limit": 1000,
+        "max_pages": 5000,
+        "delay_seconds": 1.0,
+        "name_keys": ["name"],
+        "category_keys": ["category"],
+        "count_keys": ["post_count"],
+    },
+    "gelbooru": {
+        "label": "Gelbooru DAPI tag index",
+        "url": "https://gelbooru.com/index.php?page=dapi&s=tag&q=index&json=1",
+        "params": {},
+        "result_keys": ["tag", "tags"],
+        "page_param": "pid",
+        "limit_param": "limit",
+        "page_start": 0,
+        "max_limit": 1000,
+        "max_pages": 5000,
+        "delay_seconds": 1.0,
+        "name_keys": ["name"],
+        "category_keys": ["type", "category", "category_id"],
+        "count_keys": ["count", "post_count"],
+    },
+    "safebooru": {
+        "label": "Safebooru DAPI tag index",
+        "url": "https://safebooru.org/index.php?page=dapi&s=tag&q=index&json=1",
+        "params": {},
+        "result_keys": ["tag", "tags"],
+        "page_param": "pid",
+        "limit_param": "limit",
+        "page_start": 0,
+        "max_limit": 1000,
+        "max_pages": 5000,
+        "delay_seconds": 1.0,
+        "name_keys": ["name"],
+        "category_keys": ["type", "category", "category_id"],
+        "count_keys": ["count", "post_count"],
+    },
+    "rule34": {
+        "label": "Rule34 DAPI tag index",
+        "url": "https://api.rule34.xxx/index.php?page=dapi&s=tag&q=index&json=1",
+        "params": {},
+        "result_keys": ["tag", "tags"],
+        "page_param": "pid",
+        "limit_param": "limit",
+        "page_start": 0,
+        "max_limit": 1000,
+        "max_pages": 5000,
+        "delay_seconds": 1.0,
+        "name_keys": ["name"],
+        "category_keys": ["type", "category", "category_id"],
+        "count_keys": ["count", "post_count"],
+    },
+    "konachan": {
+        "label": "Konachan tag.json API",
+        "url": "https://konachan.com/tag.json",
+        "params": {"order": "count"},
+        "result_keys": [],
+        "page_param": "page",
+        "limit_param": "limit",
+        "page_start": 1,
+        "max_limit": 1000,
+        "max_pages": 5000,
+        "delay_seconds": 1.0,
+        "name_keys": ["name"],
+        "category_keys": ["type", "category"],
+        "count_keys": ["count", "post_count"],
+    },
+    "yandere": {
+        "label": "Yande.re tag.json API",
+        "url": "https://yande.re/tag.json",
+        "params": {"order": "count"},
+        "result_keys": [],
+        "page_param": "page",
+        "limit_param": "limit",
+        "page_start": 1,
+        "max_limit": 1000,
+        "max_pages": 5000,
+        "delay_seconds": 1.0,
+        "name_keys": ["name"],
+        "category_keys": ["type", "category"],
+        "count_keys": ["count", "post_count"],
+    },
+}
+
+# Roles that should exist before a profile is considered complete. Most booru
+# APIs only expose a tag index with category/count metadata, not e621-style
+# alias/implication/artist CSV exports. Missing non-existent relation roles
+# should not mark those profiles stale forever.
+EXPECTED_EXPORT_ROLES_BY_PROFILE: dict[str, tuple[str, ...]] = {
+    "e621": ("tags", "aliases", "implications", "artists"),
+    "e926": ("tags", "aliases", "implications", "artists"),
+    "danbooru": ("tags",),
+    "gelbooru": ("tags",),
+    "safebooru": ("tags",),
+    "rule34": ("tags",),
+    "konachan": ("tags",),
+    "yandere": ("tags",),
 }
 
 class TagService:
@@ -661,7 +803,7 @@ class TagService:
                 if value and (latest_imported is None or str(value) > str(latest_imported)):
                     latest_imported = value
             effective_found_total = max(total, cached_tag_rows)
-            stale_after_hours = 336
+            stale_after_hours = 168
             min_expected = MIN_EXPECTED_TAG_ROWS.get((key or "").lower(), 0)
             incomplete = bool(min_expected and effective_found_total < min_expected)
             stale = effective_found_total <= 0 or incomplete
@@ -671,7 +813,8 @@ class TagService:
                     stale = (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0 >= stale_after_hours
                 except Exception:
                     stale = True
-            missing_roles = [role for role in ("tags", "aliases", "implications", "artists") if role not in latest_by_role]
+            expected_roles = self.expected_export_roles(key)
+            missing_roles = [role for role in expected_roles if role not in latest_by_role]
             # On million-row official dictionaries this count intentionally uses
             # a direct query rather than scanning category rows again.
             custom_total = int((self.db.query_one("SELECT COUNT(*) AS n FROM tag_dictionary_entries WHERE source=? AND is_custom=1", (key,)) or {"n": 0}).get("n") or 0)
@@ -693,8 +836,38 @@ class TagService:
                 "minimum_expected_tags": min_expected,
                 "missing_roles": missing_roles,
                 "stale_after_hours": stale_after_hours,
+                "expected_roles": list(expected_roles),
+                "sync_capabilities": self.tag_sync_capabilities(key),
             }
         return result[profiles[0]] if profile_key else result
+
+    def expected_export_roles(self, profile_key: str | None = None) -> tuple[str, ...]:
+        key = (profile_key or "e621").lower()
+        return EXPECTED_EXPORT_ROLES_BY_PROFILE.get(key, ("tags",))
+
+    def tag_index_api_config(self, profile_key: str | None = None) -> dict[str, Any] | None:
+        key = (profile_key or "e621").lower()
+        cfg = TAG_INDEX_API_PROFILES.get(key)
+        return dict(cfg) if cfg else None
+
+    def tag_sync_capabilities(self, profile_key: str | None = None) -> dict[str, Any]:
+        key = (profile_key or "e621").lower()
+        profile = self.get_profile(key)
+        api_cfg = self.tag_index_api_config(key)
+        export_urls = []
+        try:
+            export_urls = self.default_export_urls(key)
+        except Exception:
+            export_urls = []
+        return {
+            "profile_key": key,
+            "label": profile.get("label") or key,
+            "supports_db_exports": bool((profile.get("db_export_url") or "").strip() or key in {"e621", "e926", "danbooru"}),
+            "supports_tag_index_api": bool(api_cfg),
+            "tag_index_api_url": (api_cfg or {}).get("url", ""),
+            "default_urls": export_urls,
+            "expected_roles": list(self.expected_export_roles(key)),
+        }
 
     def default_export_urls(self, profile_key: str) -> list[str]:
         key = (profile_key or "e621").lower()
@@ -721,6 +894,9 @@ class TagService:
             return ["https://danbooru.donmai.us/db_exports/", "https://danbooru.donmai.us/db_export/", "https://danbooru.donmai.us/wiki_pages/help:database_export"]
         if base:
             return self._dedupe_urls([base, *self._export_page_candidates(base)])
+        api_cfg = self.tag_index_api_config(key)
+        if api_cfg and api_cfg.get("url"):
+            return [str(api_cfg.get("url"))]
         return []
 
     def categories(self, profile_key: str | None = None) -> list[dict[str, Any]]:
@@ -757,6 +933,145 @@ class TagService:
         self.db.execute("UPDATE tag_profiles SET categories_json=?, precedence_json=?, updated_at=? WHERE key=?", (json.dumps(categories), json.dumps(precedence), now_iso(), profile_key))
         return {"profile_key": profile_key, "key": clean_key, "label": label or clean_key.replace("_", " ").title(), "css_class": css_class or "cat-custom"}
 
+
+    def _resolve_alias_target(self, tag: str, profile_key: str | None = None) -> str:
+        profile_key = profile_key or "e621"
+        tag = normalize_tag(tag)
+        if not tag:
+            return ""
+        row = self.db.query_one("SELECT target FROM tag_aliases WHERE source=? AND alias=?", (profile_key, tag))
+        if row and row.get("target"):
+            return normalize_tag(row["target"])
+        return tag
+
+    def _target_profile_has_tag(self, tag: str, profile_key: str | None = None) -> bool:
+        profile_key = profile_key or "e621"
+        if not tag:
+            return False
+        row = self.db.query_one("SELECT 1 FROM tag_dictionary_entries WHERE source=? AND tag=? LIMIT 1", (profile_key, tag))
+        if row:
+            return True
+        row = self.db.query_one("SELECT 1 FROM tag_aliases WHERE source=? AND alias=? LIMIT 1", (profile_key, tag))
+        return bool(row)
+
+    def _format_translation_output(self, tags: list[str], output_format: str) -> str | dict[str, Any]:
+        fmt = str(output_format or "booru_tags").lower()
+        if fmt == "natural_caption":
+            pretty = [normalize_tag_canonical(t).replace("_", " ") for t in tags]
+            if not pretty:
+                return ""
+            if len(pretty) == 1:
+                return pretty[0]
+            return ", ".join(pretty[:-1]) + ", and " + pretty[-1]
+        if fmt == "comma_caption":
+            return ", ".join(normalize_tag_canonical(t).replace("_", " ") for t in tags)
+        if fmt == "json":
+            return {"tags": tags, "caption": ", ".join(tags)}
+        return " ".join(tags)
+
+    def translation_prompt(self, translation_payload: dict[str, Any]) -> str:
+        source = translation_payload.get("source_profile_key") or "source"
+        target = translation_payload.get("target_profile_key") or "target"
+        tags = translation_payload.get("source_tags") or []
+        deterministic = translation_payload.get("translated_tags") or []
+        unknown = translation_payload.get("unknown_tags") or []
+        return (
+            "You are translating image dataset labels between booru/caption formats.\n"
+            "Return strict JSON only with keys: tags, caption, notes, uncertain_mappings.\n"
+            "Rules:\n"
+            "- Preserve important visual facts.\n"
+            "- Do not invent identity tags unless the source tags imply them.\n"
+            "- Prefer valid target-profile booru tags when possible.\n"
+            "- For e621-style inputs, preserve rating/species/character/artist semantics where they are training-relevant.\n"
+            "- If a tag has no reliable target equivalent, keep it in uncertain_mappings rather than silently dropping it.\n"
+            f"Source profile: {source}\nTarget profile: {target}\n"
+            f"Original tags: {json.dumps(tags, ensure_ascii=False)}\n"
+            f"Deterministic first-pass tags: {json.dumps(deterministic, ensure_ascii=False)}\n"
+            f"Unknown/unmapped tags needing judgement: {json.dumps(unknown, ensure_ascii=False)}\n"
+        )
+
+    def parse_translation_model_response(self, text: str) -> dict[str, Any] | None:
+        raw = str(text or "").strip()
+        if not raw:
+            return None
+        # Strip simple fenced blocks.
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I).strip()
+        raw = re.sub(r"\s*```$", "", raw).strip()
+        candidates = [raw]
+        m = re.search(r"\{.*\}", raw, flags=re.S)
+        if m:
+            candidates.insert(0, m.group(0))
+        for candidate in candidates:
+            try:
+                payload = json.loads(candidate)
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                tags = payload.get("tags") or payload.get("translated_tags") or []
+                if isinstance(tags, str):
+                    tags = parse_tag_string(tags)
+                payload["tags"] = [normalize_tag(t) for t in tags if normalize_tag(t)]
+                if payload.get("caption") is not None:
+                    payload["caption"] = str(payload.get("caption") or "").strip()
+                return payload
+        return None
+
+    def translate_format(self, request: Any) -> dict[str, Any]:
+        raw_tags = list(getattr(request, "tags", []) or [])
+        if getattr(request, "tag_string", ""):
+            raw_tags.extend(parse_tag_string(getattr(request, "tag_string", "")))
+        source_profile = str(getattr(request, "source_profile_key", "e621") or "e621")
+        target_profile = str(getattr(request, "target_profile_key", "danbooru") or "danbooru")
+        preserve_unknown = bool(getattr(request, "preserve_unknown", True))
+        output_format = str(getattr(request, "output_format", "booru_tags") or "booru_tags")
+        source_tags: list[str] = []
+        seen: set[str] = set()
+        for raw in raw_tags:
+            tag = normalize_tag(raw)
+            if tag and tag not in seen:
+                source_tags.append(tag); seen.add(tag)
+        translated: list[str] = []
+        mapped_rows: list[dict[str, Any]] = []
+        unknown: list[str] = []
+        seen_translated: set[str] = set()
+        for tag in source_tags:
+            canonical = self._resolve_alias_target(tag, source_profile)
+            target_candidate = self._resolve_alias_target(canonical, target_profile)
+            reason = "exact_or_alias"
+            if not self._target_profile_has_tag(target_candidate, target_profile):
+                # Some sites share common tag spellings but not local DB rows yet.
+                canonical_candidate = normalize_tag_canonical(target_candidate)
+                if self._target_profile_has_tag(canonical_candidate, target_profile):
+                    target_candidate = canonical_candidate
+                    reason = "canonical_spacing"
+                else:
+                    reason = "unverified"
+                    unknown.append(tag)
+                    if not preserve_unknown:
+                        mapped_rows.append({"source": tag, "source_canonical": canonical, "target": None, "reason": reason})
+                        continue
+            if target_candidate and target_candidate not in seen_translated:
+                translated.append(target_candidate); seen_translated.add(target_candidate)
+            mapped_rows.append({"source": tag, "source_canonical": canonical, "target": target_candidate, "reason": reason})
+        formatted = self._format_translation_output(translated, output_format)
+        result = {
+            "ok": True,
+            "source_profile_key": source_profile,
+            "target_profile_key": target_profile,
+            "source_tags": source_tags,
+            "translated_tags": translated,
+            "unknown_tags": unknown,
+            "mappings": mapped_rows,
+            "output_format": output_format,
+            "caption": formatted if isinstance(formatted, str) else formatted.get("caption", ""),
+            "formatted": formatted,
+            "dry_run": bool(getattr(request, "dry_run", True)),
+            "used_model": False,
+        }
+        if bool(getattr(request, "include_prompt", True)):
+            result["model_prompt"] = self.translation_prompt(result)
+        return result
+
     def categorize(self, tag: str, profile_key: str | None = None) -> str:
         tag = normalize_tag(tag); profile_key = profile_key or "e621"
         if not tag: return "unknown"
@@ -774,6 +1089,182 @@ class TagService:
             if any(low == n or low.startswith(n) or n in low for n in needles):
                 return self.normalize_category(cat, profile_key)
         return "unknown"
+
+
+    @staticmethod
+    def _coerce_model_score(value: Any, default: float = 1.0) -> float:
+        try:
+            score = float(value)
+        except Exception:
+            score = default
+        return max(0.0, min(1.0, score))
+
+    @staticmethod
+    def _prediction_pairs_from_any(value: Any) -> list[tuple[str, float]]:
+        pairs: list[tuple[str, float]] = []
+        if not value:
+            return pairs
+        raw = value.items() if isinstance(value, dict) else value
+        for item in raw:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                pairs.append((str(item[0]), TagService._coerce_model_score(item[1])))
+            elif isinstance(item, dict):
+                tag = item.get("tag") or item.get("label") or item.get("class") or item.get("name")
+                score = item.get("score")
+                if score is None:
+                    score = item.get("confidence")
+                if score is None:
+                    score = item.get("probability")
+                if score is None:
+                    score = 1.0
+                if tag:
+                    pairs.append((str(tag), TagService._coerce_model_score(score)))
+            elif isinstance(item, str):
+                pairs.append((item, 1.0))
+        return pairs
+
+    def postprocess_model_tag_scores(
+        self,
+        tag_scores: Iterable[tuple[str, float]] | Iterable[list[Any]] | Iterable[dict[str, Any]] | Iterable[str],
+        profile_key: str | None = None,
+        *,
+        apply_aliases: bool = True,
+        apply_implications: bool = True,
+        text_mode: str | None = None,
+    ) -> list[tuple[str, float]]:
+        """Normalize model tags *and* their scores before they reach the UI.
+
+        Classification models often emit source-specific spellings, aliases,
+        antecedents that imply canonical parent tags, and booru-style underscores.
+        This routine is the single pass that converts those model labels into the
+        active tool tag text mode, resolves aliases, expands implications, and
+        carries a prediction score forward for every final tag.
+        """
+        profile_key = profile_key or "e621"
+        normalized_inputs: list[tuple[str, float]] = []
+        for item in tag_scores or []:
+            if isinstance(item, dict):
+                raw_tag = item.get("tag") or item.get("label") or item.get("class") or item.get("name")
+                raw_score = item.get("score")
+                if raw_score is None:
+                    raw_score = item.get("confidence")
+                if raw_score is None:
+                    raw_score = item.get("probability")
+                if raw_tag:
+                    normalized_inputs.append((str(raw_tag), self._coerce_model_score(raw_score)))
+            elif isinstance(item, (list, tuple)) and item:
+                raw_tag = item[0]
+                raw_score = item[1] if len(item) >= 2 else 1.0
+                normalized_inputs.append((str(raw_tag), self._coerce_model_score(raw_score)))
+            elif isinstance(item, str):
+                normalized_inputs.append((item, 1.0))
+        out_order: list[str] = []
+        best_scores: dict[str, float] = {}
+        queue: list[tuple[str, float]] = []
+        queued_for_implications: set[str] = set()
+
+        def add_or_update(raw_tag: Any, score: float, *, enqueue: bool = False) -> str | None:
+            tag = normalize_tag(str(raw_tag or ""))
+            if not tag:
+                return None
+            if apply_aliases:
+                tag = normalize_tag(self._resolve_alias_target(tag, profile_key))
+            if not tag:
+                return None
+            score = self._coerce_model_score(score)
+            if tag not in best_scores:
+                best_scores[tag] = score
+                out_order.append(tag)
+            elif score > best_scores[tag]:
+                best_scores[tag] = score
+            if enqueue and tag not in queued_for_implications:
+                queue.append((tag, score))
+                queued_for_implications.add(tag)
+            return tag
+
+        for raw_tag, raw_score in normalized_inputs:
+            add_or_update(raw_tag, raw_score, enqueue=True)
+
+        idx = 0
+        processed_implications: set[str] = set()
+        while idx < len(queue):
+            tag, score = queue[idx]
+            idx += 1
+            if not apply_implications or tag in processed_implications:
+                continue
+            processed_implications.add(tag)
+            try:
+                rows = self.db.query(
+                    "SELECT consequent FROM tag_implications WHERE source=? AND antecedent=? AND consequent<>''",
+                    (profile_key, tag),
+                )
+            except Exception:
+                rows = []
+            for row in rows[:50]:
+                implied = row.get("consequent") if hasattr(row, "get") else row[0]
+                add_or_update(implied, score, enqueue=True)
+
+        formatted: list[tuple[str, float]] = []
+        seen_formatted: set[str] = set()
+        for tag in out_order:
+            if tag not in best_scores:
+                continue
+            display_tag = format_tag_for_mode(tag, text_mode)
+            if not display_tag or display_tag in seen_formatted:
+                continue
+            formatted.append((display_tag, best_scores[tag]))
+            seen_formatted.add(display_tag)
+        return formatted
+
+    def normalize_model_prediction_payload(
+        self,
+        payload: dict[str, Any],
+        profile_key: str | None = None,
+        *,
+        apply_aliases: bool = True,
+        apply_implications: bool = True,
+        text_mode: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a payload whose persisted prediction tags match UI tags.
+
+        The raw model output is preserved under ``raw``/``raw_model_output`` for
+        auditability.  The structured ``tags``/``classes``/``ratings`` lists are
+        rewritten to active-tool tag text mode so hover scores, category lookup,
+        alias resolution, and applied tags all use the same string keys.
+        """
+        if not isinstance(payload, dict):
+            return payload
+        normalized = dict(payload)
+        raw_snapshot = payload.get("raw")
+        if raw_snapshot is not None and "raw_model_output" not in normalized:
+            normalized["raw_model_output"] = raw_snapshot
+        for key in ("tags", "classes", "ratings"):
+            raw_pairs = self._prediction_pairs_from_any(payload.get(key) or [])
+            if not raw_pairs:
+                continue
+            expand_implications = apply_implications and key != "ratings"
+            normalized[key] = self.postprocess_model_tag_scores(
+                raw_pairs,
+                profile_key=profile_key,
+                apply_aliases=apply_aliases,
+                apply_implications=expand_implications,
+                text_mode=text_mode,
+            )
+        final_tags = [tag for tag, _score in self._prediction_pairs_from_any(normalized.get("tags") or [])]
+        if final_tags:
+            normalized["prediction_categories"] = {tag: self.resolve_category(tag, profile_key=profile_key) for tag in final_tags}
+        normalized["normalized_by"] = "DataCurationTool tag-service model-prediction postprocessor"
+        normalized["tag_profile"] = profile_key or "e621"
+        return normalized
+
+    def postprocess_model_tags(self, tags: Iterable[str], profile_key: str | None = None, *, apply_aliases: bool = True, apply_implications: bool = True) -> list[str]:
+        """Normalize model-emitted tags through the active booru profile."""
+        return [tag for tag, _score in self.postprocess_model_tag_scores(
+            [(tag, 1.0) for tag in (tags or [])],
+            profile_key=profile_key,
+            apply_aliases=apply_aliases,
+            apply_implications=apply_implications,
+        )]
 
     def resolve_category(self, tag: str, profile_key: str | None = None, override: str | int | None = None) -> str:
         """Resolve one tag category with global custom config priority.
@@ -1378,7 +1869,248 @@ class TagService:
             pass
         self.invalidate_cache(profile_key)
 
-    def should_auto_sync_default_export(self, profile_key: str | None = None, empty_only: bool = False, cache_hours: int = 336) -> bool:
+    def _extract_tag_index_rows(self, payload: Any, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+        if payload is None:
+            return []
+        if isinstance(payload, list):
+            return [row for row in payload if isinstance(row, dict)]
+        if not isinstance(payload, dict):
+            return []
+        result_keys = list(cfg.get("result_keys") or [])
+        for key in result_keys + ["tag", "tags", "data", "results"]:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [row for row in value if isinstance(row, dict)]
+            if isinstance(value, dict):
+                # Some DAPI XML-to-JSON layers expose {"tag": {"0": {...}}}.
+                values = list(value.values())
+                if values and all(isinstance(row, dict) for row in values):
+                    return values
+        # Some APIs return a single row object.
+        if any(k in payload for k in ("name", "tag", "tag_name")):
+            return [payload]
+        return []
+
+    def _tag_index_row_value(self, row: dict[str, Any], keys: list[str], default: Any = None) -> Any:
+        for key in keys:
+            if key in row and row.get(key) not in (None, ""):
+                return row.get(key)
+        return default
+
+    def _tag_index_row_to_entry(self, row: dict[str, Any], profile_key: str, cfg: dict[str, Any]) -> tuple[str, str, int] | None:
+        raw_name = self._tag_index_row_value(row, list(cfg.get("name_keys") or ["name", "tag", "tag_name"]), "")
+        tag = normalize_tag(raw_name)
+        if not tag or tag.lower() == "nan":
+            return None
+        raw_category = self._tag_index_row_value(row, list(cfg.get("category_keys") or ["category", "type", "category_id"]), "general")
+        category = self.normalize_category(raw_category, profile_key)
+        raw_count = self._tag_index_row_value(row, list(cfg.get("count_keys") or ["post_count", "count", "posts"]), 0)
+        try:
+            post_count = int(float(str(raw_count).replace(",", "")))
+        except Exception:
+            post_count = 0
+        return tag, category, max(0, post_count)
+
+    def import_tag_index_api(
+        self,
+        profile_key: str = "e621",
+        *,
+        url: str | None = None,
+        user_agent: str = "DataCurationTool/5.36.0",
+        cache_hours: int = 168,
+        progress=None,
+        replace_existing: bool = True,
+        force_download: bool = False,
+        max_pages: int | None = None,
+    ) -> dict[str, Any]:
+        """Sync a profile dictionary from a source-native tag-index API.
+
+        This is used for booru sources that do not publish e621-style DB export
+        CSVs but do expose a tag API.  Rows are cached locally as JSONL under
+        runtime/tag_exports/<profile>/ so the profile has an auditable local tag
+        config/cache just like DB-export based profiles.
+        """
+        _raise_if_cancelled(progress)
+        key = (profile_key or "e621").lower()
+        cfg = self.tag_index_api_config(key)
+        if not cfg:
+            raise ValueError(f"No tag-index API sync is configured for profile {key}.")
+        api_url = str(url or cfg.get("url") or "").strip()
+        if not api_url:
+            raise ValueError(f"No tag-index API URL is configured for profile {key}.")
+        if not self.paths:
+            raise RuntimeError("Tag-index API sync requires AppPaths.")
+        cache_root = self.paths.runtime / "tag_exports" / normalize_tag(key)
+        cache_root.mkdir(parents=True, exist_ok=True)
+        manifest_path = cache_root / "tag_index_source_config.json"
+        jsonl_path = cache_root / "tags_api.jsonl"
+        age_ok = False
+        if jsonl_path.exists() and jsonl_path.stat().st_size > 0 and not force_download and cache_hours > 0:
+            age_hours = (time.time() - jsonl_path.stat().st_mtime) / 3600.0
+            age_ok = age_hours < cache_hours
+        if age_ok:
+            # A valid local cache still gets re-imported into the selected profile
+            # so package swaps or database resets can hydrate the dictionary.
+            if progress:
+                progress(0.05, f"Using cached {key} tag-index API file")
+            return self.import_tag_index_jsonl_cache(jsonl_path, key, manifest_path=manifest_path, replace_existing=replace_existing, progress=progress)
+
+        limit = max(1, min(int(cfg.get("max_limit") or 1000), 5000))
+        page = int(cfg.get("page_start", 1))
+        page_param = str(cfg.get("page_param") or "page")
+        limit_param = str(cfg.get("limit_param") or "limit")
+        cap = int(max_pages or cfg.get("max_pages") or 5000)
+        delay = float(cfg.get("delay_seconds") or 1.0)
+        session = requests.Session()
+        headers = {"User-Agent": user_agent, "Accept": "application/json,text/json,*/*"}
+        total_rows = 0
+        pages = 0
+        tmp_path = jsonl_path.with_suffix(".jsonl.part")
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+        with tmp_path.open("w", encoding="utf-8", newline="\n") as f:
+            while pages < cap:
+                _raise_if_cancelled(progress)
+                params = dict(cfg.get("params") or {})
+                params[page_param] = page
+                params[limit_param] = limit
+                if progress:
+                    progress(min(0.85, pages / max(cap, 1)), f"Fetching {key} tag-index page {page}")
+                response = session.get(api_url, params=params, headers=headers, timeout=90)
+                response.raise_for_status()
+                payload = response.json()
+                rows = self._extract_tag_index_rows(payload, cfg)
+                if not rows:
+                    break
+                wrote = 0
+                for row in rows:
+                    entry = self._tag_index_row_to_entry(row, key, cfg)
+                    if not entry:
+                        continue
+                    tag, category, post_count = entry
+                    f.write(json.dumps({"tag": tag, "category": category, "post_count": post_count}, ensure_ascii=False) + "\n")
+                    wrote += 1
+                total_rows += wrote
+                pages += 1
+                if len(rows) < limit:
+                    break
+                page += 1
+                _cancelable_sleep(delay, progress)
+        if total_rows <= 0:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except TypeError:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            raise RuntimeError(f"No tag rows were returned by the {key} tag-index API.")
+        tmp_path.replace(jsonl_path)
+        manifest = {
+            "profile_key": key,
+            "source": "tag_index_api",
+            "label": cfg.get("label") or key,
+            "url": api_url,
+            "params": cfg.get("params") or {},
+            "page_param": page_param,
+            "limit_param": limit_param,
+            "page_start": cfg.get("page_start", 1),
+            "max_limit": limit,
+            "pages_downloaded": pages,
+            "rows_downloaded": total_rows,
+            "downloaded_at": now_iso(),
+            "expected_roles": list(self.expected_export_roles(key)),
+        }
+        save_json(manifest_path, manifest)
+        return self.import_tag_index_jsonl_cache(jsonl_path, key, manifest_path=manifest_path, replace_existing=replace_existing, progress=progress)
+
+    def import_tag_index_jsonl_cache(self, path: Path, profile_key: str, *, manifest_path: Path | None = None, replace_existing: bool = True, progress=None) -> dict[str, Any]:
+        key = (profile_key or "e621").lower()
+        if replace_existing:
+            self.clear_profile_dictionary(key, keep_custom=True)
+        now = now_iso()
+        rows: list[tuple[Any, ...]] = []
+        count = 0
+        batch_size = 50000
+        def flush(conn):
+            nonlocal rows
+            if not rows:
+                return
+            conn.executemany(
+                """INSERT OR REPLACE INTO tag_dictionary_entries(source, tag, category, post_count, aliases_json, implications_json, is_custom, updated_at)
+                   VALUES (?, ?, ?, ?, '[]', '[]', 0, ?)""",
+                rows,
+            )
+            rows = []
+        with self.db._lock, self.db.connect() as conn:
+            conn.execute("PRAGMA temp_store=MEMORY")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            with Path(path).open("r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    try:
+                        row = json.loads(line)
+                    except Exception:
+                        continue
+                    tag = normalize_tag(row.get("tag") or row.get("name") or "")
+                    if not tag:
+                        continue
+                    category = self.normalize_category(row.get("category"), key)
+                    try:
+                        post_count = int(row.get("post_count") or row.get("count") or 0)
+                    except Exception:
+                        post_count = 0
+                    rows.append((key, tag, category, max(0, post_count), now))
+                    count += 1
+                    if len(rows) >= batch_size:
+                        flush(conn)
+                        if progress and count % (batch_size * 2) == 0:
+                            progress(0.90, f"Imported {count:,} {key} tag-index rows")
+                flush(conn)
+            self._rebuild_profile_dictionary_mirrors(conn, key)
+        sha = self._file_sha256(Path(path)) if Path(path).exists() else ""
+        self._record_export_file(key, "tags", f"tag-index-api:{key}", Path(path), sha, count, status="imported")
+        if manifest_path and Path(manifest_path).exists():
+            self._record_export_file(key, "tag_index_config", f"tag-index-config:{key}", Path(manifest_path), self._file_sha256(Path(manifest_path)), 1, status="imported")
+        self.invalidate_cache(key)
+        return {"profile_key": key, "imported": count, "replaced_existing": bool(replace_existing), "files": [{"role": "tags", "path": str(path), "imported": count, "source": "tag_index_api"}], "status": self.dictionary_status(key)}
+
+    def _startup_sync_setting_key(self, profile_key: str | None = None) -> str:
+        key = normalize_tag(profile_key or "e621") or "e621"
+        return f"tag_db_last_startup_sync_check_at:{key}"
+
+    def startup_sync_recently_checked(self, profile_key: str | None = None, interval_hours: int = 168) -> bool:
+        """Return True when startup already checked/synced this profile recently.
+
+        This is intentionally separate from file-cache freshness.  File freshness
+        says whether a dictionary could be stale; this setting prevents automatic
+        startup from reattempting network downloads on every launch when the user
+        is testing package swaps or migrating older installs.
+        """
+        try:
+            interval = max(1, int(interval_hours or 168))
+        except Exception:
+            interval = 168
+        raw = self.db.get_setting(self._startup_sync_setting_key(profile_key), None)
+        if not raw:
+            return False
+        if isinstance(raw, dict):
+            raw = raw.get("checked_at") or raw.get("attempted_at") or raw.get("completed_at")
+        if not raw:
+            return False
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0 < interval
+        except Exception:
+            return False
+
+    def mark_startup_sync_checked(self, profile_key: str | None = None, *, status: str = "checked", detail: Any | None = None) -> None:
+        payload = {"checked_at": now_iso(), "status": status}
+        if detail is not None:
+            payload["detail"] = detail
+        self.db.set_setting(self._startup_sync_setting_key(profile_key), payload)
+
+    def should_auto_sync_default_export(self, profile_key: str | None = None, empty_only: bool = False, cache_hours: int = 168) -> bool:
         key = profile_key or "e621"
         if not self.default_export_urls(key):
             return False
@@ -1404,7 +2136,7 @@ class TagService:
         except Exception:
             return True
 
-    def import_default_exports(self, profile_key: str = "e621", url: str | None = None, user_agent: str = "DataCurationTool/5.36.0", cache_hours: int = 336, progress=None, replace_existing: bool = True, force_download: bool = False) -> dict[str, Any]:
+    def import_default_exports(self, profile_key: str = "e621", url: str | None = None, user_agent: str = "DataCurationTool/5.36.0", cache_hours: int = 168, progress=None, replace_existing: bool = True, force_download: bool = False) -> dict[str, Any]:
         """Download and parse the selected profile's DB-export files.
 
         For booru export directories this resolves the newest export for each
@@ -1486,6 +2218,23 @@ class TagService:
             except Exception as exc:
                 self._record_export_file(profile_key, role, source_url, None, "", 0, status="failed", error=str(exc))
                 files.append({"url": source_url, "role": role, "imported": 0, "error": str(exc)})
+        if "tags" not in successful_roles and self.tag_index_api_config(profile_key):
+            _raise_if_cancelled(progress)
+            if progress:
+                progress(0.05, f"Falling back to {profile_key} source-native tag-index API sync")
+            api_result = self.import_tag_index_api(
+                profile_key=profile_key,
+                url=url if url and not self._looks_like_export_file(url) else None,
+                user_agent=user_agent,
+                cache_hours=cache_hours,
+                progress=progress,
+                replace_existing=replace_existing,
+                force_download=force_download,
+            )
+            imported_total += int(api_result.get("imported") or 0)
+            files.extend(api_result.get("files") or [])
+            successful_roles.add("tags")
+            replaced = bool(replace_existing)
         if "tags" in successful_roles:
             _raise_if_cancelled(progress)
             expanded = self.expand_dictionary_from_relations(profile_key)
@@ -1503,6 +2252,91 @@ class TagService:
                 f"Attempted {len(attempted)} canonical tag candidate(s). Check the Tag Dictionaries job details for partial/error rows."
             )
         return {"profile_key": profile_key, "imported": imported_total, "replaced_existing": replaced, "files": files, "discovered_pages": discovered_pages, "status": final_status}
+
+    def import_cached_exports(self, profile_key: str = "e621", *, replace_existing: bool = True, progress=None) -> dict[str, Any]:
+        """Import already-present cached export/tag-index files without network access.
+
+        This is used by install migration.  If an older install already contains
+        runtime/tag_exports/<profile>/ files, the new install can parse those
+        local files directly instead of discovering/downloading fresh exports.
+        """
+        _raise_if_cancelled(progress)
+        if not self.paths:
+            return {"profile_key": profile_key, "imported": 0, "files": [], "skipped": "no AppPaths"}
+        key = profile_key or "e621"
+        root = self.paths.runtime / "tag_exports" / normalize_tag(key)
+        if not root.exists():
+            return {"profile_key": key, "imported": 0, "files": [], "skipped": "no cached export directory"}
+        candidates: list[str] = []
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.name.endswith((".part", ".tmp", ".lock")):
+                continue
+            if self._looks_like_export_file(path.name):
+                candidates.append(path.as_uri())
+        selected = self._select_latest_exports_by_role(candidates)
+        selected.sort(key=lambda u: ({"tags": 0, "aliases": 1, "implications": 2, "artists": 3}.get(self._infer_export_role(u), 4), -self._extract_export_date_key(u)[0], u))
+        imported_total = 0
+        files: list[dict[str, Any]] = []
+        successful_roles: set[str] = set()
+        total = max(1, len(selected))
+        for idx, uri in enumerate(selected, start=1):
+            _raise_if_cancelled(progress)
+            path = Path(unquote(urlparse(uri).path))
+            # Windows file:// URIs can retain a leading slash before the drive.
+            if os.name == "nt" and re.match(r"^/[A-Za-z]:/", str(path)):
+                path = Path(str(path)[1:])
+            role = self._infer_export_role(path.name)
+            if role in successful_roles:
+                continue
+            try:
+                if progress:
+                    progress((idx - 1) / total, f"Importing cached {role} export {path.name}")
+                sha = self._file_sha256(path) if path.exists() else ""
+                if role == "tags":
+                    final_min_expected = MIN_EXPECTED_TAG_ROWS.get((key or "").lower(), 0)
+                    canonical_min_expected = 0 if final_min_expected <= 0 else MIN_CANONICAL_TAG_ROWS.get((key or "").lower(), 1)
+                    pre_count = self.count_dictionary_csv_rows(path, key)
+                    if canonical_min_expected and pre_count < canonical_min_expected:
+                        self._record_export_file(key, role, f"local-cache:{path.name}", path, sha, pre_count, status="partial", error=f"cached export below expected minimum {canonical_min_expected}")
+                        files.append({"role": role, "path": str(path), "candidate_rows": pre_count, "partial": True, "imported": 0})
+                        continue
+                    count = self.verified_import_dictionary_csv(path, key, replace_existing=replace_existing, keep_custom=True, min_expected=canonical_min_expected, progress=(lambda rows, msg, _idx=idx, _total=total: progress((_idx - 0.15) / _total, msg) if progress else None))
+                elif role == "aliases":
+                    count = self.import_aliases_csv(path, key)
+                elif role == "implications":
+                    count = self.import_implications_csv(path, key)
+                elif role == "artists":
+                    count = self.import_artists_csv(path, key)
+                else:
+                    count = 0
+                imported_total += int(count or 0)
+                successful_roles.add(role)
+                self._record_export_file(key, role, f"local-cache:{path.name}", path, sha, int(count or 0), status="imported")
+                files.append({"role": role, "path": str(path), "sha256": sha, "imported": int(count or 0), "source": "local-cache"})
+            except Exception as exc:
+                self._record_export_file(key, role, f"local-cache:{path.name}", path if path.exists() else None, "", 0, status="failed", error=str(exc))
+                files.append({"role": role, "path": str(path), "imported": 0, "error": str(exc), "source": "local-cache"})
+        # Tag-index JSONL caches are not e621 DB exports, but many non-e621
+        # booru profiles cache tags_api.jsonl under the same profile folder.
+        if "tags" not in successful_roles:
+            jsonl = root / "tags_api.jsonl"
+            manifest = root / "tag_index_source_config.json"
+            if jsonl.exists() and manifest.exists():
+                try:
+                    if progress:
+                        progress(0.55, f"Importing cached {key} tag-index JSONL")
+                    imported = self.import_tag_index_jsonl_cache(jsonl, key, manifest_path=manifest, replace_existing=replace_existing, progress=progress)
+                    imported_total += int(imported.get("imported") or 0)
+                    files.extend(imported.get("files") or [])
+                    successful_roles.add("tags")
+                except Exception as exc:
+                    files.append({"role": "tags", "path": str(jsonl), "imported": 0, "error": str(exc), "source": "local-cache"})
+        if "tags" in successful_roles:
+            expanded = self.expand_dictionary_from_relations(key)
+            imported_total += int(expanded.get("added", 0) or 0)
+            files.append({"role": "dictionary_expansion", **expanded})
+        self.invalidate_cache(key)
+        return {"profile_key": key, "imported": imported_total, "replaced_existing": bool(replace_existing), "files": files, "status": self.dictionary_status(key), "source": "local-cache"}
 
     def expand_dictionary_from_relations(self, profile_key: str = "e621") -> dict[str, Any]:
         """Add searchable alias/implication terms after canonical tags import.
@@ -1679,7 +2513,7 @@ class TagService:
             result.append(url)
         return result
 
-    def download_export_file(self, url: str, profile_key: str, user_agent: str = "DataCurationTool/5.36.0", cache_hours: int = 336, progress=None, force_download: bool = False) -> Path:
+    def download_export_file(self, url: str, profile_key: str, user_agent: str = "DataCurationTool/5.36.0", cache_hours: int = 168, progress=None, force_download: bool = False) -> Path:
         _raise_if_cancelled(progress)
         if not self.paths:
             raise RuntimeError("Tag export downloads require AppPaths.")

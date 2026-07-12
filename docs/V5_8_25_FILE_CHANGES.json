@@ -1,0 +1,25 @@
+{
+  "version": "5.8.25",
+  "new_files": [
+    "docs/V5_8_25_EVA_ATTN_POOL_AND_LIVE_TAB_REFRESH_FIXES.md",
+    "docs/V5_8_25_FILE_CHANGES.json",
+    "docs/wiki/55-EVA-Attention-Pool-and-Live-Tab-Refresh-Fixes.md",
+    "tests/test_v618_eva_attention_pool_live_refresh.py",
+    "tests/test_v618_eva_attn_pool_live_refresh.py",
+    "tests/test_v618_eva_attn_pool_refresh_status.py"
+  ],
+  "edited_files": [
+    "README.md",
+    "data_curation_tool/__init__.py",
+    "data_curation_tool/models/adapters.py",
+    "data_curation_tool/services/model_service.py",
+    "data_curation_tool/static/app.js",
+    "docs/V5_8_25_EVA_ATTENTION_POOL_AND_LIVE_REFRESH_FIXES.md",
+    "docs/wiki/55-EVA-Attention-Pool-and-Live-Refresh-Fixes.md",
+    "docs/wiki/Home.md",
+    "docs/wiki/README.md",
+    "docs/wiki/_Sidebar.md",
+    "pyproject.toml"
+  ],
+  "removed_files": []
+}

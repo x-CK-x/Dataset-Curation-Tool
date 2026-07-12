@@ -156,3 +156,36 @@ Avoid sharing the same writable `runtime/app.db` across multiple running instanc
 | Settings | Global settings and token profiles. |
 | Help & Workflows | In-app guidance. |
 | Jobs | Logs, progress, cancel/pause/retry. |
+
+
+## Automation workflow loop
+
+Use the **Automation Workflows** tab when a curation task has become repeatable or when a selected assistant model should help plan the rest of the work. A recommended pattern is:
+
+1. Pick the source dataset or global branch.
+2. Select target model, adapter type, dataset goal, and trainer/export target.
+3. Write the desired outcome in plain language.
+4. Generate a workflow from a template or ask the assistant model to draft one.
+5. Inspect and edit the workflow JSON.
+6. Validate and dry-run.
+7. Run safe steps first.
+8. Approve unsafe steps only after the dry-run matches expectations.
+9. Review the run manifest and exported branch.
+
+Workflow automation should still preserve the global original dataset. Edits belong in branch sidecars, branch configs, and branch-local variants.
+
+
+## Agentic graph workflow loop
+
+Use the **Agentic Graph Editor** when the workflow needs a visual structure, branching dependencies, or cooperative editing between the user and the selected orchestrator model. A recommended graph workflow is:
+
+1. Start from a template or a blank graph.
+2. Fill in branch, target model, adapter type, dataset goal, and trainer/export target.
+3. Ask the orchestrator model to generate a draft graph, or add nodes manually.
+4. Inspect each node config and approval flag.
+5. Validate the graph and review the Mermaid preview.
+6. Dry-run the graph.
+7. Convert/save it as an Automation Workflow if it should become reusable.
+8. Queue the graph only after approval-gated actions are intentionally approved.
+
+Graph execution should preserve the same safety model as Automation Workflows: global originals remain untouched, edits go to branch sidecars or branch-local variants, and risky tool/remote/shell actions require explicit approval.
